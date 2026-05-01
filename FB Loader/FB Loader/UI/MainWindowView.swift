@@ -8,8 +8,12 @@ struct MainWindowView: View {
         HSplitView {
             LeftSidebarView(library: library)
                 .frame(minWidth: 220, idealWidth: 280, maxWidth: 400)
-            Text("Books table goes here")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VSplitView {
+                BooksTableView(library: library)
+                    .frame(minHeight: 200)
+                Text("Book detail goes here")    // placeholder
+                    .frame(minHeight: 200)
+            }
         }
         .frame(minWidth: 1000, minHeight: 600)
     }
