@@ -20,7 +20,7 @@ enum FB2DescriptionParser {
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.shouldProcessNamespaces = true
-        parser.parse()
+        guard parser.parse() else { throw ParseError.malformed }
         // Resolve cover binary by id.
         var cover: Data? = nil
         if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")),
@@ -56,7 +56,10 @@ private final class FB2Delegate: NSObject, XMLParserDelegate {
     var binariesByID: [String: String] = [:]
 
     private var translatorBuilder: (last: String, first: String, middle: String) = ("", "", "")
-    private var authorElementStack: [String] = []   // for author/translator subfields
+    /// `true` while we're inside one of the leaf text fields we care about
+    /// (first-name / last-name / middle-name / book-title / date). These never
+    /// nest in valid FB2, so a Bool is enough.
+    private var inSmallField = false
     private var annotationBuffer = ""
     private var inAnnotationDepth = 0
 
@@ -92,7 +95,7 @@ private final class FB2Delegate: NSObject, XMLParserDelegate {
             }
         case "first-name", "last-name", "middle-name", "book-title", "date":
             currentTextField = ""
-            authorElementStack.append(n)
+            inSmallField = true
         default:
             if section == .annotation { inAnnotationDepth += 1 }
         }
@@ -101,7 +104,7 @@ private final class FB2Delegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         if section == .binary { currentBinaryBuffer += string; return }
         if section == .annotation { annotationBuffer += string; return }
-        if !authorElementStack.isEmpty { currentTextField += string }
+        if inSmallField { currentTextField += string }
     }
 
     func parser(_ parser: XMLParser,
@@ -115,7 +118,7 @@ private final class FB2Delegate: NSObject, XMLParserDelegate {
             section = .none
         case "first-name", "last-name", "middle-name", "book-title", "date":
             let value = currentTextField.trimmingCharacters(in: .whitespacesAndNewlines)
-            authorElementStack.removeLast()
+            inSmallField = false
             switch (section, n) {
             case (.titleInfo, "book-title"): bookTitle = value
             case (.titleInfo, "date"): dateWritten = value
