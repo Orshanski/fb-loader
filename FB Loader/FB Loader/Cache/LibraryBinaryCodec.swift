@@ -30,6 +30,10 @@ enum LibraryBinaryCodec {
         /// if a single book's title (or other length-prefixed string) exceeds
         /// the on-disk format's length encoding capacity.
         case stringTooLong(field: String, length: Int, max: Int)
+        /// `inpxHash` must always be 32 bytes (SHA-256). A different size would
+        /// silently corrupt every field after it on decode (the decoder reads
+        /// exactly 32 bytes regardless), so we throw at encode time instead.
+        case invalidHashSize(Int)
     }
 
     private static let magic: [UInt8] = Array("FBLC".utf8)
@@ -39,6 +43,9 @@ enum LibraryBinaryCodec {
         var w = BinaryWriter()
         w.bytes(magic)
         w.uint16(formatVersion)
+        guard lib.inpxHash.count == 32 else {
+            throw EncodeError.invalidHashSize(lib.inpxHash.count)
+        }
         w.bytes(Array(lib.inpxHash))
         try w.string16(lib.inpxVersion, field: "inpxVersion")
         w.uint32(UInt32(lib.archives.count))

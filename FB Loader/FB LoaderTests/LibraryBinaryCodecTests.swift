@@ -41,4 +41,67 @@ struct LibraryBinaryCodecTests {
             try LibraryBinaryCodec.decode(bad)
         }
     }
+
+    @Test("truncated data throws DecodeError.truncated")
+    func truncated() throws {
+        let lib = Library(
+            inpxHash: Data(repeating: 0xAB, count: 32),
+            inpxVersion: "v",
+            archives: [], authors: [], series: [], genres: [], books: []
+        )
+        let full = try LibraryBinaryCodec.encode(lib)
+        // Cut at byte 10 — past magic and version, mid-hash.
+        let truncated = full.prefix(10)
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.decode(truncated)
+        }
+    }
+
+    @Test("unsupported format version throws")
+    func unsupportedVersion() throws {
+        let lib = Library(
+            inpxHash: Data(repeating: 0xAB, count: 32),
+            inpxVersion: "v",
+            archives: [], authors: [], series: [], genres: [], books: []
+        )
+        var data = try LibraryBinaryCodec.encode(lib)
+        // Bytes 4..5 are the format-version little-endian UInt16; flip to 99.
+        data[4] = 99
+        data[5] = 0
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.decode(data)
+        }
+    }
+
+    @Test("nil seriesID and seriesNum survive round-trip via sentinel encoding")
+    func nilOptionalsRoundTrip() throws {
+        let lib = Library(
+            inpxHash: Data(repeating: 0xAB, count: 32),
+            inpxVersion: "v",
+            archives: ["arch"],
+            authors: [Author.unknown],
+            series: [],
+            genres: [],
+            books: [
+                Book(libid: 1, title: "t", authorIDs: [Author.unknownID],
+                     seriesID: nil, seriesNum: nil, genreIDs: [],
+                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+            ]
+        )
+        let decoded = try LibraryBinaryCodec.decode(LibraryBinaryCodec.encode(lib))
+        #expect(decoded.books[0].seriesID == nil)
+        #expect(decoded.books[0].seriesNum == nil)
+    }
+
+    @Test("non-32-byte inpxHash throws EncodeError.invalidHashSize")
+    func invalidHashSize() throws {
+        let lib = Library(
+            inpxHash: Data(repeating: 0xAB, count: 16),     // wrong size
+            inpxVersion: "v",
+            archives: [], authors: [], series: [], genres: [], books: []
+        )
+        #expect(throws: LibraryBinaryCodec.EncodeError.self) {
+            try LibraryBinaryCodec.encode(lib)
+        }
+    }
 }
