@@ -4,6 +4,8 @@ import UniformTypeIdentifiers   // for UTType(filenameExtension:)
 
 struct SettingsView: View {
     let userPaths: UserPaths
+    let onClose: () -> Void
+    let onRebuild: () -> Void
     @State private var inpx: URL?
     @State private var arch: URL?
     @State private var cacheStatus: String = ""
@@ -37,12 +39,17 @@ struct SettingsView: View {
                 Text("Кэш каталога:")
                 Text(cacheStatus).foregroundStyle(.secondary).font(.caption)
                 Spacer()
-                Button("Перечитать каталог") {
-                    deleteCache()
-                }
+                Button("Пересобрать каталог") { onRebuild() }
             }
-            Text("Удаляет library-cache.bin. Каталог пересоберётся из INPX при следующем запуске.")
+            Text("Каталог пересобрается из INPX прямо сейчас.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+            HStack {
+                Spacer()
+                Button("Готово") { onClose() }
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(20)
         .frame(width: 600)
@@ -68,9 +75,4 @@ struct SettingsView: View {
         cacheStatus = String(format: "%.1f МБ", mb)
     }
 
-    private func deleteCache() {
-        guard let url = cacheURL() else { return }
-        try? FileManager.default.removeItem(at: url)
-        updateCacheStatus()
-    }
 }

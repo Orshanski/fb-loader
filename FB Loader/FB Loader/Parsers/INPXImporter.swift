@@ -24,10 +24,13 @@ nonisolated enum INPXImporter {
     static func import_(
         inpxURL: URL,
         genres: GenreDictionary,
+        onStatus: (@Sendable (String) -> Void)? = nil,
         onProgress: (@Sendable (Int) -> Void)? = nil
     ) throws -> Library {
+        onStatus?("Хеш INPX-файла…")
         let inpxHash = try SHA256.hash(ofFileAt: inpxURL)
 
+        onStatus?("Чтение центральной директории INPX…")
         let index: ZipCentralDirectory.Index
         do {
             index = try ZipCentralDirectory.readIndex(of: inpxURL)
@@ -80,11 +83,13 @@ nonisolated enum INPXImporter {
             .values
             .sorted { $0.name < $1.name }
         print("[INPXImporter] start: \(inpEntries.count) .inp files in archive")
+        onStatus?("Найдено \(inpEntries.count) .inp файлов")
         var archCounter = 0
         for entry in inpEntries {
             let name = entry.name
             archCounter += 1
             print("[INPXImporter] reading [\(archCounter)/\(inpEntries.count)] \(name)")
+            onStatus?("[\(archCounter)/\(inpEntries.count)] \(name)")
 
             // archiveIndex maps to the corresponding .zip filename without extension —
             // exactly as freeLib does (importthread.cpp:250 replaces ".inp" with ".zip").
@@ -197,6 +202,7 @@ nonisolated enum INPXImporter {
             onProgress?(books.count)
         }
         print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
+        onStatus?("Сборка каталога…")
         // Final emit so the caller's UI ends with the actual total, not the last
         // multiple of `progressEveryNBooks`.
         onProgress?(books.count)

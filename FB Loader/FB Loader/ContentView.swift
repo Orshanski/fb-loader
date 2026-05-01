@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var state = AppState()
+    @State private var showSettings = false
+    @State private var loadGate = LoadSessionGate()
 
     var body: some View {
         Group {
@@ -70,28 +72,119 @@ struct ContentView: View {
             }
             await loadLibrary()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+            showSettings = true
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(
+                userPaths: state.userPaths,
+                onClose: { showSettings = false },
+                onRebuild: {
+                    showSettings = false
+                    state.reset()
+                    if let cache = try? LibraryLoader.appSupportRoot()
+                        .appendingPathComponent("library-cache.bin") {
+                        try? FileManager.default.removeItem(at: cache)
+                    }
+                    Task { await loadLibrary() }
+                }
+            )
+        }
     }
 
     private func loadLibrary() async {
         guard let inpx = state.userPaths.inpxURL else { return }
+        let loadToken = loadGate.begin()
         state.stage = .loading(progress: "Чтение каталога…")
         do {
-            // UI throttle: importer ticks ~1000s of times during a real import.
-            // We hop each tick to MainActor, but only commit a state.stage write
-            // if at least 100 ms passed since the last commit — keeps the visible
-            // counter responsive without flooding SwiftUI's animator.
-            let lastUpdate = AtomicLastUpdate()
-            let lib = try await LibraryLoader.load(inpxURL: inpx) { count in
-                Task { @MainActor in
-                    if lastUpdate.shouldCommit() {
-                        state.stage = .loading(progress: "Прочитано книг: \(count)")
+            // UI throttle: importer ticks 1000s of times during a real import
+            // (every 200 books). We hop each tick to MainActor, but only commit
+            // a state.stage write if at least 100 ms passed since the last commit.
+            let progress = LoadingProgressBag()
+            let lastCountUpdate = AtomicLastUpdate()
+            let lib = try await LibraryLoader.load(
+                inpxURL: inpx,
+                onStatus: { msg in
+                    let formatted = progress.setStatus(msg)
+                    Task { @MainActor in
+                        loadGate.apply(loadToken) {
+                            state.stage = .loading(progress: formatted)
+                        }
                     }
-                }
+                },
+                onProgress: { count in
+                    let formatted = progress.setCount(count)
+                    Task { @MainActor in
+                        if lastCountUpdate.shouldCommit() {
+                            loadGate.apply(loadToken) {
+                                state.stage = .loading(progress: formatted)
+                            }
+                        }
+                    }
+                })
+            if loadGate.finish(loadToken) {
+                state.stage = .ready(lib)
             }
-            state.stage = .ready(lib)
         } catch {
-            state.stage = .failed("\(error)")
+            if loadGate.finish(loadToken) {
+                state.stage = .failed("\(error)")
+            }
         }
+    }
+}
+
+@MainActor
+final class LoadSessionGate {
+    struct Token: Equatable {
+        fileprivate let id: UUID
+    }
+
+    private var activeToken: Token?
+
+    func begin() -> Token {
+        let token = Token(id: UUID())
+        activeToken = token
+        return token
+    }
+
+    func apply(_ token: Token, _ body: () -> Void) {
+        guard activeToken == token else { return }
+        body()
+    }
+
+    @discardableResult
+    func finish(_ token: Token) -> Bool {
+        guard activeToken == token else { return false }
+        activeToken = nil
+        return true
+    }
+}
+
+/// Two-field progress bag used by `loadLibrary()`: the importer pushes
+/// status-message updates and per-N-books counter updates from a background
+/// thread; this bag combines them into a single render string under a lock,
+/// so neither stream overwrites the other.
+private nonisolated final class LoadingProgressBag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastStatus: String = ""
+    private var lastCount: Int = 0
+
+    func setStatus(_ s: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        lastStatus = s
+        return formatLocked()
+    }
+    func setCount(_ c: Int) -> String {
+        lock.lock(); defer { lock.unlock() }
+        lastCount = c
+        return formatLocked()
+    }
+    private func formatLocked() -> String {
+        if lastCount > 0 && !lastStatus.isEmpty {
+            return "\(lastStatus)\nПрочитано книг: \(lastCount)"
+        }
+        if lastCount > 0 { return "Прочитано книг: \(lastCount)" }
+        return lastStatus
     }
 }
 

@@ -23,13 +23,20 @@ nonisolated enum LibraryLoader {
     /// for hopping to MainActor before mutating UI state.
     static func load(
         inpxURL: URL,
+        onStatus: @escaping @Sendable (String) -> Void = { _ in },
         onProgress: @escaping @Sendable (Int) -> Void = { _ in }
     ) async throws -> Library {
         let appSupport = try appSupportRoot()
         let store = LibraryCacheStore(applicationSupportRoot: appSupport)
         let genres = try GenreDictionary.loadFromBundle()
+        onStatus("Чтение кэша каталога…")
         return try store.loadOrRebuild(inpxURL: inpxURL) {
-            try INPXImporter.import_(inpxURL: inpxURL, genres: genres, onProgress: onProgress)
+            onStatus("Кэш не найден или устарел — пересборка из INPX")
+            return try INPXImporter.import_(
+                inpxURL: inpxURL,
+                genres: genres,
+                onStatus: onStatus,
+                onProgress: onProgress)
         }
     }
 }
