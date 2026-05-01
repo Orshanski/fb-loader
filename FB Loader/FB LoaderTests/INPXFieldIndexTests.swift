@@ -38,4 +38,27 @@ struct INPXFieldIndexTests {
         #expect(idx.author == 1)
         #expect(idx.genre == 9)
     }
+
+    @Test("ignores header line, parses field line in multi-line STRUCTURE.INFO")
+    func multiLine() {
+        // Real Flibusta dumps prepend "INPX VERSION;1.0\n" before the field row.
+        // freeLib iterates all lines until a token matches (importthread.cpp:737-782).
+        let info = "INPX VERSION;1.0\nAUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG\n"
+        let idx = INPXFieldIndex.fromStructureInfo(info)
+        #expect(idx.author == 0)
+        #expect(idx.title == 2)
+        #expect(idx.language == 11)
+    }
+
+    @Test("empty STRUCTURE.INFO falls back to defaults")
+    func emptyFallsToDefaults() {
+        #expect(INPXFieldIndex.fromStructureInfo("") == .defaults)
+    }
+
+    @Test("STRUCTURE.INFO with no recognized tokens falls back to defaults")
+    func noRecognizedTokensFallsToDefaults() {
+        // If a header file lists only metadata lines (e.g. version), use defaults
+        // rather than leaving every field at -1 (which would silently drop all data).
+        #expect(INPXFieldIndex.fromStructureInfo("INPX VERSION;1.0\n") == .defaults)
+    }
 }
