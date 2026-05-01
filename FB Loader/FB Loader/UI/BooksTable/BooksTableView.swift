@@ -3,6 +3,11 @@ import SwiftUI
 struct BooksTableView: View {
     let library: Library
     @Environment(AppState.self) private var state
+    /// DisclosureGroup needs an explicit isExpanded binding to be reliably
+    /// clickable inside a List on macOS 26 — without this, the implicit
+    /// `@State` inside DisclosureGroup gets reset on every parent re-render
+    /// and series simply don't expand. Stores series IDs that are open.
+    @State private var expandedSeries: Set<Int32> = []
 
     private struct GroupedRow: Identifiable {
         enum Kind { case loose(Book); case seriesHeader(Series, [Book]) }
@@ -59,10 +64,28 @@ struct BooksTableView: View {
                     case .loose(let b):
                         bookRow(b)
                     case .seriesHeader(let s, let items):
-                        DisclosureGroup(s.name) {
+                        DisclosureGroup(
+                            isExpanded: Binding(
+                                get: { expandedSeries.contains(s.id) },
+                                set: { isOpen in
+                                    if isOpen { expandedSeries.insert(s.id) }
+                                    else      { expandedSeries.remove(s.id) }
+                                }
+                            )
+                        ) {
                             ForEach(items) { b in bookRow(b) }
+                        } label: {
+                            Text("\(s.name) (\(items.count))")
+                                .font(.headline)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if expandedSeries.contains(s.id) {
+                                        expandedSeries.remove(s.id)
+                                    } else {
+                                        expandedSeries.insert(s.id)
+                                    }
+                                }
                         }
-                        .font(.headline)
                     }
                 }
             }
