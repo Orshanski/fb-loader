@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8AD2F0CE2FA4F9B100B5CF4C /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 8AD2F0CD2FA4F9B100B5CF4C /* ZIPFoundation */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8AD2F06A2FA4C12E00B5CF4C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8AD2F0CE2FA4F9B100B5CF4C /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 				8AD2F05E2FA4C12C00B5CF4C /* FB Loader */,
 				8AD2F06C2FA4C12E00B5CF4C /* FB LoaderTests */,
 				8AD2F0762FA4C12E00B5CF4C /* FB LoaderUITests */,
+				8AD2F0CC2FA4F9B100B5CF4C /* Frameworks */,
 				8AD2F05D2FA4C12C00B5CF4C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +96,13 @@
 				8AD2F0732FA4C12E00B5CF4C /* FB LoaderUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8AD2F0CC2FA4F9B100B5CF4C /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +125,7 @@
 			);
 			name = "FB Loader";
 			packageProductDependencies = (
+				8AD2F0CD2FA4F9B100B5CF4C /* ZIPFoundation */,
 			);
 			productName = "FB Loader";
 			productReference = 8AD2F05C2FA4C12C00B5CF4C /* FB Loader.app */;
@@ -589,6 +603,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8AD2F0CD2FA4F9B100B5CF4C /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8AD2F0922FA4DE1800B5CF4C /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8AD2F0542FA4C12C00B5CF4C /* Project object */;
 }
