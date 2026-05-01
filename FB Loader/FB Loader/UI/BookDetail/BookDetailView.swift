@@ -89,6 +89,11 @@ struct BookDetailView: View {
     }
 
     private func loadDetail() async {
+        // Clear the previous book's data immediately so the user doesn't stare
+        // at stale annotation+cover for the duration of the new book's load.
+        info = nil
+        coverImage = nil
+
         let lib = library
         let root = archivesRoot
         let b = book
@@ -99,10 +104,8 @@ struct BookDetailView: View {
             let url = root.appendingPathComponent(archiveName)
 
             // Fast path: cover image already cached on disk from a prior visit.
-            // We still parse the .fb2 for description/annotation, but render the
-            // cover immediately and we don't have to keep the bytes around.
             let cachedCover = cache?.cachedImage(for: b)
-            if cachedCover != nil {
+            if cachedCover != nil, !Task.isCancelled {
                 let img = cachedCover
                 await MainActor.run { self.coverImage = img }
                 print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
@@ -112,12 +115,13 @@ struct BookDetailView: View {
                 let tRead = ContinuousClock.now
                 let fb2 = try ZipFB2Reader.readFB2(libid: b.libid, archiveURL: url)
                 print("[BookDetail] read \(fb2.count)B in \(ContinuousClock.now - tRead)")
+                if Task.isCancelled { return }
 
                 let tParse = ContinuousClock.now
                 let parsed = try FB2DescriptionParser.parse(data: Data(fb2))
                 print("[BookDetail] parse in \(ContinuousClock.now - tParse): title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
+                if Task.isCancelled { return }
 
-                // If we didn't have a cached image, extract from parsed and persist.
                 let img: NSImage? = cachedCover ?? {
                     guard let bytes = parsed.coverImageData else { return nil }
                     return cache?.store(bytes, for: b)
@@ -130,7 +134,6 @@ struct BookDetailView: View {
                 }
             } catch {
                 print("[BookDetail] ERROR in \(ContinuousClock.now - t0): \(error)")
-                await MainActor.run { self.info = nil }
             }
         }.value
     }

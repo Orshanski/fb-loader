@@ -15,10 +15,10 @@ struct FB2BookInfo {
 ///
 /// `nonisolated` — pure parser, no UI state. Without this it would be inferred
 /// as MainActor (project default) and reject calls from `Task.detached`.
-enum FB2DescriptionParser {
+nonisolated enum FB2DescriptionParser {
     enum ParseError: Error { case malformed }
 
-    nonisolated static func parse(data: Data) throws -> FB2BookInfo {
+    static func parse(data: Data) throws -> FB2BookInfo {
         let delegate = FB2Delegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate

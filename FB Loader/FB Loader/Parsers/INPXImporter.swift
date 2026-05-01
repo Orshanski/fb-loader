@@ -1,5 +1,4 @@
 import Foundation
-import ZIPFoundation
 
 /// Imports an INPX archive into an in-memory `Library`.
 /// Skips records with DEL=1.
@@ -7,7 +6,7 @@ import ZIPFoundation
 /// Empty/unknown authors are mapped to the synthetic `Author.unknown`.
 nonisolated enum INPXImporter {
     enum ImportError: Error {
-        /// Wraps the actual ZIPFoundation error for diagnostics — never silently lost.
+        /// Wraps the underlying central-directory parse / decompression error.
         case cannotOpenArchive(URL, underlying: Error)
         case noVersionInfo
         case tooManyArchives(count: Int)
@@ -27,32 +26,37 @@ nonisolated enum INPXImporter {
         genres: GenreDictionary,
         onProgress: (@Sendable (Int) -> Void)? = nil
     ) throws -> Library {
-        let inpxData = try Data(contentsOf: inpxURL)
-        let inpxHash = SHA256.hash(of: inpxData)
+        let inpxHash = try SHA256.hash(ofFileAt: inpxURL)
 
-        let archive: Archive
+        let index: ZipCentralDirectory.Index
         do {
-            archive = try Archive(data: inpxData, accessMode: .read)
+            index = try ZipCentralDirectory.readIndex(of: inpxURL)
         } catch {
             throw ImportError.cannotOpenArchive(inpxURL, underlying: error)
         }
 
-        // 1. version.info — case-insensitive lookup (some INPX dumps use VERSION.INFO).
+        // INPX file names are usually lowercase but some dumps use VERSION.INFO etc.
+        // Build a lowercase-keyed lookup once.
+        var byLowercaseName: [String: ZipCentralDirectory.Entry] = [:]
+        byLowercaseName.reserveCapacity(index.entries.count)
+        for (name, entry) in index.entries {
+            byLowercaseName[name.lowercased()] = entry
+        }
+
+        // 1. version.info
         var version = ""
-        if let entry = archive.first(where: { $0.path.lowercased() == "version.info" }) {
-            var data = Data()
-            _ = try archive.extract(entry) { data.append($0) }
+        if let versionEntry = byLowercaseName["version.info"] {
+            let data = try ZipCentralDirectory.extract(versionEntry, from: inpxURL)
             version = String(decoding: data, as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
             throw ImportError.noVersionInfo
         }
 
-        // 2. STRUCTURE.INFO (optional) — case-insensitive.
+        // 2. STRUCTURE.INFO (optional)
         var fieldIndex = INPXFieldIndex.defaults
-        if let entry = archive.first(where: { $0.path.lowercased() == "structure.info" }) {
-            var data = Data()
-            _ = try archive.extract(entry) { data.append($0) }
+        if let structureEntry = byLowercaseName["structure.info"] {
+            let data = try ZipCentralDirectory.extract(structureEntry, from: inpxURL)
             fieldIndex = INPXFieldIndex.fromStructureInfo(
                 String(decoding: data, as: UTF8.self))
         }
@@ -71,11 +75,14 @@ nonisolated enum INPXImporter {
         authors.append(Author.unknown)
 
         // Pre-collect .inp entries so we can report "X / N" progress.
-        let inpEntries = archive.filter { $0.path.lowercased().hasSuffix(".inp") }
+        let inpEntries: [ZipCentralDirectory.Entry] = index.entries
+            .filter { $0.key.lowercased().hasSuffix(".inp") }
+            .values
+            .sorted { $0.name < $1.name }
         print("[INPXImporter] start: \(inpEntries.count) .inp files in archive")
         var archCounter = 0
         for entry in inpEntries {
-            let name = entry.path
+            let name = entry.name
             archCounter += 1
             print("[INPXImporter] reading [\(archCounter)/\(inpEntries.count)] \(name)")
 
@@ -95,8 +102,7 @@ nonisolated enum INPXImporter {
                 archiveNames.append(archBase)
             }
 
-            var inpData = Data()
-            _ = try archive.extract(entry) { inpData.append($0) }
+            let inpData = try ZipCentralDirectory.extract(entry, from: inpxURL)
             let text = String(decoding: inpData, as: UTF8.self)
             let booksBefore = books.count
 
