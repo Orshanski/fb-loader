@@ -2,11 +2,11 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Shown until both INPX and archives directory are configured.
+/// Shown when both INPX and archives directory are not configured.
 /// User picks INPX; archives folder defaults to the INPX file's parent
 /// directory (typical Flibusta layout). Override is available later
 /// in Settings if the user actually has a split setup.
-struct OnboardingView: View {
+struct CatalogPickerView: View {
     @State private var inpx: URL?
     let onComplete: (URL, URL) -> Void
 

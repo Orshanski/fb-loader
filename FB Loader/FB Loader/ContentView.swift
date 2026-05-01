@@ -9,18 +9,16 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch state.stage {
+            case .starting:
+                LoaderScreen(progress: "Подготовка…")
             case .onboarding:
-                OnboardingView { inpx, arch in
+                CatalogPickerView { inpx, arch in
                     state.userPaths.inpxURL = inpx
                     state.userPaths.archivesDirectoryURL = arch
                     Task { await loadLibrary() }
                 }
             case .loading(let p):
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text(p).foregroundStyle(.secondary)
-                }
-                .frame(minWidth: 600, minHeight: 350)
+                LoaderScreen(progress: p)
                 // Disable implicit animations on rapid progress-string changes —
                 // ProgressView's internal animator otherwise logs
                 // "Animating backwards in time!" when ticks arrive faster than
@@ -143,6 +141,37 @@ struct ContentView: View {
                 state.stage = .failed("\(error)")
             }
         }
+    }
+}
+
+private struct LoaderScreen: View {
+    let progress: String
+
+    var body: some View {
+        ZStack {
+            Image("Loader")
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .accessibilityHidden(true)
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                Text(progress)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 24)
+                    .textSelection(.enabled)
+            }
+            .padding(16)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(30)
+        }
+        .frame(minWidth: 600, minHeight: 350)
     }
 }
 

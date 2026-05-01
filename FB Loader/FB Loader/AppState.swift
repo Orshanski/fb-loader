@@ -6,13 +6,14 @@ import Observation
 @Observable
 final class AppState {
     enum LoadStage {
+        case starting
         case onboarding
         case loading(progress: String)
         case ready(Library)
         case failed(String)
     }
 
-    var stage: LoadStage = .onboarding
+    var stage: LoadStage = .starting
     /// Shared single source of truth — same instance is read by SettingsView (§14).
     let userPaths = UserPaths.shared
 
