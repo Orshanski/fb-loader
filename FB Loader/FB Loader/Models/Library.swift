@@ -1,0 +1,64 @@
+import Foundation
+
+/// In-memory snapshot of the entire catalog. Built by `INPXImporter`,
+/// persisted as a binary cache, queried by the UI.
+final class Library {
+    let inpxHash: Data           // SHA-256 of INPX content
+    let inpxVersion: String      // contents of version.info ("20260301" etc.)
+    let archives: [String]       // .zip filenames (without extension), indexed by archiveIndex
+    let authors: [Author]        // sorted by lastName, then firstName
+    let series: [Series]         // sorted by name
+    let genres: [Genre]
+    let books: [Book]
+
+    // Secondary indices (built once, after load):
+    let authorByID: [Int32: Author]     // O(1) lookup, used by BookDetail and table rows
+    let seriesByID: [Int32: Series]     // O(1) lookup
+    let genreByID: [Int16: Genre]       // O(1) lookup
+    let booksByAuthor: [Int32: [Int]]   // authorID → indices into `books`
+    let booksBySeries: [Int32: [Int]]
+    let bookCountByAuthor: [Int32: Int] // for the "(N)" counters
+    let bookCountBySeries: [Int32: Int]
+    let languages: [String]             // distinct languages found, sorted
+
+    init(
+        inpxHash: Data,
+        inpxVersion: String,
+        archives: [String],
+        authors: [Author],
+        series: [Series],
+        genres: [Genre],
+        books: [Book]
+    ) {
+        self.inpxHash = inpxHash
+        self.inpxVersion = inpxVersion
+        self.archives = archives
+        self.authors = authors
+        self.series = series
+        self.genres = genres
+        self.books = books
+
+        // Build secondary indices.
+        self.authorByID = Dictionary(uniqueKeysWithValues: authors.map { ($0.id, $0) })
+        self.seriesByID = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
+        self.genreByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0) })
+
+        var byAuthor: [Int32: [Int]] = [:]
+        var bySeries: [Int32: [Int]] = [:]
+        var langSet = Set<String>()
+        for (i, b) in books.enumerated() {
+            for aid in b.authorIDs {
+                byAuthor[aid, default: []].append(i)
+            }
+            if let sid = b.seriesID {
+                bySeries[sid, default: []].append(i)
+            }
+            langSet.insert(b.language)
+        }
+        self.booksByAuthor = byAuthor
+        self.booksBySeries = bySeries
+        self.bookCountByAuthor = byAuthor.mapValues(\.count)
+        self.bookCountBySeries = bySeries.mapValues(\.count)
+        self.languages = Array(langSet).sorted()
+    }
+}
