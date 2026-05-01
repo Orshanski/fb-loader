@@ -18,12 +18,18 @@ nonisolated enum LibraryLoader {
 
     /// Load library: from cache if hash matches, else reparse INPX.
     /// Heavy — should be called from a background Task.
-    static func load(inpxURL: URL) async throws -> Library {
+    /// `onProgress` is called from a background context every N parsed books
+    /// (only on the rebuild path; cache hits skip it). The caller is responsible
+    /// for hopping to MainActor before mutating UI state.
+    static func load(
+        inpxURL: URL,
+        onProgress: @escaping @Sendable (Int) -> Void = { _ in }
+    ) async throws -> Library {
         let appSupport = try appSupportRoot()
         let store = LibraryCacheStore(applicationSupportRoot: appSupport)
         let genres = try GenreDictionary.loadFromBundle()
         return try store.loadOrRebuild(inpxURL: inpxURL) {
-            try INPXImporter.import_(inpxURL: inpxURL, genres: genres)
+            try INPXImporter.import_(inpxURL: inpxURL, genres: genres, onProgress: onProgress)
         }
     }
 }

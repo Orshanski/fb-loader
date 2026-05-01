@@ -51,7 +51,15 @@ struct ContentView: View {
         guard let inpx = state.userPaths.inpxURL else { return }
         state.stage = .loading(progress: "Чтение каталога…")
         do {
-            let lib = try await LibraryLoader.load(inpxURL: inpx)
+            // Capture state weakly via the surrounding View — onProgress is
+            // called from a background thread inside INPXImporter.import_;
+            // we hop to MainActor for each tick. SwiftUI coalesces redraws
+            // automatically, so a tick every 1000 books is cheap.
+            let lib = try await LibraryLoader.load(inpxURL: inpx) { count in
+                Task { @MainActor in
+                    state.stage = .loading(progress: "Прочитано книг: \(count)")
+                }
+            }
             state.stage = .ready(lib)
         } catch {
             state.stage = .failed("\(error)")

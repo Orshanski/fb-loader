@@ -17,7 +17,15 @@ nonisolated enum INPXImporter {
     private static let trimSet: CharacterSet = .controlCharacters
         .subtracting(.init(charactersIn: "\u{04}"))
 
-    static func import_(inpxURL: URL, genres: GenreDictionary) throws -> Library {
+    /// Emit a progress callback every N parsed (non-deleted) books.
+    /// 1000 trades off Telegram-spam vs. responsiveness on a 700k-record import.
+    private static let progressEveryNBooks = 1000
+
+    static func import_(
+        inpxURL: URL,
+        genres: GenreDictionary,
+        onProgress: (@Sendable (Int) -> Void)? = nil
+    ) throws -> Library {
         let inpxData = try Data(contentsOf: inpxURL)
         let inpxHash = SHA256.hash(of: inpxData)
 
@@ -161,8 +169,14 @@ nonisolated enum INPXImporter {
                     size: rec.size,
                     dateAddedDays: days
                 ))
+                if books.count % Self.progressEveryNBooks == 0 {
+                    onProgress?(books.count)
+                }
             }
         }
+        // Final emit so the caller's UI ends with the actual total, not the last
+        // multiple of `progressEveryNBooks`.
+        onProgress?(books.count)
 
         // Sort authors by lastName, firstName, middleName.
         // The synthetic "(Без автора)" placeholder is included only when at least
