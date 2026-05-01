@@ -32,6 +32,7 @@ extension Book {
     var dateAdded: Date {
         // Force-unwrap is safe: INPXImporter (Phase 3) sources dateAddedDays from
         // a parsed YYYY-MM-DD field that always falls within Calendar's representable range.
+        // The Calendar's timezone does not affect whole-day arithmetic on `dateEpoch` (UTC).
         Calendar(identifier: .gregorian).date(byAdding: .day, value: Int(dateAddedDays), to: Book.dateEpoch)!
     }
 }

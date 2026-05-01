@@ -41,6 +41,9 @@ final class Library: Sendable {
         self.books = books
 
         // Build secondary indices.
+        // INPXImporter (Phase 3) is responsible for ID uniqueness in `authors`,
+        // `series` and `genres`. Duplicates here would crash via Dictionary's
+        // uniqueness precondition — that crash is the contract violation signal.
         self.authorByID = Dictionary(uniqueKeysWithValues: authors.map { ($0.id, $0) })
         self.seriesByID = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
         self.genreByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0) })
