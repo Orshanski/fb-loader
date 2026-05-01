@@ -128,14 +128,27 @@ nonisolated enum ZipCentralDirectory {
             if compressed == 0xFFFF_FFFF || uncompressed == 0xFFFF_FFFF || localOffset == 0xFFFF_FFFF {
                 var ep = nameEnd
                 let extraEnd = nameEnd + extraLen
+                guard extraEnd <= cd.count else { throw ZipError.truncated(url) }
                 while ep + 4 <= extraEnd {
                     let tag = readU16(cd, ep)
                     let size = Int(readU16(cd, ep + 2))
+                    let fieldDataStart = ep + 4
+                    let fieldEnd = fieldDataStart + size
+                    guard fieldEnd <= extraEnd else { throw ZipError.truncated(url) }
                     if tag == 0x0001 {
-                        var f = ep + 4
-                        if uncompressed == 0xFFFF_FFFF { uncompressed = readU64(cd, f); f += 8 }
-                        if compressed == 0xFFFF_FFFF   { compressed = readU64(cd, f); f += 8 }
-                        if localOffset == 0xFFFF_FFFF  { localOffset = readU64(cd, f) }
+                        var f = fieldDataStart
+                        if uncompressed == 0xFFFF_FFFF {
+                            guard f + 8 <= fieldEnd else { throw ZipError.truncated(url) }
+                            uncompressed = readU64(cd, f); f += 8
+                        }
+                        if compressed == 0xFFFF_FFFF {
+                            guard f + 8 <= fieldEnd else { throw ZipError.truncated(url) }
+                            compressed = readU64(cd, f); f += 8
+                        }
+                        if localOffset == 0xFFFF_FFFF {
+                            guard f + 8 <= fieldEnd else { throw ZipError.truncated(url) }
+                            localOffset = readU64(cd, f)
+                        }
                         break
                     }
                     ep += 4 + size
