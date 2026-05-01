@@ -7,10 +7,7 @@ enum SHA256 {
     }
 
     static func hash(ofFileAt url: URL) throws -> Data {
-        let h = try url.withUnsafeFileSystemRepresentation { _ in
-            // For files we expect (~36 MB INPX), reading whole into memory is fine.
-            try Data(contentsOf: url)
-        }
-        return hash(of: h)
+        // For files we expect (~36 MB INPX), reading whole into memory is fine.
+        try hash(of: Data(contentsOf: url))
     }
 }
