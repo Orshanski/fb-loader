@@ -6,19 +6,27 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var state
 
     var body: some View {
-        HSplitView {
+        // NavigationSplitView gives a proper macOS three-pane proportion that
+        // HSplitView+nested-frame can't reliably enforce on macOS 26 — the old
+        // layout let the authors list eat 2/3 of the window and squeezed the
+        // books pane down to character-width wrapping.
+        NavigationSplitView {
             LeftSidebarView(library: library)
-                .frame(minWidth: 220, idealWidth: 280, maxWidth: 400)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
+        } detail: {
             VSplitView {
                 BooksTableView(library: library)
-                    .frame(minHeight: 200)
+                    .frame(maxWidth: .infinity, minHeight: 200)
                 if let libid = state.selectedBookLibid,
                    let book = library.books.first(where: { $0.libid == libid }),
                    let archives = state.userPaths.archivesDirectoryURL {
                     BookDetailView(library: library, archivesRoot: archives, book: book)
-                        .frame(minHeight: 200)
+                        .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
-                    Text("Выберите книгу").foregroundStyle(.secondary).frame(minHeight: 200)
+                    Text("Выберите книгу")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .frame(minHeight: 200)
                 }
             }
         }

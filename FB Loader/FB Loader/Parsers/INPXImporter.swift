@@ -17,9 +17,10 @@ nonisolated enum INPXImporter {
     private static let trimSet: CharacterSet = .controlCharacters
         .subtracting(.init(charactersIn: "\u{04}"))
 
-    /// Emit a progress callback every N parsed (non-deleted) books.
-    /// 1000 trades off Telegram-spam vs. responsiveness on a 700k-record import.
-    private static let progressEveryNBooks = 1000
+    /// Emit a progress callback every N parsed (non-deleted) books, plus once
+    /// at the boundary between .inp files. 200 keeps the UI ticking even on
+    /// the first small .inp (which may have <1000 books).
+    private static let progressEveryNBooks = 200
 
     static func import_(
         inpxURL: URL,
@@ -69,9 +70,14 @@ nonisolated enum INPXImporter {
         // It may be filtered out at the end if no book actually references it.
         authors.append(Author.unknown)
 
-        for entry in archive {
+        // Pre-collect .inp entries so we can report "X / N" progress.
+        let inpEntries = archive.filter { $0.path.lowercased().hasSuffix(".inp") }
+        print("[INPXImporter] start: \(inpEntries.count) .inp files in archive")
+        var archCounter = 0
+        for entry in inpEntries {
             let name = entry.path
-            guard name.lowercased().hasSuffix(".inp") else { continue }
+            archCounter += 1
+            print("[INPXImporter] reading [\(archCounter)/\(inpEntries.count)] \(name)")
 
             // archiveIndex maps to the corresponding .zip filename without extension —
             // exactly as freeLib does (importthread.cpp:250 replaces ".inp" with ".zip").
@@ -92,6 +98,7 @@ nonisolated enum INPXImporter {
             var inpData = Data()
             _ = try archive.extract(entry) { inpData.append($0) }
             let text = String(decoding: inpData, as: UTF8.self)
+            let booksBefore = books.count
 
             for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
                 let trimmed = String(line).trimmingCharacters(in: trimSet)
@@ -173,7 +180,11 @@ nonisolated enum INPXImporter {
                     onProgress?(books.count)
                 }
             }
+            print("[INPXImporter] [\(archCounter)/\(inpEntries.count)] done — added \(books.count - booksBefore) books, total \(books.count)")
+            // Per-archive boundary emit — guarantees a UI tick even on tiny .inp files.
+            onProgress?(books.count)
         }
+        print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
         // Final emit so the caller's UI ends with the actual total, not the last
         // multiple of `progressEveryNBooks`.
         onProgress?(books.count)

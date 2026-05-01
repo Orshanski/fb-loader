@@ -22,14 +22,34 @@ struct ContentView: View {
                 MainWindowView(library: lib)
                     .environment(state)
             case .failed(let msg):
-                VStack(spacing: 12) {
-                    Text("Ошибка: \(msg)").foregroundStyle(.red)
+                VStack(spacing: 16) {
+                    Text("Не удалось открыть каталог")
+                        .font(.title2).bold()
+                    if let inpx = state.userPaths.inpxURL {
+                        Text(inpx.path)
+                            .font(.callout).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    DisclosureGroup("Подробности ошибки") {
+                        ScrollView {
+                            Text(msg)
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .padding(8)
+                        }
+                        .frame(maxWidth: 560, maxHeight: 160)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                    }
+                    .frame(maxWidth: 560)
                     Button("Указать пути заново") {
                         state.userPaths.inpxURL = nil
                         state.userPaths.archivesDirectoryURL = nil
                         state.stage = .onboarding
                     }
+                    .keyboardShortcut(.defaultAction)
                 }
+                .padding(24)
                 .frame(minWidth: 600, minHeight: 350)
             }
         }
