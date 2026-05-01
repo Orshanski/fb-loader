@@ -22,4 +22,4 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved IS committed (pinned dependency versions)
