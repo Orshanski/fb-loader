@@ -37,7 +37,11 @@ nonisolated enum LibraryBinaryCodec {
     }
 
     private static let magic: [UInt8] = Array("FBLC".utf8)
-    private static let formatVersion: UInt16 = 1
+    /// Bumped from 1 → 2 to invalidate caches built before the CRLF parser
+    /// fix (262e3bf), which silently produced 1-book-per-.inp catalogs.
+    /// Old caches decode → `unsupportedVersion(1)` → `LibraryCacheStore`
+    /// falls through to reparse on the next launch.
+    private static let formatVersion: UInt16 = 2
 
     static func encode(_ lib: Library) throws -> Data {
         var w = BinaryWriter()
