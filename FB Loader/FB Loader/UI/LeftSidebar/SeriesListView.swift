@@ -8,13 +8,10 @@ struct SeriesListView: View {
     @State private var filtered: [Series] = []
 
     var body: some View {
-        Table(filtered, selection: $selectedSeriesID) {
-            TableColumn("Серия") { (s: Series) in
-                let count = library.bookCountBySeries[s.id, default: 0]
-                Text("\(s.name) (\(count))")
-            }
+        LazyListTable(items: filtered, selectedID: $selectedSeriesID) { s in
+            let count = library.bookCountBySeries[s.id, default: 0]
+            return "\(s.name) (\(count))"
         }
-        .tableColumnHeaders(.hidden)
         .task(id: filterText) { await reloadFilter() }
     }
 

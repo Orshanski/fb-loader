@@ -10,56 +10,66 @@ struct AuthorsListView: View {
     /// otherwise every keystroke freezes the UI even with precomputed
     /// lowercased names.
     @State private var filtered: [Author] = []
+    /// Time at which filterText last changed — for measuring full pipeline
+    /// latency (keystroke → user-visible UI update).
+    @State private var keystrokeAt: ContinuousClock.Instant?
 
     var body: some View {
-        // `Table` is backed by NSTableView and properly virtualizes 100k+
-        // rows. SwiftUI `List` over a flat ForEach diffs the entire identity
-        // tree on every render and chokes at this scale. Single column,
-        // headers hidden — visually identical to a list.
-        Table(filtered, selection: $selectedAuthorID) {
-            TableColumn("Автор") { (a: Author) in
-                let count = library.bookCountByAuthor[a.id, default: 0]
-                Text("\(a.displayName) (\(count))")
+        let _ = print("[AuthorsListView] body @\(ContinuousClock.now) filterText='\(filterText)' filtered.count=\(filtered.count)")
+        // SwiftUI Table chokes on 166k → N transitions (~20 s for one diff).
+        // LazyListTable wraps NSTableView, which doesn't diff — reloadData is
+        // O(1) and rows are fetched lazily for the visible viewport.
+        LazyListTable(items: filtered, selectedID: $selectedAuthorID) { a in
+            let count = library.bookCountByAuthor[a.id, default: 0]
+            return "\(a.displayName) (\(count))"
+        }
+        .onChange(of: filterText) { _, new in
+            print("[AuthorsListView] filterText onChange → '\(new)' @\(ContinuousClock.now)")
+            keystrokeAt = ContinuousClock.now
+        }
+        .onChange(of: filtered.count) { _, newCount in
+            print("[AuthorsListView] filtered.count onChange → \(newCount) @\(ContinuousClock.now)")
+            if let t = keystrokeAt {
+                print("[AuthorsListView] keystroke→Table updated (\(newCount) rows): \(ContinuousClock.now - t)")
+                keystrokeAt = nil
             }
         }
-        .tableColumnHeaders(.hidden)
         .task(id: filterText) {
+            print("[AuthorsListView] .task body fires for filterText='\(filterText)' @\(ContinuousClock.now)")
             await reloadFilter()
         }
     }
 
-    /// Hard cap so the Table never has to materialize more than ~few hundred
-    /// rows after a filter — for the user, a longer "needle" returning
-    /// thousands of matches is useless anyway.
-    private static let maxResults = 500
-
     /// `.task(id:)` cancels-and-restarts when `filterText` changes. Sleep
     /// before computing so rapid typing doesn't spawn N concurrent filter
     /// tasks; a 150 ms quiet window means the actual scan only fires once
-    /// the user pauses.
+    /// the user pauses. No cap — `LazyListTable`/`NSTableView` handles
+    /// hundreds of thousands of rows lazily.
     private func reloadFilter() async {
+        let beforeSleep = ContinuousClock.now
         try? await Task.sleep(for: .milliseconds(150))
-        if Task.isCancelled { return }
+        print("[AuthorsListView] post-sleep @\(ContinuousClock.now), slept \(ContinuousClock.now - beforeSleep)")
+        if Task.isCancelled { print("[AuthorsListView] cancelled after sleep"); return }
 
         let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
         let lib = library
-        let cap = Self.maxResults
         let started = ContinuousClock.now
+        print("[AuthorsListView] entering Task.detached scan for '\(needle)' @\(started)")
         let result: [Author] = await Task.detached(priority: .userInitiated) {
             if needle.isEmpty { return lib.authors }
             var out: [Author] = []
-            out.reserveCapacity(cap)
-            for i in lib.authors.indices {
-                if lib.lowercasedAuthorNames[i].contains(needle) {
-                    out.append(lib.authors[i])
-                    if out.count >= cap { break }
-                }
+            out.reserveCapacity(64)
+            for i in lib.authors.indices
+            where lib.lowercasedAuthorNames[i].contains(needle) {
+                out.append(lib.authors[i])
             }
             return out
         }.value
         let elapsed = ContinuousClock.now - started
-        print("[AuthorsListView] filter '\(needle)' over \(lib.authors.count) → \(result.count) in \(elapsed)")
-        if Task.isCancelled { return }
+        print("[AuthorsListView] scan returned \(result.count) in \(elapsed) @\(ContinuousClock.now)")
+        if Task.isCancelled { print("[AuthorsListView] cancelled after scan"); return }
+        let assignAt = ContinuousClock.now
         filtered = result
+        print("[AuthorsListView] filtered = result done @\(ContinuousClock.now), assign took \(ContinuousClock.now - assignAt)")
     }
 }
