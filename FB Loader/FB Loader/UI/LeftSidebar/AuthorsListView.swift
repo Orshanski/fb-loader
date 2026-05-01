@@ -28,6 +28,11 @@ struct AuthorsListView: View {
         }
     }
 
+    /// Hard cap so the Table never has to materialize more than ~few hundred
+    /// rows after a filter — for the user, a longer "needle" returning
+    /// thousands of matches is useless anyway.
+    private static let maxResults = 500
+
     /// `.task(id:)` cancels-and-restarts when `filterText` changes. Sleep
     /// before computing so rapid typing doesn't spawn N concurrent filter
     /// tasks; a 150 ms quiet window means the actual scan only fires once
@@ -38,16 +43,22 @@ struct AuthorsListView: View {
 
         let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
         let lib = library
+        let cap = Self.maxResults
+        let started = ContinuousClock.now
         let result: [Author] = await Task.detached(priority: .userInitiated) {
             if needle.isEmpty { return lib.authors }
             var out: [Author] = []
-            out.reserveCapacity(64)
-            for i in lib.authors.indices
-            where lib.lowercasedAuthorNames[i].contains(needle) {
-                out.append(lib.authors[i])
+            out.reserveCapacity(cap)
+            for i in lib.authors.indices {
+                if lib.lowercasedAuthorNames[i].contains(needle) {
+                    out.append(lib.authors[i])
+                    if out.count >= cap { break }
+                }
             }
             return out
         }.value
+        let elapsed = ContinuousClock.now - started
+        print("[AuthorsListView] filter '\(needle)' over \(lib.authors.count) → \(result.count) in \(elapsed)")
         if Task.isCancelled { return }
         filtered = result
     }
