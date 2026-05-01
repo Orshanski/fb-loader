@@ -23,6 +23,13 @@ nonisolated final class Library: Sendable {
     let bookCountBySeries: [Int32: Int]
     let languages: [String]             // distinct languages found, sorted
 
+    // Lowercased names parallel to `authors` / `series`, computed once at
+    // `init` time. Used by sidebar filter (AuthorsListView / SeriesListView)
+    // to avoid `displayName.lowercased()` allocation on every keystroke
+    // across 100k+ authors. Transient: NOT persisted in LibraryBinaryCodec.
+    let lowercasedAuthorNames: [String]
+    let lowercasedSeriesNames: [String]
+
     init(
         inpxHash: Data,
         inpxVersion: String,
@@ -44,9 +51,11 @@ nonisolated final class Library: Sendable {
         // INPXImporter (Phase 3) is responsible for ID uniqueness in `authors`,
         // `series` and `genres`. Duplicates here would crash via Dictionary's
         // uniqueness precondition — that crash is the contract violation signal.
+        print("[Library.init] start: \(books.count) books, \(authors.count) authors, \(series.count) series, \(genres.count) genres")
         self.authorByID = Dictionary(uniqueKeysWithValues: authors.map { ($0.id, $0) })
         self.seriesByID = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
         self.genreByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0) })
+        print("[Library.init] *ByID dicts built")
 
         var byAuthor: [Int32: [Int]] = [:]
         var bySeries: [Int32: [Int]] = [:]
@@ -65,5 +74,8 @@ nonisolated final class Library: Sendable {
         self.bookCountByAuthor = byAuthor.mapValues(\.count)
         self.bookCountBySeries = bySeries.mapValues(\.count)
         self.languages = Array(langSet).sorted()
+        self.lowercasedAuthorNames = authors.map { $0.displayName.lowercased() }
+        self.lowercasedSeriesNames = series.map { $0.name.lowercased() }
+        print("[Library.init] secondary indices built; \(langSet.count) distinct languages")
     }
 }

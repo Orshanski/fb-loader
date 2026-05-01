@@ -8,9 +8,15 @@ struct AuthorsListView: View {
     private var visibleAuthors: [Author] {
         let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
         if needle.isEmpty { return library.authors }
-        return library.authors.filter {
-            $0.displayName.lowercased().contains(needle)
+        // Match against precomputed lowercased names (`Library.lowercasedAuthorNames`)
+        // so we don't reallocate 100k+ lowercased strings on every keystroke.
+        var result: [Author] = []
+        result.reserveCapacity(64)
+        for i in library.authors.indices
+        where library.lowercasedAuthorNames[i].contains(needle) {
+            result.append(library.authors[i])
         }
+        return result
     }
 
     var body: some View {
