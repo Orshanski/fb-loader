@@ -18,6 +18,11 @@ struct ContentView: View {
                     Text(p).foregroundStyle(.secondary)
                 }
                 .frame(minWidth: 600, minHeight: 350)
+                // Disable implicit animations on rapid progress-string changes —
+                // ProgressView's internal animator otherwise logs
+                // "Animating backwards in time!" when ticks arrive faster than
+                // the next render frame.
+                .animation(nil, value: p)
             case .ready(let lib):
                 MainWindowView(library: lib)
                     .environment(state)
@@ -71,18 +76,38 @@ struct ContentView: View {
         guard let inpx = state.userPaths.inpxURL else { return }
         state.stage = .loading(progress: "Чтение каталога…")
         do {
-            // Capture state weakly via the surrounding View — onProgress is
-            // called from a background thread inside INPXImporter.import_;
-            // we hop to MainActor for each tick. SwiftUI coalesces redraws
-            // automatically, so a tick every 1000 books is cheap.
+            // UI throttle: importer ticks ~1000s of times during a real import.
+            // We hop each tick to MainActor, but only commit a state.stage write
+            // if at least 100 ms passed since the last commit — keeps the visible
+            // counter responsive without flooding SwiftUI's animator.
+            let lastUpdate = AtomicLastUpdate()
             let lib = try await LibraryLoader.load(inpxURL: inpx) { count in
                 Task { @MainActor in
-                    state.stage = .loading(progress: "Прочитано книг: \(count)")
+                    if lastUpdate.shouldCommit() {
+                        state.stage = .loading(progress: "Прочитано книг: \(count)")
+                    }
                 }
             }
             state.stage = .ready(lib)
         } catch {
             state.stage = .failed("\(error)")
         }
+    }
+}
+
+/// Trivial 100-ms throttle for MainActor-bound progress writes.
+/// Lives here (not in AppState) because it's purely a view-side concern.
+@MainActor
+private final class AtomicLastUpdate {
+    private var lastTick: ContinuousClock.Instant = .now - .seconds(1)
+    private let minInterval: Duration = .milliseconds(100)
+
+    func shouldCommit() -> Bool {
+        let now = ContinuousClock.now
+        if now - lastTick >= minInterval {
+            lastTick = now
+            return true
+        }
+        return false
     }
 }
