@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-enum SHA256 {
+nonisolated enum SHA256 {
     static func hash(of data: Data) -> Data {
         Data(CryptoKit.SHA256.hash(data: data))
     }

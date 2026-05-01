@@ -1,6 +1,11 @@
 import Foundation
 
-enum LibraryLoader {
+/// `nonisolated` so `load(inpxURL:)` can be called from MainActor (e.g. SwiftUI's
+/// `.task`) and actually run on a background cooperative thread instead of
+/// blocking the main thread for the entire INPX import (~36 MB, 700k records).
+/// Project default isolation is MainActor; without this the heavy I/O+parse
+/// chain stays main-bound and freezes the UI.
+nonisolated enum LibraryLoader {
     static func appSupportRoot() throws -> URL {
         let fm = FileManager.default
         let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,

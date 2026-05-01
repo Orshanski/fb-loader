@@ -2,7 +2,7 @@ import Foundation
 
 /// Structured representation of one INP record (one book).
 /// Field references match the order in `INPXFieldIndex`.
-struct INPRecord {
+nonisolated struct INPRecord {
     let authorField: String
     let genreField: String
     let title: String
@@ -17,7 +17,7 @@ struct INPRecord {
     let language: String
 }
 
-enum INPRecordParser {
+nonisolated enum INPRecordParser {
     static func parse(line: String, fieldIndex: INPXFieldIndex) -> INPRecord? {
         if line.isEmpty { return nil }
         let parts = line.split(separator: "\u{04}", omittingEmptySubsequences: false)

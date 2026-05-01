@@ -19,7 +19,7 @@ import Foundation
 ///       archiveIndex int16
 ///       size int32
 ///       dateAddedDays int32
-enum LibraryBinaryCodec {
+nonisolated enum LibraryBinaryCodec {
     enum DecodeError: Error {
         case badMagic
         case unsupportedVersion(UInt16)
@@ -158,7 +158,7 @@ enum LibraryBinaryCodec {
     }
 }
 
-private struct BinaryWriter {
+private nonisolated struct BinaryWriter {
     var data = Data()
     mutating func bytes(_ b: [UInt8]) { data.append(contentsOf: b) }
     mutating func uint16(_ v: UInt16) { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
@@ -185,7 +185,7 @@ private struct BinaryWriter {
     }
 }
 
-private struct BinaryReader {
+private nonisolated struct BinaryReader {
     let data: Data
     var offset: Int = 0
     init(data: Data) { self.data = data }

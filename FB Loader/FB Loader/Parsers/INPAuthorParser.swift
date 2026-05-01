@@ -3,7 +3,7 @@ import Foundation
 /// Parses INP `AUTHOR` field into structured triples.
 /// Format: authors separated by `:`; each is `LastName,FirstName,MiddleName`.
 /// All three components are optional (any may be empty).
-enum INPAuthorParser {
+nonisolated enum INPAuthorParser {
     /// `Hashable` so `INPXImporter` can dedup authors via a dictionary keyed by triple.
     struct Triple: Hashable {
         let lastName: String

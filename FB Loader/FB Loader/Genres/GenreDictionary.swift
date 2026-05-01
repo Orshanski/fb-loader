@@ -8,7 +8,7 @@ import Foundation
 /// codes. Callers must access a single instance from one isolation domain.
 /// In FB Loader, `INPXImporter` uses it during INPX parse and then discards it —
 /// only the resolved `Genre` values flow into the `Sendable` `Library` snapshot.
-final class GenreDictionary {
+nonisolated final class GenreDictionary {
     private struct RawEntry: Decodable {
         let id: Int16
         let name: String

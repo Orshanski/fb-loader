@@ -1,12 +1,12 @@
 import Foundation
 
-struct ExportItem {
+nonisolated struct ExportItem {
     let book: Book
     let archiveURL: URL?       // nil if archivesRoot not provided yet (UI sets later)
     let destination: URL
 }
 
-enum ExportPlanner {
+nonisolated enum ExportPlanner {
     /// Forbidden in HFS+/APFS filenames or commonly problematic across tools.
     private static let forbidden: Set<Character> = [":", "/", "\\", "?", "*", "<", ">", "|", "\""]
     /// macOS filename limit (NAME_MAX) is 255; we cap a bit lower for safety.

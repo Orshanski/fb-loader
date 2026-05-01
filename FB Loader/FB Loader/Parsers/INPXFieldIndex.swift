@@ -7,7 +7,7 @@ import Foundation
 /// Recognised tokens: AUTHOR, GENRE, TITLE, SERIES, SERNO, FILE, SIZE, LIBID,
 /// DEL, EXT, DATE, LANG. Out of scope (not stored in `Book`): STARS, KEYWORDS,
 /// FOLDER, TAG, TAGSERIES, TAGAUTHOR — silently ignored.
-struct INPXFieldIndex: Sendable, Equatable {
+nonisolated struct INPXFieldIndex: Sendable, Equatable {
     var author: Int
     var genre: Int
     var title: Int

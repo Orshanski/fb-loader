@@ -1,6 +1,6 @@
 import Foundation
 
-struct Book: Identifiable, Hashable, Sendable {
+nonisolated struct Book: Identifiable, Hashable, Sendable {
     /// LIBID from INPX — the book's unique identifier inside the catalog.
     /// Also the filename inside the zip archive: "<libid>.fb2".
     let libid: Int32
@@ -21,7 +21,7 @@ struct Book: Identifiable, Hashable, Sendable {
     let dateAddedDays: Int32
 }
 
-extension Book {
+nonisolated extension Book {
     static let dateEpoch: Date = {
         var c = DateComponents()
         c.year = 2000; c.month = 1; c.day = 1

@@ -5,7 +5,7 @@ import ZIPFoundation
 /// Skips records with DEL=1.
 /// Author dedup is by (lastName, firstName, middleName) tuple.
 /// Empty/unknown authors are mapped to the synthetic `Author.unknown`.
-enum INPXImporter {
+nonisolated enum INPXImporter {
     enum ImportError: Error {
         /// Wraps the actual ZIPFoundation error for diagnostics — never silently lost.
         case cannotOpenArchive(URL, underlying: Error)

@@ -3,7 +3,7 @@ import Foundation
 /// Caches the parsed Library on disk and decides whether to reparse.
 /// Cache is invalidated when the SHA-256 of the INPX content changes
 /// (path is not a factor — same INPX moved elsewhere does not invalidate).
-final class LibraryCacheStore {
+nonisolated final class LibraryCacheStore {
     private let cacheURL: URL
 
     init(applicationSupportRoot: URL) {

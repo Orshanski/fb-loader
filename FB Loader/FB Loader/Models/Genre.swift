@@ -1,6 +1,6 @@
 import Foundation
 
-struct Genre: Identifiable, Hashable, Sendable {
+nonisolated struct Genre: Identifiable, Hashable, Sendable {
     let id: Int16
     /// FB2 code, e.g. "sf_social", "sf_action".
     let code: String

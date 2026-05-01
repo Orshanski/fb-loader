@@ -4,7 +4,7 @@ import Foundation
 /// persisted as a binary cache, queried by the UI.
 /// All stored properties are `let`s of Sendable value types, so the
 /// instance is safely shareable across actors after `init`.
-final class Library: Sendable {
+nonisolated final class Library: Sendable {
     let inpxHash: Data           // SHA-256 of INPX content
     let inpxVersion: String      // contents of version.info ("20260301" etc.)
     let archives: [String]       // .zip filenames (without extension), indexed by archiveIndex

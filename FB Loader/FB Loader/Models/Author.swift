@@ -1,6 +1,6 @@
 import Foundation
 
-struct Author: Identifiable, Hashable, Sendable {
+nonisolated struct Author: Identifiable, Hashable, Sendable {
     static let unknownID: Int32 = 0
 
     let id: Int32
