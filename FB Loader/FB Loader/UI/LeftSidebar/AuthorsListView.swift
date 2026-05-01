@@ -20,10 +20,15 @@ struct AuthorsListView: View {
         let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
             ? ""
             : languageFilter
-        LazyListTable(items: filtered, selectedID: $selectedAuthorID) { a in
-            let count = library.bookCountByAuthorByLang[a.id]?[langKey] ?? 0
-            return "\(a.displayName) (\(count))"
-        }
+        LazyListTable(
+            items: filtered,
+            selectedID: $selectedAuthorID,
+            labelFor: { a in a.displayName },
+            trailingLabelFor: { a in
+                let count = library.bookCountByAuthorByLang[a.id]?[langKey] ?? 0
+                return "\(count)"
+            }
+        )
         .task(id: filterKey) { await reloadFilter() }
     }
 

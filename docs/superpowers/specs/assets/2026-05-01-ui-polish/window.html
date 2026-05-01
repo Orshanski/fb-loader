@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>FB Loader — итоговый макет окна v3</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: #ececef;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    color: #1c1c1e;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 16px 0; }
+
+  .win {
+    background: #f5f5f7; border-radius: 10px; overflow: hidden;
+    border: 1px solid #d1d1d6;
+    box-shadow: 0 6px 24px rgba(0,0,0,.10);
+    width: 1180px; max-width: 100%;
+    height: 820px;
+    display: flex; flex-direction: column;
+    margin: 0 auto;
+  }
+
+  .titlebar {
+    height: 36px; background: #e7e7eb; border-bottom: 1px solid #d6d6da;
+    display: flex; align-items: center; padding: 0 14px;
+    gap: 10px; flex-shrink: 0;
+  }
+  .traffic { display: flex; gap: 6px; }
+  .traffic span { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .traffic span:nth-child(1) { background: #ff5f57; }
+  .traffic span:nth-child(2) { background: #febc2e; }
+  .traffic span:nth-child(3) { background: #28c840; }
+  .icon-btn {
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #6c6c70; font-size: 14px; cursor: pointer; border-radius: 4px;
+  }
+  .icon-btn:hover { background: rgba(0,0,0,.06); color: #1c1c1e; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar-lang { display: inline-flex; align-items: center; gap: 6px; }
+  .toolbar-lang .lbl { color: #6c6c70; font-size: 11px; }
+  .toolbar-lang .pill {
+    background: #fff; border: 1px solid #d1d1d6; border-radius: 5px;
+    padding: 2px 8px; font-size: 12px; color: #1c1c1e;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  .body { display: flex; flex: 1; min-height: 0; }
+  .section-header {
+    height: 72px; flex-shrink: 0;
+    border-bottom: 1px solid #d6d6da;
+    padding: 10px 12px;
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 8px;
+  }
+
+  .sidebar {
+    width: 240px; flex-shrink: 0;
+    background: #ededf0; border-right: 1px solid #d6d6da;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .seg { display: flex; background: #d4d4d8; border-radius: 6px; padding: 2px; }
+  .seg-item {
+    flex: 1; text-align: center; padding: 4px 6px; font-size: 12px; font-weight: 500;
+    border-radius: 4px; color: #1c1c1e; cursor: pointer; background: transparent;
+  }
+  .seg-item.active { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.10); }
+  .filter-input {
+    background: #fff; border: 1px solid #d1d1d6; border-radius: 5px;
+    padding: 5px 8px; font-size: 12px; color: #1c1c1e; width: 100%;
+  }
+  .filter-input::placeholder { color: #8e8e93; }
+
+  .author-list { flex: 1; overflow: auto; padding: 6px 0; }
+  .author-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 14px; font-size: 13px; color: #1c1c1e; cursor: pointer;
+  }
+  .author-row:hover { background: rgba(0,0,0,.04); }
+  .author-row.sel { background: #007aff; color: #fff; }
+  .author-row .cnt { font-size: 11px; color: inherit; opacity: .6; }
+  .author-row.sel .cnt { opacity: .85; }
+
+  .right { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #fff; }
+
+  .books-pane { flex: 1 1 50%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .books-header { background: #fff; border-bottom: 1px solid #d6d6da; padding: 10px 16px; }
+  .breadcrumb-row { flex: 1; display: flex; align-items: flex-end; font-size: 13px; color: #6c6c70; }
+  .breadcrumb-row .label { margin-right: 6px; }
+  .breadcrumb-row .name { color: #1c1c1e; font-weight: 600; }
+  .breadcrumb-row .count { margin-left: auto; color: #8e8e93; font-size: 12px; }
+
+  .cols-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 50px 80px 100px 220px;
+    gap: 10px;
+    align-items: center;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #8e8e93; font-weight: 600;
+  }
+  .cols-row .num, .cols-row .size, .cols-row .date { text-align: right; }
+
+  .table-body { flex: 1; overflow: auto; padding: 4px 0 8px; background: #fff; }
+
+  .group-header {
+    padding: 12px 16px 4px;
+    font-size: 13px; font-weight: 600; color: #1c1c1e; user-select: none;
+  }
+  .group-header .group-cnt { color: #8e8e93; font-weight: 400; font-size: 12px; margin-left: 4px; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 28px 1fr 50px 80px 100px 220px;
+    gap: 10px; align-items: center;
+    padding: 4px 16px; font-size: 13px; cursor: pointer;
+  }
+  .row.in-group { padding-left: 30px; }
+  .row:hover { background: rgba(0,0,0,.03); }
+  /* Без подсветки выбранной строки — карточка снизу сама показывает что выбрано.
+     Только текст title жирнее, чтобы был неброский визуальный якорь связи. */
+  .row.sel .title-cell { font-weight: 600; }
+
+  .cb {
+    width: 14px; height: 14px;
+    border: 1px solid #c7c7cc; border-radius: 3px; background: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .cb.checked { background: #007aff; border-color: #007aff; color: #fff; font-size: 9px; }
+
+  .title-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num-cell  { text-align: right; font-variant-numeric: tabular-nums; }
+  .secondary { color: #6c6c70; font-size: 12px; }
+  .size  { text-align: right; font-variant-numeric: tabular-nums; }
+  .date  { text-align: right; font-variant-numeric: tabular-nums; }
+  .genres-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .splitter { height: 6px; background: #ececef; cursor: row-resize; flex-shrink: 0; position: relative; }
+  .splitter::before {
+    content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 36px; height: 3px; background: #c7c7cc; border-radius: 2px;
+  }
+
+  .card-pane {
+    flex: 1 1 50%; min-height: 0;
+    background: #fff;
+    padding: 16px 20px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .card-header {
+    display: grid; grid-template-columns: 100px 1fr; gap: 18px;
+    padding-bottom: 12px; border-bottom: 1px solid #ececef;
+    flex: 0 0 auto;
+  }
+  .cover {
+    width: 100px; height: 145px;
+    background: linear-gradient(135deg,#8b1a1a,#3a0a0a);
+    border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 22px; align-content: start; }
+  .meta-wide { grid-column: 1 / -1; }
+  .card-title { font-size: 17px; font-weight: 600; line-height: 1.25; margin: 0; }
+  .meta-inline { font-size: 12px; color: #6c6c70; margin-top: 4px; }
+  .lbl {
+    font-size: 10px; text-transform: uppercase; color: #8e8e93;
+    letter-spacing: 0.06em; margin-bottom: 4px;
+  }
+  .chip {
+    display: inline-block;
+    padding: 1px 9px; margin: 1px 3px 2px 0;
+    background: #f5f5f7; border: 1px solid #e1e1e5; border-radius: 10px;
+    font-size: 12px; line-height: 1.6; color: #007aff; cursor: pointer;
+  }
+  .chip:hover { background: #007aff; color: #fff; border-color: #007aff; }
+  .translators-toggle { font-size: 12px; color: #007aff; cursor: pointer; }
+
+  .ann {
+    flex: 1 1 auto; min-height: 0;
+    margin-top: 12px; overflow-y: auto; padding-right: 6px;
+    line-height: 1.55; color: #3a3a3c; font-size: 13px;
+  }
+  .ann p { margin: 0 0 10px 0; }
+  .ann p:last-child { margin-bottom: 0; }
+  .ann::-webkit-scrollbar { width: 8px; }
+  .ann::-webkit-scrollbar-track { background: transparent; }
+  .ann::-webkit-scrollbar-thumb { background: #c7c7cc; border-radius: 4px; }
+  .ann::-webkit-scrollbar-thumb:hover { background: #aeaeb2; }
+</style>
+</head>
+<body>
+
+<h1>FB Loader — итоговый макет окна (v3, без подсветки строки в таблице)</h1>
+
+<div class="win">
+  <div class="titlebar">
+    <div class="traffic"><span></span><span></span><span></span></div>
+    <div class="icon-btn">⊟</div>
+    <div class="toolbar-spacer"></div>
+    <div class="toolbar-lang">
+      <span class="lbl">Язык книг</span>
+      <span class="pill">RU ▾</span>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="sidebar">
+      <div class="section-header">
+        <div class="seg">
+          <div class="seg-item active">Авторы</div>
+          <div class="seg-item">Серии</div>
+        </div>
+        <input class="filter-input" placeholder="Фильтр" value="кавана">
+      </div>
+      <div class="author-list">
+        <div class="author-row"><span>Кавана Джон</span><span class="cnt">1</span></div>
+        <div class="author-row"><span>Кавана Джули</span><span class="cnt">1</span></div>
+        <div class="author-row"><span>Кавана Джулия</span><span class="cnt">7</span></div>
+        <div class="author-row"><span>Кавана Дэн</span><span class="cnt">4</span></div>
+        <div class="author-row sel"><span>Кавана Стив</span><span class="cnt">10</span></div>
+        <div class="author-row"><span>Каванах Гермини Темплтон</span><span class="cnt">5</span></div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="books-pane">
+        <div class="section-header books-header">
+          <div class="breadcrumb-row">
+            <span class="label">Книги автора</span>
+            <span class="name">Кавана Стив</span>
+            <span class="count">10 книг</span>
+          </div>
+          <div class="cols-row">
+            <span></span>
+            <span>Название</span>
+            <span class="num">№</span>
+            <span class="size">Размер</span>
+            <span class="date">Дата</span>
+            <span>Жанры</span>
+          </div>
+        </div>
+        <div class="table-body">
+          <div class="row">
+            <span class="cb"></span>
+            <span class="title-cell">Молчание</span>
+            <span class="num-cell secondary">—</span>
+            <span class="size secondary">980 КБ</span>
+            <span class="date secondary">15.06.2018</span>
+            <span class="genres-cell secondary">Триллер</span>
+          </div>
+          <div class="row">
+            <span class="cb checked">✓</span>
+            <span class="title-cell">Кровные узы</span>
+            <span class="num-cell secondary">—</span>
+            <span class="size secondary">1,4 МБ</span>
+            <span class="date secondary">02.11.2020</span>
+            <span class="genres-cell secondary">Детективы: прочее, Триллер</span>
+          </div>
+          <div class="row">
+            <span class="cb"></span>
+            <span class="title-cell">Шпионский роман с длинным составным названием для проверки ellipsis</span>
+            <span class="num-cell secondary">—</span>
+            <span class="size secondary">2,1 МБ</span>
+            <span class="date secondary">22.08.2022</span>
+            <span class="genres-cell secondary">Шпионский детектив, Триллер</span>
+          </div>
+
+          <div class="group-header">Современный зарубежный детектив <span class="group-cnt">(1)</span></div>
+          <div class="row in-group sel">
+            <span class="cb checked">✓</span>
+            <span class="title-cell">Современный зарубежный детектив-14. Книги 1–22</span>
+            <span class="num-cell secondary">14</span>
+            <span class="size secondary">22,3 МБ</span>
+            <span class="date secondary">10.12.2025</span>
+            <span class="genres-cell secondary">Полицейский детектив, Криминальный…</span>
+          </div>
+
+          <div class="group-header">Эдди Флинн <span class="group-cnt">(6)</span></div>
+          <div class="row in-group">
+            <span class="cb"></span>
+            <span class="title-cell">Защита</span>
+            <span class="num-cell secondary">1</span>
+            <span class="size secondary">1,2 МБ</span>
+            <span class="date secondary">21.04.2019</span>
+            <span class="genres-cell secondary">Детективы: прочее</span>
+          </div>
+          <div class="row in-group">
+            <span class="cb checked">✓</span>
+            <span class="title-cell">Прошение</span>
+            <span class="num-cell secondary">2</span>
+            <span class="size secondary">1,2 МБ</span>
+            <span class="date secondary">10.08.2025</span>
+            <span class="genres-cell secondary">Триллер, Детективы: прочее</span>
+          </div>
+          <div class="row in-group">
+            <span class="cb"></span>
+            <span class="title-cell">Тринадцать</span>
+            <span class="num-cell secondary">4</span>
+            <span class="size secondary">2,8 МБ</span>
+            <span class="date secondary">04.05.2023</span>
+            <span class="genres-cell secondary">Триллер, Детективы: прочее</span>
+          </div>
+          <div class="row in-group">
+            <span class="cb"></span>
+            <span class="title-cell">Пятьдесят на пятьдесят</span>
+            <span class="num-cell secondary">5</span>
+            <span class="size secondary">2,7 МБ</span>
+            <span class="date secondary">25.01.2025</span>
+            <span class="genres-cell secondary">Триллер, Детективы: прочее</span>
+          </div>
+          <div class="row in-group">
+            <span class="cb"></span>
+            <span class="title-cell">Судный день</span>
+            <span class="num-cell secondary">6</span>
+            <span class="size secondary">3,2 МБ</span>
+            <span class="date secondary">07.12.2025</span>
+            <span class="genres-cell secondary">Триллер, Детективы: прочее</span>
+          </div>
+          <div class="row in-group">
+            <span class="cb"></span>
+            <span class="title-cell">Соучастница</span>
+            <span class="num-cell secondary">7</span>
+            <span class="size secondary">3,0 МБ</span>
+            <span class="date secondary">13.02.2026</span>
+            <span class="genres-cell secondary">Триллер, Детективы: прочее</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="splitter"></div>
+
+      <div class="card-pane">
+        <div class="card-header">
+          <div class="cover"></div>
+          <div class="meta">
+            <div class="meta-wide">
+              <div class="card-title">Современный зарубежный детектив-14. Книги 1–22</div>
+              <div class="meta-inline">Полицейский детектив · Криминальный детектив · Детективы: прочее · 22,3 МБ · 10.12.2025</div>
+            </div>
+            <div class="meta-wide">
+              <div class="lbl">Авторы</div>
+              <div>
+                <span class="chip">Хилл Сьюзен</span><span class="chip">Фитцек Себастьян</span><span class="chip">Диккер Жоэль</span><span class="chip">Кавана Стив</span><span class="chip">Корелиц Джин Ханфф</span><span class="chip">Джеймс Уэнди</span><span class="chip">Нельсон Стеф</span><span class="chip">Александер Элли</span><span class="chip">Даннаки Сара</span>
+              </div>
+            </div>
+            <div>
+              <div class="lbl">Серия</div>
+              <div><span class="chip">Современный зарубежный детектив, №14</span></div>
+            </div>
+            <div>
+              <div class="lbl">Переводчики</div>
+              <div><span class="translators-toggle">▸ 14 переводчиков</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="ann">
+          <p>Настоящий томик современного зарубежного детектива представляет Вам новые и уже известные читателю имена авторов пишущих в жанре детектива. Большинство произведений, включённых в сборник, только вышедшие из печати и появившиеся на полках книжных магазинов. Читателю будет интересен настоящий сборник.</p>
+          <p>В сборник вошли произведения авторов из США, Великобритании, Франции, Германии и других стран. Каждое — самостоятельная история, объединённая темой современного криминального расследования.</p>
+          <p>Также представлены полицейские процедуралы — истории, в которых ход следствия показан с позиции команды детективов, работающей с современными криминалистическими методами.</p>
+          <p>Приятного чтения, уважаемый читатель.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

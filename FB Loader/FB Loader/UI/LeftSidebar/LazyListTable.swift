@@ -8,11 +8,15 @@ import AppKit
 /// the data-source protocol — millions of rows are routine for it.
 ///
 /// Single-column, no header. Selection is single, bound externally.
+/// `trailingLabelFor` is optional — when set, each row renders a secondary
+/// right-aligned text (used for per-row book counts in author/series lists).
 struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Hashable {
     let items: [Item]
     @Binding var selectedID: Item.ID?
     /// Pure label producer. Called per visible row, so it must be cheap.
     let labelFor: (Item) -> String
+    /// Optional right-aligned secondary label (e.g. count).
+    var trailingLabelFor: ((Item) -> String)? = nil
 
     private static var cellIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("LazyListTable.cell")
@@ -52,6 +56,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         let coordinator = context.coordinator
 
         coordinator.labelFor = labelFor
+        coordinator.trailingLabelFor = trailingLabelFor
         coordinator.binding = $selectedID
 
         // Cheap structural-change check: count + first/last IDs is enough to
@@ -82,7 +87,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(items: items, labelFor: labelFor, binding: $selectedID)
+        Coordinator(items: items, labelFor: labelFor,
+                    trailingLabelFor: trailingLabelFor, binding: $selectedID)
     }
 
     @MainActor
@@ -92,14 +98,18 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         var firstID: Item.ID?
         var lastID: Item.ID?
         var labelFor: (Item) -> String
+        var trailingLabelFor: ((Item) -> String)?
         var binding: Binding<Item.ID?>
 
-        init(items: [Item], labelFor: @escaping (Item) -> String, binding: Binding<Item.ID?>) {
+        init(items: [Item], labelFor: @escaping (Item) -> String,
+             trailingLabelFor: ((Item) -> String)?,
+             binding: Binding<Item.ID?>) {
             self.items = items
             self.itemCount = items.count
             self.firstID = items.first?.id
             self.lastID = items.last?.id
             self.labelFor = labelFor
+            self.trailingLabelFor = trailingLabelFor
             self.binding = binding
         }
 
@@ -109,24 +119,26 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
                        viewFor tableColumn: NSTableColumn?,
                        row: Int) -> NSView? {
             let id = NSUserInterfaceItemIdentifier("LazyListTable.cell")
-            let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? NSTextField)
+            let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? TwoLabelCell)
                 ?? makeCell(identifier: id)
             if row >= 0 && row < items.count {
-                cell.stringValue = labelFor(items[row])
+                let item = items[row]
+                cell.mainLabel.stringValue = labelFor(item)
+                if let trailing = trailingLabelFor?(item), !trailing.isEmpty {
+                    cell.trailingLabel.stringValue = trailing
+                    cell.trailingLabel.isHidden = false
+                } else {
+                    cell.trailingLabel.stringValue = ""
+                    cell.trailingLabel.isHidden = true
+                }
             }
             return cell
         }
 
-        private func makeCell(identifier: NSUserInterfaceItemIdentifier) -> NSTextField {
-            let f = NSTextField(labelWithString: "")
-            f.identifier = identifier
-            f.isBordered = false
-            f.drawsBackground = false
-            f.isEditable = false
-            f.isSelectable = false
-            f.lineBreakMode = .byTruncatingTail
-            f.cell?.usesSingleLineMode = true
-            return f
+        private func makeCell(identifier: NSUserInterfaceItemIdentifier) -> TwoLabelCell {
+            let cell = TwoLabelCell()
+            cell.identifier = identifier
+            return cell
         }
 
         @objc func handleClick(_ sender: NSTableView) {
@@ -136,6 +148,63 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             } else {
                 binding.wrappedValue = nil
             }
+        }
+    }
+
+    /// Two-label row cell: left main label (truncating tail) + right trailing
+    /// secondary label (smaller font, secondary color). Trailing label hides
+    /// itself when empty, so single-label clients see no visual difference.
+    final class TwoLabelCell: NSView {
+        let mainLabel: NSTextField = {
+            let f = NSTextField(labelWithString: "")
+            f.isBordered = false
+            f.drawsBackground = false
+            f.isEditable = false
+            f.isSelectable = false
+            f.lineBreakMode = .byTruncatingTail
+            f.cell?.usesSingleLineMode = true
+            return f
+        }()
+        let trailingLabel: NSTextField = {
+            let f = NSTextField(labelWithString: "")
+            f.isBordered = false
+            f.drawsBackground = false
+            f.isEditable = false
+            f.isSelectable = false
+            f.alignment = .right
+            f.font = NSFont.systemFont(ofSize: 11)
+            f.textColor = .secondaryLabelColor
+            return f
+        }()
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            setupSubviews()
+        }
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            setupSubviews()
+        }
+
+        private func setupSubviews() {
+            mainLabel.translatesAutoresizingMaskIntoConstraints = false
+            trailingLabel.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(mainLabel)
+            addSubview(trailingLabel)
+
+            // Trailing must keep its intrinsic width; main shrinks first.
+            trailingLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+            trailingLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            mainLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+            NSLayoutConstraint.activate([
+                mainLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+                mainLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+                mainLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingLabel.leadingAnchor, constant: -8),
+
+                trailingLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+                trailingLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
         }
     }
 }

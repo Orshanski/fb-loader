@@ -14,10 +14,15 @@ struct SeriesListView: View {
         let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
             ? ""
             : languageFilter
-        LazyListTable(items: filtered, selectedID: $selectedSeriesID) { s in
-            let count = library.bookCountBySeriesByLang[s.id]?[langKey] ?? 0
-            return "\(s.name) (\(count))"
-        }
+        LazyListTable(
+            items: filtered,
+            selectedID: $selectedSeriesID,
+            labelFor: { s in s.name },
+            trailingLabelFor: { s in
+                let count = library.bookCountBySeriesByLang[s.id]?[langKey] ?? 0
+                return "\(count)"
+            }
+        )
         .task(id: filterKey) { await reloadFilter() }
     }
 

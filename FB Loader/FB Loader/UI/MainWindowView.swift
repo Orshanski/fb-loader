@@ -4,16 +4,14 @@ import AppKit
 struct MainWindowView: View {
     let library: Library
     @Environment(AppState.self) private var state
+    @State private var sidebarVisible = true
 
     var body: some View {
-        // NavigationSplitView gives a proper macOS three-pane proportion that
-        // HSplitView+nested-frame can't reliably enforce on macOS 26 — the old
-        // layout let the authors list eat 2/3 of the window and squeezed the
-        // books pane down to character-width wrapping.
-        NavigationSplitView {
-            LeftSidebarView(library: library)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 400)
-        } detail: {
+        HSplitView {
+            if sidebarVisible {
+                LeftSidebarView(library: library)
+                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 400)
+            }
             VSplitView {
                 BooksTableView(library: library)
                     .frame(maxWidth: .infinity, minHeight: 200)
@@ -29,8 +27,19 @@ struct MainWindowView: View {
                         .frame(minHeight: 200)
                 }
             }
+            .frame(maxWidth: .infinity)
         }
         .frame(minWidth: 1000, minHeight: 600)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    sidebarVisible.toggle()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .help(sidebarVisible ? "Скрыть боковую панель" : "Показать боковую панель")
+            }
+        }
         .onChange(of: state.shouldStartExport) { _, newValue in
             guard newValue else { return }
             state.shouldStartExport = false
@@ -53,7 +62,6 @@ struct MainWindowView: View {
     private func runExport() {
         guard !state.checkedBookLibids.isEmpty,
               let archives = state.userPaths.archivesDirectoryURL else { return }
-        // 1. Ask user for export folder, prefilled with last one or ~/Downloads.
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -63,7 +71,6 @@ struct MainWindowView: View {
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         state.userPaths.lastExportDirectoryURL = folder
 
-        // 2. Plan + run.
         let items = ExportPlanner.plan(
             libids: state.checkedBookLibids,
             rootFolder: folder,

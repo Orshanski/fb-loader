@@ -8,91 +8,219 @@ struct BookDetailView: View {
     @Environment(AppState.self) private var state
     @State private var coverImage: NSImage?
     @State private var info: FB2BookInfo?
+    @State private var translatorsExpanded = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(book.title).font(.title)
-                HStack(alignment: .top, spacing: 6) {
-                    Text("Авторы:").bold().frame(width: 110, alignment: .trailing)
-                    HStack(spacing: 4) {
-                        ForEach(book.authorIDs, id: \.self) { aid in
-                            if let author = library.authorByID[aid] {
-                                Button(author.displayName) {
-                                    state.sidebarTab = .authors
-                                    state.selectedAuthorID = aid
-                                    state.selectedSeriesID = nil
-                                }
-                                .buttonStyle(.link)
-                            }
-                            if aid != book.authorIDs.last { Text(";") }
-                        }
-                    }
-                }
-                row(label: "Жанры", text: genresString)
-                if let sid = book.seriesID, let s = library.seriesByID[sid] {
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("Серия:").bold().frame(width: 110, alignment: .trailing)
-                        Button(seriesString ?? s.name) {
-                            state.sidebarTab = .series
-                            state.selectedSeriesID = sid
-                            state.selectedAuthorID = nil
-                        }
-                        .buttonStyle(.link)
-                    }
-                }
-                if let d = info?.dateWritten { row(label: "Дата написания", text: d) }
-                if let t = translatorsString { row(label: "Переводчики", text: t) }
-                if let a = info?.annotation, !a.isEmpty {
-                    Divider()
-                    Text(a).font(.body)
-                }
-            }
-            Spacer(minLength: 0)
-            if let img = coverImage {
-                Image(nsImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 220, maxHeight: 320)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider().padding(.vertical, 12)
+            annotationView
         }
-        .padding(12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: book.libid) { await loadDetail() }
     }
 
-    private func row(label: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label + ":").bold().frame(width: 110, alignment: .trailing)
-            Text(text)
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 18) {
+            cover
+            VStack(alignment: .leading, spacing: 8) {
+                titleAndMeta
+                authorsBlock
+                HStack(alignment: .top, spacing: 22) {
+                    seriesBlock
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    translatorsBlock
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var authorsString: String {
-        // O(1) lookup via the secondary index built in Library.init.
-        book.authorIDs.compactMap { library.authorByID[$0]?.displayName }
-            .joined(separator: "; ")
+    @ViewBuilder
+    private var cover: some View {
+        Group {
+            if let img = coverImage {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.15))
+            }
+        }
+        .frame(width: 100, height: 145)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
     }
-    private var genresString: String {
-        book.genreIDs.compactMap { library.genreByID[$0]?.name }
-            .joined(separator: ", ")
+
+    private var titleAndMeta: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(book.title)
+                .font(.system(size: 17, weight: .semibold))
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(metaInline)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
     }
-    private var seriesString: String? {
-        guard let sid = book.seriesID, let s = library.seriesByID[sid] else { return nil }
+
+    private var metaInline: String {
+        var parts: [String] = []
+        let genres = book.genreIDs.compactMap { library.genreByID[$0]?.name }
+        if !genres.isEmpty { parts.append(genres.joined(separator: " · ")) }
+        parts.append(byteCount(book.size))
+        parts.append(dateString(book.dateAdded))
+        if let written = info?.dateWritten, !written.isEmpty {
+            parts.append("написано \(written)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var authorsBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            label("Авторы")
+            FlowLayout(spacing: 4, lineSpacing: 4) {
+                ForEach(book.authorIDs, id: \.self) { aid in
+                    if let author = library.authorByID[aid] {
+                        Chip(title: author.displayName) {
+                            state.sidebarTab = .authors
+                            state.selectedAuthorID = aid
+                            state.selectedSeriesID = nil
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var seriesBlock: some View {
+        if let sid = book.seriesID, let s = library.seriesByID[sid] {
+            VStack(alignment: .leading, spacing: 4) {
+                label("Серия")
+                Chip(title: seriesChipTitle(s)) {
+                    state.sidebarTab = .series
+                    state.selectedSeriesID = sid
+                    state.selectedAuthorID = nil
+                }
+            }
+        } else {
+            // Keep the column slot stable when there's no series so the
+            // translators column doesn't jump leftward on books without series.
+            Color.clear.frame(height: 0)
+        }
+    }
+
+    private func seriesChipTitle(_ s: Series) -> String {
         if let n = book.seriesNum { return "\(s.name), №\(n)" }
         return s.name
     }
-    private var translatorsString: String? {
-        guard let info, !info.translators.isEmpty else { return nil }
-        return info.translators
+
+    @ViewBuilder
+    private var translatorsBlock: some View {
+        if let translators = info?.translators, !translators.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                label("Переводчики")
+                Button {
+                    translatorsExpanded.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(translatorsExpanded ? "▾" : "▸")
+                        Text(translatorsButtonLabel(count: translators.count))
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+
+                if translatorsExpanded {
+                    Text(translatorsString(translators))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else {
+            Color.clear.frame(height: 0)
+        }
+    }
+
+    private func translatorsButtonLabel(count: Int) -> String {
+        let mod10 = count % 10
+        let mod100 = count % 100
+        let word: String
+        if mod100 >= 11 && mod100 <= 14 { word = "переводчиков" }
+        else if mod10 == 1 { word = "переводчик" }
+        else if mod10 >= 2 && mod10 <= 4 { word = "переводчика" }
+        else { word = "переводчиков" }
+        return "\(count) \(word)"
+    }
+
+    private func translatorsString(_ triples: [INPAuthorParser.Triple]) -> String {
+        triples
             .map { [$0.lastName, $0.firstName, $0.middleName].filter { !$0.isEmpty }.joined(separator: " ") }
             .joined(separator: ", ")
     }
+
+    // MARK: - Annotation
+
+    @ViewBuilder
+    private var annotationView: some View {
+        if let a = info?.annotation, !a.isEmpty {
+            ScrollView {
+                Text(a)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 6)
+            }
+            .scrollIndicators(.automatic)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .textCase(.uppercase)
+            .kerning(0.6)
+            .foregroundStyle(.secondary)
+    }
+
+    private func byteCount(_ n: Int32) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
+    }
+
+    private func dateString(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "dd.MM.yyyy"
+        return f.string(from: d)
+    }
+
+    // MARK: - Loader
 
     private func loadDetail() async {
         // Clear the previous book's data immediately so the user doesn't stare
         // at stale annotation+cover for the duration of the new book's load.
         info = nil
         coverImage = nil
+        translatorsExpanded = false
 
         let lib = library
         let root = archivesRoot
