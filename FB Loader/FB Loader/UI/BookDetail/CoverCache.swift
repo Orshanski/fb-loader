@@ -9,6 +9,11 @@ import AppKit
 /// `cacheDir` URL; concurrent writes to disk go through atomic FileManager
 /// operations (`Data.write(options: .atomic)`), and concurrent reads of an
 /// already-cached file are safe at the OS level.
+///
+/// `image(for:in:archivesRoot:)` is `nonisolated` so it can be called from
+/// `Task.detached` in `BookDetailView.loadDetail` (project default isolation
+/// is MainActor). Constructor stays default-isolated; instances are created
+/// on MainActor and shipped over the Sendable boundary into detached tasks.
 final class CoverCache: @unchecked Sendable {
     private let cacheDir: URL
 
@@ -23,7 +28,7 @@ final class CoverCache: @unchecked Sendable {
         self.cacheDir = dir
     }
 
-    func image(for book: Book, in library: Library, archivesRoot: URL) -> NSImage? {
+    nonisolated func image(for book: Book, in library: Library, archivesRoot: URL) -> NSImage? {
         let cached = cacheDir.appendingPathComponent("\(book.libid).jpg")
         if let img = NSImage(contentsOf: cached) { return img }
         // Parse FB2 to extract cover

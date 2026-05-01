@@ -12,10 +12,13 @@ struct FB2BookInfo {
 /// referenced by `<coverpage><image l:href="#..."/>`.
 /// Reads only the prefix needed to find description+cover; the caller can pass
 /// just the first ~64 KB of the file.
+///
+/// `nonisolated` — pure parser, no UI state. Without this it would be inferred
+/// as MainActor (project default) and reject calls from `Task.detached`.
 enum FB2DescriptionParser {
     enum ParseError: Error { case malformed }
 
-    static func parse(data: Data) throws -> FB2BookInfo {
+    nonisolated static func parse(data: Data) throws -> FB2BookInfo {
         let delegate = FB2Delegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
@@ -39,7 +42,10 @@ enum FB2DescriptionParser {
     }
 }
 
-private final class FB2Delegate: NSObject, XMLParserDelegate {
+/// Internal SAX state machine. `nonisolated` so XMLParser can drive it from
+/// `parse(data:)` (which is itself nonisolated). Not Sendable: it's owned by
+/// a single `parse(data:)` invocation and never escapes.
+private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     // State machine
     private enum Section { case none, titleInfo, author, translator, annotation, coverpage, binary }
     private var section: Section = .none

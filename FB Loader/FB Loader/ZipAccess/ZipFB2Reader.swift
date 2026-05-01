@@ -3,6 +3,10 @@ import ZIPFoundation
 
 /// Opens a zip archive and extracts a single FB2 file into memory.
 /// Uses ZIPFoundation, which performs random access via the central directory.
+///
+/// `nonisolated` — under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this would
+/// otherwise be inferred as MainActor and refuse to be called from `Task.detached`
+/// (e.g. from `ExportRunner`). It's a pure file-I/O utility, no UI state.
 final class ZipFB2Reader {
     enum ReaderError: Error {
         case archiveNotFound(URL)
@@ -12,7 +16,7 @@ final class ZipFB2Reader {
     }
 
     /// Reads the bytes of `<libid>.fb2` from the given zip.
-    static func readFB2(libid: Int32, archiveURL: URL) throws -> Data {
+    nonisolated static func readFB2(libid: Int32, archiveURL: URL) throws -> Data {
         guard FileManager.default.fileExists(atPath: archiveURL.path) else {
             throw ReaderError.archiveNotFound(archiveURL)
         }
