@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <author>
+        <first-name>Лев</first-name>
+        <last-name>Толстой</last-name>
+      </author>
+      <book-title>Война и мир</book-title>
+      <annotation><p>Эпопея о войне 1812 года.</p></annotation>
+      <date>1869</date>
+      <translator>
+        <first-name>Constance</first-name>
+        <last-name>Garnett</last-name>
+      </translator>
+      <coverpage>
+        <image l:href="#cover.jpg"/>
+      </coverpage>
+    </title-info>
+  </description>
+  <binary id="cover.jpg" content-type="image/jpeg">/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAj/2P/Z</binary>
+</FictionBook>
