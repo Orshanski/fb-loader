@@ -1,21 +1,11 @@
-//
-//  ContentView.swift
-//  FB Loader
-//
-//  Created by Orshanski Alexey on 01.05.2026.
-//
-
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        Text("FB Loader")
+            .font(.largeTitle)
+            .padding()
+            .frame(minWidth: 800, minHeight: 500)
     }
 }
 
