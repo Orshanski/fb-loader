@@ -249,7 +249,10 @@ struct BookDetailView: View {
             let cachedCover = cache?.cachedImage(for: b)
             if cachedCover != nil, !Task.isCancelled {
                 let img = cachedCover
-                await MainActor.run { self.coverImage = img }
+                await MainActor.run {
+                    guard state.selectedBookLibid == b.libid else { return }
+                    self.coverImage = img
+                }
                 print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
             }
 
@@ -271,6 +274,7 @@ struct BookDetailView: View {
 
                 print("[BookDetail] total \(ContinuousClock.now - t0)")
                 await MainActor.run {
+                    guard state.selectedBookLibid == b.libid else { return }
                     self.info = parsed
                     self.coverImage = img
                 }
