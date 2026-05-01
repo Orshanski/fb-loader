@@ -3,16 +3,17 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// Shown until both INPX and archives directory are configured.
-/// Calls `onComplete` when the user picks both.
+/// User picks INPX; archives folder defaults to the INPX file's parent
+/// directory (typical Flibusta layout). Override is available later
+/// in Settings if the user actually has a split setup.
 struct OnboardingView: View {
     @State private var inpx: URL?
-    @State private var archives: URL?
     let onComplete: (URL, URL) -> Void
 
     var body: some View {
         VStack(spacing: 20) {
             Text("FB Loader").font(.largeTitle)
-            Text("Укажите путь к INPX-файлу и папке с zip-архивами Flibusta.")
+            Text("Укажите INPX-файл. Папка с zip-архивами по умолчанию — это директория, где лежит INPX. Изменить отдельно её можно потом в Настройках.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
@@ -26,19 +27,12 @@ struct OnboardingView: View {
                 }
                 Text(inpx?.path ?? "не выбран").foregroundStyle(.secondary)
             }
-            HStack {
-                Button("Выбрать папку с архивами…") {
-                    let p = NSOpenPanel()
-                    p.canChooseFiles = false
-                    p.canChooseDirectories = true
-                    if p.runModal() == .OK { archives = p.url }
-                }
-                Text(archives?.path ?? "не выбрана").foregroundStyle(.secondary)
-            }
             Button("Продолжить") {
-                if let i = inpx, let a = archives { onComplete(i, a) }
+                if let i = inpx {
+                    onComplete(i, i.deletingLastPathComponent())
+                }
             }
-            .disabled(inpx == nil || archives == nil)
+            .disabled(inpx == nil)
             .keyboardShortcut(.defaultAction)
         }
         .padding(30)
