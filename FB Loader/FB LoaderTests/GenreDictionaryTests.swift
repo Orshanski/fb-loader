@@ -12,6 +12,8 @@ struct GenreDictionaryTests {
 
     @Test("resolves a known FB2 code to its exact Russian name")
     func resolvesKnownCode() throws {
+        // Snapshot test against the committed genres.json — intentionally brittle:
+        // if the dump is re-exported and id/name change, this test breaks on purpose.
         let dict = try GenreDictionary.loadFromBundle()
         let g = dict.genre(forCode: "sf_social")
         #expect(g?.name == "Социальная фантастика")
