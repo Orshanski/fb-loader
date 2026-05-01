@@ -43,7 +43,7 @@ struct MainWindowView: View {
         .onChange(of: state.shouldStartExport) { _, newValue in
             guard newValue else { return }
             state.shouldStartExport = false
-            runExport()
+            Task { await runExport() }
         }
         .sheet(item: Binding(
             get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },
@@ -59,7 +59,7 @@ struct MainWindowView: View {
         var id: ObjectIdentifier { ObjectIdentifier(progress) }
     }
 
-    private func runExport() {
+    private func runExport() async {
         guard !state.checkedBookLibids.isEmpty,
               let archives = state.userPaths.archivesDirectoryURL else { return }
         let panel = NSOpenPanel()
@@ -68,7 +68,7 @@ struct MainWindowView: View {
         panel.canCreateDirectories = true
         panel.directoryURL = state.userPaths.lastExportDirectoryURL
             ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        guard let folder = await panel.selectedDirectory() else { return }
         state.userPaths.lastExportDirectoryURL = folder
 
         let items = ExportPlanner.plan(
@@ -82,6 +82,17 @@ struct MainWindowView: View {
         Task {
             await ExportRunner.run(items: items, archivesRoot: archives,
                                    library: library, progress: progress)
+        }
+    }
+}
+
+private extension NSOpenPanel {
+    @MainActor
+    func selectedDirectory() async -> URL? {
+        await withCheckedContinuation { continuation in
+            begin { response in
+                continuation.resume(returning: response == .OK ? self.url : nil)
+            }
         }
     }
 }
