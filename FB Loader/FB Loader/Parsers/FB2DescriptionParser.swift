@@ -68,6 +68,10 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     private var inSmallField = false
     private var annotationBuffer = ""
     private var inAnnotationDepth = 0
+    /// `true` while we're inside `<p>` (or other text-bearing element we treat
+    /// as a paragraph) within `<annotation>`. Off → `foundCharacters` skips
+    /// inter-tag whitespace from pretty-printing instead of accumulating it.
+    private var inAnnotationParagraph = false
 
     func parser(_ parser: XMLParser,
                 didStartElement elementName: String,
@@ -102,6 +106,12 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
         case "first-name", "last-name", "middle-name", "book-title", "date":
             currentTextField = ""
             inSmallField = true
+        case "p" where section == .annotation:
+            inAnnotationDepth += 1
+            inAnnotationParagraph = true
+        case "empty-line" where section == .annotation:
+            // Self-closing — synthesize a blank-line break.
+            annotationBuffer += "\n\n"
         default:
             if section == .annotation { inAnnotationDepth += 1 }
         }
@@ -109,7 +119,12 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         if section == .binary { currentBinaryBuffer += string; return }
-        if section == .annotation { annotationBuffer += string; return }
+        if section == .annotation {
+            // Skip inter-tag whitespace from FB2 pretty-printing — only keep
+            // characters that live inside an actual `<p>` (or similar).
+            if inAnnotationParagraph { annotationBuffer += string }
+            return
+        }
         if inSmallField { currentTextField += string }
     }
 
@@ -141,6 +156,10 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
             section = .titleInfo
         case "author" where section == .author: section = .titleInfo
         case "coverpage" where section == .coverpage: section = .titleInfo
+        case "p" where section == .annotation:
+            inAnnotationDepth -= 1
+            inAnnotationParagraph = false
+            annotationBuffer += "\n\n"
         case "annotation":
             inAnnotationDepth -= 1
             if inAnnotationDepth <= 0 {

@@ -179,18 +179,32 @@ struct BookDetailView: View {
     private var annotationView: some View {
         if let a = info?.annotation, !a.isEmpty {
             ScrollView {
-                Text(a)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
-                    .lineSpacing(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, 6)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(annotationParagraphs(a), id: \.self) { p in
+                        Text(p)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
+                            .lineSpacing(3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.trailing, 6)
             }
             .scrollIndicators(.automatic)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             Spacer(minLength: 0)
         }
+    }
+
+    /// Parser emits "\n\n" between `<p>` blocks. Some files have stray
+    /// extra blank lines (consecutive empty-lines), so collapse runs of
+    /// blank-only paragraphs to one separator.
+    private func annotationParagraphs(_ s: String) -> [String] {
+        s.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - Helpers

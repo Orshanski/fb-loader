@@ -10,7 +10,7 @@ struct MainWindowView: View {
         HSplitView {
             if sidebarVisible {
                 LeftSidebarView(library: library)
-                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 400)
+                    .frame(minWidth: 280, idealWidth: 300, maxWidth: 480)
             }
             VSplitView {
                 BooksTableView(library: library)
