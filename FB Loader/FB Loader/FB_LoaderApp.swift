@@ -13,5 +13,8 @@ struct FB_LoaderApp: App {
         WindowGroup {
             ContentView()
         }
+        Settings {
+            SettingsView(userPaths: .shared)
+        }
     }
 }
