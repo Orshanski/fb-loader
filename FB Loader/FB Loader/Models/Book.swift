@@ -30,6 +30,8 @@ extension Book {
     }()
 
     var dateAdded: Date {
+        // Force-unwrap is safe: INPXImporter (Phase 3) sources dateAddedDays from
+        // a parsed YYYY-MM-DD field that always falls within Calendar's representable range.
         Calendar(identifier: .gregorian).date(byAdding: .day, value: Int(dateAddedDays), to: Book.dateEpoch)!
     }
 }
