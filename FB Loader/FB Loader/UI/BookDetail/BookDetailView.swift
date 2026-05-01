@@ -13,9 +13,34 @@ struct BookDetailView: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(book.title).font(.title)
-                row(label: "Авторы", text: authorsString)
+                HStack(alignment: .top, spacing: 6) {
+                    Text("Авторы:").bold().frame(width: 110, alignment: .trailing)
+                    HStack(spacing: 4) {
+                        ForEach(book.authorIDs, id: \.self) { aid in
+                            if let author = library.authorByID[aid] {
+                                Button(author.displayName) {
+                                    state.sidebarTab = .authors
+                                    state.selectedAuthorID = aid
+                                    state.selectedSeriesID = nil
+                                }
+                                .buttonStyle(.link)
+                            }
+                            if aid != book.authorIDs.last { Text(";") }
+                        }
+                    }
+                }
                 row(label: "Жанры", text: genresString)
-                if let s = seriesString { row(label: "Серия", text: s) }
+                if let sid = book.seriesID, let s = library.seriesByID[sid] {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("Серия:").bold().frame(width: 110, alignment: .trailing)
+                        Button(seriesString ?? s.name) {
+                            state.sidebarTab = .series
+                            state.selectedSeriesID = sid
+                            state.selectedAuthorID = nil
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
                 if let d = info?.dateWritten { row(label: "Дата написания", text: d) }
                 if let t = translatorsString { row(label: "Переводчики", text: t) }
                 if let a = info?.annotation, !a.isEmpty {
