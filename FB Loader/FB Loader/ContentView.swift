@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var state = AppState()
     @State private var showSettings = false
+    @State private var settingsRebuildProgress: String?
     @State private var loadGate = LoadSessionGate()
 
     var body: some View {
@@ -78,50 +79,62 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(
                 userPaths: state.userPaths,
+                rebuildProgress: settingsRebuildProgress,
                 onClose: { showSettings = false },
                 onRebuild: {
-                    showSettings = false
                     state.reset()
+                    settingsRebuildProgress = "Чтение каталога…"
                     if let cache = try? LibraryLoader.appSupportRoot()
                         .appendingPathComponent("library-cache.bin") {
                         try? FileManager.default.removeItem(at: cache)
                     }
-                    Task { await loadLibrary() }
+                    Task {
+                        await loadLibrary { progress in
+                            settingsRebuildProgress = progress
+                        }
+                        settingsRebuildProgress = nil
+                    }
                 }
             )
         }
     }
 
-    private func loadLibrary() async {
+    private func loadLibrary(onProgressText: ((String) -> Void)? = nil) async {
         guard let inpx = state.userPaths.inpxURL else { return }
         let loadToken = loadGate.begin()
         state.stage = .loading(progress: "Чтение каталога…")
+        onProgressText?("Чтение каталога…")
         do {
             // UI throttle: importer ticks 1000s of times during a real import
             // (every 200 books). We hop each tick to MainActor, but only commit
             // a state.stage write if at least 100 ms passed since the last commit.
             let progress = LoadingProgressBag()
             let lastCountUpdate = AtomicLastUpdate()
-            let lib = try await LibraryLoader.load(
-                inpxURL: inpx,
-                onStatus: { msg in
-                    let formatted = progress.setStatus(msg)
-                    Task { @MainActor in
-                        loadGate.apply(loadToken) {
-                            state.stage = .loading(progress: formatted)
-                        }
-                    }
-                },
-                onProgress: { count in
-                    let formatted = progress.setCount(count)
-                    Task { @MainActor in
-                        if lastCountUpdate.shouldCommit() {
+            let lib = try await Task.detached {
+                try await LibraryLoader.load(
+                    inpxURL: inpx,
+                    onStatus: { msg in
+                        let formatted = progress.setStatus(msg)
+                        Task { @MainActor in
                             loadGate.apply(loadToken) {
                                 state.stage = .loading(progress: formatted)
+                                onProgressText?(formatted)
+                            }
+                        }
+                    },
+                    onProgress: { count in
+                        let formatted = progress.setCount(count)
+                        Task { @MainActor in
+                            if lastCountUpdate.shouldCommit() {
+                                loadGate.apply(loadToken) {
+                                    state.stage = .loading(progress: formatted)
+                                    onProgressText?(formatted)
+                                }
                             }
                         }
                     }
-                })
+                )
+            }.value
             if loadGate.finish(loadToken) {
                 state.stage = .ready(lib)
             }
@@ -135,7 +148,7 @@ struct ContentView: View {
 
 @MainActor
 final class LoadSessionGate {
-    struct Token: Equatable {
+    struct Token: Equatable, Sendable {
         fileprivate let id: UUID
     }
 

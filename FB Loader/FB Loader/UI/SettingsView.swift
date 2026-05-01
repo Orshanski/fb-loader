@@ -4,6 +4,7 @@ import UniformTypeIdentifiers   // for UTType(filenameExtension:)
 
 struct SettingsView: View {
     let userPaths: UserPaths
+    let rebuildProgress: String?
     let onClose: () -> Void
     let onRebuild: () -> Void
     @State private var inpx: URL?
@@ -40,9 +41,21 @@ struct SettingsView: View {
                 Text(cacheStatus).foregroundStyle(.secondary).font(.caption)
                 Spacer()
                 Button("Пересобрать каталог") { onRebuild() }
+                    .disabled(rebuildProgress != nil)
             }
-            Text("Каталог пересобрается из INPX прямо сейчас.")
-                .font(.caption).foregroundStyle(.secondary)
+            if let rebuildProgress {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(rebuildProgress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            } else {
+                Text("Каталог пересобрается из INPX прямо сейчас.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             Divider()
             HStack {
@@ -57,6 +70,11 @@ struct SettingsView: View {
             inpx = userPaths.inpxURL
             arch = userPaths.archivesDirectoryURL
             updateCacheStatus()
+        }
+        .onChange(of: rebuildProgress) { oldValue, newValue in
+            if oldValue != nil && newValue == nil {
+                updateCacheStatus()
+            }
         }
     }
 

@@ -197,12 +197,14 @@ nonisolated enum INPXImporter {
                     onProgress?(books.count)
                 }
             }
-            print("[INPXImporter] [\(archCounter)/\(inpEntries.count)] done — added \(books.count - booksBefore) books, total \(books.count)")
+            let doneStatus = "[\(archCounter)/\(inpEntries.count)] done — added \(books.count - booksBefore) books, total \(books.count)"
+            print("[INPXImporter] \(doneStatus)")
+            onStatus?(doneStatus)
             // Per-archive boundary emit — guarantees a UI tick even on tiny .inp files.
             onProgress?(books.count)
         }
         print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
-        onStatus?("Сборка каталога…")
+        onStatus?("all .inp files done, total books: \(books.count); building Library…")
         // Final emit so the caller's UI ends with the actual total, not the last
         // multiple of `progressEveryNBooks`.
         onProgress?(books.count)
@@ -231,7 +233,8 @@ nonisolated enum INPXImporter {
             authors: sortedAuthors,
             series: sortedSeries,
             genres: genres.allGenres,
-            books: books
+            books: books,
+            onStatus: onStatus
         )
     }
 }
