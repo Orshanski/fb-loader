@@ -18,7 +18,7 @@ struct MainWindowView: View {
                 BooksTableView(library: library)
                     .frame(maxWidth: .infinity, minHeight: 200)
                 if let libid = state.selectedBookLibid,
-                   let book = library.books.first(where: { $0.libid == libid }),
+                   let book = library.bookByLibid[libid],
                    let archives = state.userPaths.archivesDirectoryURL {
                     BookDetailView(library: library, archivesRoot: archives, book: book)
                         .frame(maxWidth: .infinity, minHeight: 200)

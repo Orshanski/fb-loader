@@ -17,13 +17,13 @@ nonisolated enum ExportPlanner {
                      selectedAuthorID: Int32?,
                      selectedSeriesID: Int32?,
                      in library: Library) -> [ExportItem] {
-        let booksByLibid = Dictionary(uniqueKeysWithValues: library.books.map { ($0.libid, $0) })
-        let authorsByID = Dictionary(uniqueKeysWithValues: library.authors.map { ($0.id, $0) })
-        return libids.compactMap { id in booksByLibid[id] }.map { book in
+        // Use the precomputed indices on Library — building a fresh
+        // 700k-entry Dictionary on every export was the original cost here.
+        return libids.compactMap { library.bookByLibid[$0] }.map { book in
             let folderName = folderName(for: book,
                                         selectedAuthorID: selectedAuthorID,
                                         selectedSeriesID: selectedSeriesID,
-                                        authorsByID: authorsByID)
+                                        authorsByID: library.authorByID)
             let folder = rootFolder.appendingPathComponent(sanitized(folderName), isDirectory: true)
             let dest = folder.appendingPathComponent(sanitized(book.title) + ".fb2")
             return ExportItem(book: book, archiveURL: nil, destination: dest)

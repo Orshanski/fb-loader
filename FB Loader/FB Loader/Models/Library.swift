@@ -17,6 +17,7 @@ nonisolated final class Library: Sendable {
     let authorByID: [Int32: Author]     // O(1) lookup, used by BookDetail and table rows
     let seriesByID: [Int32: Series]     // O(1) lookup
     let genreByID: [Int16: Genre]       // O(1) lookup
+    let bookByLibid: [Int32: Book]      // O(1) book lookup — was a hot 700k-scan
     let booksByAuthor: [Int32: [Int]]   // authorID → indices into `books`
     let booksBySeries: [Int32: [Int]]
     let bookCountByAuthor: [Int32: Int] // for the "(N)" counters
@@ -55,6 +56,12 @@ nonisolated final class Library: Sendable {
         self.authorByID = Dictionary(uniqueKeysWithValues: authors.map { ($0.id, $0) })
         self.seriesByID = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
         self.genreByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0) })
+        // `Dictionary(uniqueKeysWithValues:)` would crash on duplicate libids;
+        // freeLib emits unique LIBIDs but we tolerate dup-keep-first defensively.
+        var bookIndex: [Int32: Book] = [:]
+        bookIndex.reserveCapacity(books.count)
+        for b in books where bookIndex[b.libid] == nil { bookIndex[b.libid] = b }
+        self.bookByLibid = bookIndex
         print("[Library.init] *ByID dicts built")
 
         var byAuthor: [Int32: [Int]] = [:]
