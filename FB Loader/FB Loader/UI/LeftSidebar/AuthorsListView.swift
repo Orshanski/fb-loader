@@ -3,23 +3,31 @@ import SwiftUI
 struct AuthorsListView: View {
     let library: Library
     let filterText: String
+    /// Current language filter from `AppState.languageFilter`. The sentinel
+    /// `BooksByContext.unspecifiedLanguageToken` ("__none__") means "no
+    /// language tag in INPX", which we map to "" for lookup.
+    let languageFilter: String
     @Binding var selectedAuthorID: Int32?
 
-    /// Cached filter result. Recomputed off-main when `filterText` changes —
-    /// the filter loop over 100k+ authors must NOT run on the main thread,
-    /// otherwise every keystroke freezes the UI even with precomputed
-    /// lowercased names.
+    /// Cached filter result. Recomputed off-main when `filterText` or
+    /// `languageFilter` change — must NOT run on the main thread.
     @State private var filtered: [Author] = []
 
+    /// Combined task key so `.task(id:)` re-runs when either input changes.
+    private var filterKey: String { "\(languageFilter)|\(filterText)" }
+
     var body: some View {
+        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
+            ? ""
+            : languageFilter
         LazyListTable(items: filtered, selectedID: $selectedAuthorID) { a in
-            let count = library.bookCountByAuthor[a.id, default: 0]
+            let count = library.bookCountByAuthorByLang[a.id]?[langKey] ?? 0
             return "\(a.displayName) (\(count))"
         }
-        .task(id: filterText) { await reloadFilter() }
+        .task(id: filterKey) { await reloadFilter() }
     }
 
-    /// `.task(id:)` cancels-and-restarts when `filterText` changes. Sleep
+    /// `.task(id:)` cancels-and-restarts when filter inputs change. Sleep
     /// before computing so rapid typing doesn't spawn N concurrent filter
     /// tasks; a 150 ms quiet window means the actual scan only fires once
     /// the user pauses.
@@ -28,14 +36,20 @@ struct AuthorsListView: View {
         if Task.isCancelled { return }
 
         let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
+        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
+            ? ""
+            : languageFilter
         let lib = library
         let result: [Author] = await Task.detached(priority: .userInitiated) {
-            if needle.isEmpty { return lib.authors }
             var out: [Author] = []
             out.reserveCapacity(64)
-            for i in lib.authors.indices
-            where lib.lowercasedAuthorNames[i].contains(needle) {
-                out.append(lib.authors[i])
+            for i in lib.authors.indices {
+                let a = lib.authors[i]
+                // Skip authors with no books in the selected language.
+                guard (lib.bookCountByAuthorByLang[a.id]?[langKey] ?? 0) > 0 else { continue }
+                if !needle.isEmpty,
+                   !lib.lowercasedAuthorNames[i].contains(needle) { continue }
+                out.append(a)
             }
             return out
         }.value

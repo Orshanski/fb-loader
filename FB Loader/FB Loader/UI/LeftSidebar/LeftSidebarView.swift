@@ -22,10 +22,12 @@ struct LeftSidebarView: View {
             case .authors:
                 AuthorsListView(library: library,
                                 filterText: s.sidebarFilter,
+                                languageFilter: s.languageFilter,
                                 selectedAuthorID: $s.selectedAuthorID)
             case .series:
                 SeriesListView(library: library,
                                filterText: s.sidebarFilter,
+                               languageFilter: s.languageFilter,
                                selectedSeriesID: $s.selectedSeriesID)
             }
         }

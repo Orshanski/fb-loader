@@ -24,6 +24,13 @@ nonisolated final class Library: Sendable {
     let bookCountBySeries: [Int32: Int]
     let languages: [String]             // distinct languages found, sorted
 
+    /// Per-language book counts. `bookCountByAuthorByLang[authorID]?[lang]`
+    /// gives N books that author has in that language. Used by the sidebar
+    /// to hide authors whose entire output is in some other language than
+    /// the current filter, and to render language-aware "(N)" counters.
+    let bookCountByAuthorByLang: [Int32: [String: Int]]
+    let bookCountBySeriesByLang: [Int32: [String: Int]]
+
     // Lowercased names parallel to `authors` / `series`, computed once at
     // `init` time. Used by sidebar filter (AuthorsListView / SeriesListView)
     // to avoid `displayName.lowercased()` allocation on every keystroke
@@ -67,12 +74,16 @@ nonisolated final class Library: Sendable {
         var byAuthor: [Int32: [Int]] = [:]
         var bySeries: [Int32: [Int]] = [:]
         var langSet = Set<String>()
+        var byAuthorLang: [Int32: [String: Int]] = [:]
+        var bySeriesLang: [Int32: [String: Int]] = [:]
         for (i, b) in books.enumerated() {
             for aid in b.authorIDs {
                 byAuthor[aid, default: []].append(i)
+                byAuthorLang[aid, default: [:]][b.language, default: 0] += 1
             }
             if let sid = b.seriesID {
                 bySeries[sid, default: []].append(i)
+                bySeriesLang[sid, default: [:]][b.language, default: 0] += 1
             }
             langSet.insert(b.language)
         }
@@ -80,6 +91,8 @@ nonisolated final class Library: Sendable {
         self.booksBySeries = bySeries
         self.bookCountByAuthor = byAuthor.mapValues(\.count)
         self.bookCountBySeries = bySeries.mapValues(\.count)
+        self.bookCountByAuthorByLang = byAuthorLang
+        self.bookCountBySeriesByLang = bySeriesLang
         self.languages = Array(langSet).sorted()
         self.lowercasedAuthorNames = authors.map { $0.displayName.lowercased() }
         self.lowercasedSeriesNames = series.map { $0.name.lowercased() }
