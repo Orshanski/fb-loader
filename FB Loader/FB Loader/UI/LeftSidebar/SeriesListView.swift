@@ -19,12 +19,13 @@ struct SeriesListView: View {
     }
 
     var body: some View {
-        List(selection: $selectedSeriesID) {
-            ForEach(visibleSeries) { s in
+        // Table for the same scale reasons as AuthorsListView.
+        Table(visibleSeries, selection: $selectedSeriesID) {
+            TableColumn("Серия") { (s: Series) in
                 let count = library.bookCountBySeries[s.id, default: 0]
                 Text("\(s.name) (\(count))")
-                    .tag(Int32?.some(s.id))
             }
         }
+        .tableColumnHeaders(.hidden)
     }
 }

@@ -20,12 +20,16 @@ struct AuthorsListView: View {
     }
 
     var body: some View {
-        List(selection: $selectedAuthorID) {
-            ForEach(visibleAuthors) { a in
+        // `Table` is backed by NSTableView and properly virtualizes 100k+
+        // rows. SwiftUI `List` over a flat ForEach diffs the entire identity
+        // tree on every render and chokes at this scale. Single column,
+        // headers hidden — visually identical to a list.
+        Table(visibleAuthors, selection: $selectedAuthorID) {
+            TableColumn("Автор") { (a: Author) in
                 let count = library.bookCountByAuthor[a.id, default: 0]
                 Text("\(a.displayName) (\(count))")
-                    .tag(Int32?.some(a.id))
             }
         }
+        .tableColumnHeaders(.hidden)
     }
 }
