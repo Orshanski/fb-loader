@@ -53,7 +53,7 @@ struct BookDetailView: View {
                     .fill(Color.secondary.opacity(0.15))
             }
         }
-        .frame(width: 100, height: 145)
+        .frame(width: 150, height: 218)
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
     }
