@@ -5,27 +5,37 @@ struct SeriesListView: View {
     let filterText: String
     @Binding var selectedSeriesID: Int32?
 
-    private var visibleSeries: [Series] {
-        let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
-        if needle.isEmpty { return library.series }
-        // Precomputed lowercased names: see AuthorsListView for the rationale.
-        var result: [Series] = []
-        result.reserveCapacity(64)
-        for i in library.series.indices
-        where library.lowercasedSeriesNames[i].contains(needle) {
-            result.append(library.series[i])
-        }
-        return result
-    }
+    @State private var filtered: [Series] = []
 
     var body: some View {
-        // Table for the same scale reasons as AuthorsListView.
-        Table(visibleSeries, selection: $selectedSeriesID) {
+        Table(filtered, selection: $selectedSeriesID) {
             TableColumn("Серия") { (s: Series) in
                 let count = library.bookCountBySeries[s.id, default: 0]
                 Text("\(s.name) (\(count))")
             }
         }
         .tableColumnHeaders(.hidden)
+        .task(id: filterText) { await reloadFilter() }
+    }
+
+    /// Same off-main + 150 ms debounce as AuthorsListView.
+    private func reloadFilter() async {
+        try? await Task.sleep(for: .milliseconds(150))
+        if Task.isCancelled { return }
+
+        let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
+        let lib = library
+        let result: [Series] = await Task.detached(priority: .userInitiated) {
+            if needle.isEmpty { return lib.series }
+            var out: [Series] = []
+            out.reserveCapacity(64)
+            for i in lib.series.indices
+            where lib.lowercasedSeriesNames[i].contains(needle) {
+                out.append(lib.series[i])
+            }
+            return out
+        }.value
+        if Task.isCancelled { return }
+        filtered = result
     }
 }
