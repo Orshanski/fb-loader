@@ -15,7 +15,6 @@ final class LibraryCacheStore {
 
     func loadOrRebuild(
         inpxURL: URL,
-        genres: GenreDictionary,
         rebuild: () throws -> Library
     ) throws -> Library {
         let currentHash = try SHA256.hash(ofFileAt: inpxURL)
@@ -32,12 +31,9 @@ final class LibraryCacheStore {
     }
 
     private func save(_ lib: Library) throws {
+        // `.atomic` writes to a temp file, then renames over the destination via
+        // POSIX rename — already crash-safe. No need for a manual remove+move.
         let data = try LibraryBinaryCodec.encode(lib)
-        let tmp = cacheURL.appendingPathExtension("tmp")
-        try data.write(to: tmp, options: [.atomic])
-        if FileManager.default.fileExists(atPath: cacheURL.path) {
-            try FileManager.default.removeItem(at: cacheURL)
-        }
-        try FileManager.default.moveItem(at: tmp, to: cacheURL)
+        try data.write(to: cacheURL, options: [.atomic])
     }
 }
