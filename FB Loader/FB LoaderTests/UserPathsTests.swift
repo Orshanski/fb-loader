@@ -21,4 +21,14 @@ struct UserPathsTests {
         #expect(paths.archivesDirectoryURL == arch)
         #expect(paths.lastExportDirectoryURL == exp)
     }
+
+    @Test("setting nil clears a previously stored path")
+    func clearViaNil() {
+        let suite = UserDefaults(suiteName: "FB_Loader.test.\(UUID())")!
+        let paths = UserPaths(defaults: suite)
+        paths.inpxURL = URL(fileURLWithPath: "/tmp/x.inpx")
+        #expect(paths.inpxURL != nil)
+        paths.inpxURL = nil
+        #expect(paths.inpxURL == nil)
+    }
 }

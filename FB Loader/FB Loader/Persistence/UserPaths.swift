@@ -6,6 +6,10 @@ import Foundation
 /// - lastExportDirectoryURL: pre-fill for the next export-folder dialog
 ///
 /// All other UI state (window size, selection, filters) is intentionally NOT persisted.
+///
+/// `Sendable` is required by Swift 6 for the `static let shared` global. The class
+/// only stores a `let defaults: UserDefaults` (itself Sendable), so the conformance
+/// is clean — there's no shared mutable in-process state to worry about.
 final class UserPaths: Sendable {
     /// The single shared instance used by AppState and SettingsView.
     /// Production code uses `.shared`; tests instantiate with a custom UserDefaults suite.
@@ -36,7 +40,9 @@ final class UserPaths: Sendable {
     }
 
     private func url(for key: Keys) -> URL? {
-        guard let s = defaults.string(forKey: key.rawValue), !s.isEmpty else { return nil }
+        // `defaults.set(nil, forKey:)` removes the key, so `string(forKey:)`
+        // never returns an empty string here — only nil or a real path.
+        guard let s = defaults.string(forKey: key.rawValue) else { return nil }
         return URL(fileURLWithPath: s)
     }
     private func set(_ url: URL?, for key: Keys) {
