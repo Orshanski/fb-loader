@@ -28,18 +28,23 @@ final class CoverCache: @unchecked Sendable {
         self.cacheDir = dir
     }
 
-    nonisolated func image(for book: Book, in library: Library, archivesRoot: URL) -> NSImage? {
-        let cached = cacheDir.appendingPathComponent("\(book.libid).jpg")
-        if let img = NSImage(contentsOf: cached) { return img }
-        // Parse FB2 to extract cover
-        let archiveName = library.archives[Int(book.archiveIndex)] + ".zip"
-        let archiveURL = archivesRoot.appendingPathComponent(archiveName)
-        guard let fb2 = try? ZipFB2Reader.readFB2(libid: book.libid, archiveURL: archiveURL),
-              let info = try? FB2DescriptionParser.parse(data: fb2.prefix(64 * 1024)),
-              let cover = info.coverImageData else {
-            return nil
-        }
-        try? cover.write(to: cached, options: .atomic)
-        return NSImage(data: cover)
+    /// Disk-cached cover, if previously stored. Caller checks this first; on
+    /// miss, the caller is responsible for extracting cover bytes from an
+    /// already-parsed `FB2BookInfo` and calling `store(_:for:)` to persist.
+    nonisolated func cachedImage(for book: Book) -> NSImage? {
+        let url = cacheURL(for: book)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return NSImage(contentsOf: url)
+    }
+
+    /// Writes cover bytes to the disk cache and returns an NSImage for them.
+    nonisolated func store(_ coverBytes: Data, for book: Book) -> NSImage? {
+        let url = cacheURL(for: book)
+        try? coverBytes.write(to: url, options: .atomic)
+        return NSImage(data: coverBytes)
+    }
+
+    private nonisolated func cacheURL(for book: Book) -> URL {
+        cacheDir.appendingPathComponent("\(book.libid).jpg")
     }
 }

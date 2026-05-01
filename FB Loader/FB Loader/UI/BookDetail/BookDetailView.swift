@@ -94,27 +94,43 @@ struct BookDetailView: View {
         let b = book
         let cache = try? CoverCache()
         await Task.detached(priority: .utility) {
+            let t0 = ContinuousClock.now
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
-            print("[BookDetail] libid=\(b.libid) archive=\(url.path)")
-            print("[BookDetail]   archive exists: \(FileManager.default.fileExists(atPath: url.path))")
+
+            // Fast path: cover image already cached on disk from a prior visit.
+            // We still parse the .fb2 for description/annotation, but render the
+            // cover immediately and we don't have to keep the bytes around.
+            let cachedCover = cache?.cachedImage(for: b)
+            if cachedCover != nil {
+                let img = cachedCover
+                await MainActor.run { self.coverImage = img }
+                print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
+            }
+
             do {
+                let tRead = ContinuousClock.now
                 let fb2 = try ZipFB2Reader.readFB2(libid: b.libid, archiveURL: url)
-                print("[BookDetail]   read .fb2: \(fb2.count) bytes")
-                let parsed = try FB2DescriptionParser.parse(data: fb2.prefix(64 * 1024))
-                print("[BookDetail]   parsed: title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
-                let img = cache?.image(for: b, in: lib, archivesRoot: root)
-                print("[BookDetail]   NSImage: \(img == nil ? "nil" : "ok")")
+                print("[BookDetail] read \(fb2.count)B in \(ContinuousClock.now - tRead)")
+
+                let tParse = ContinuousClock.now
+                let parsed = try FB2DescriptionParser.parse(data: Data(fb2))
+                print("[BookDetail] parse in \(ContinuousClock.now - tParse): title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
+
+                // If we didn't have a cached image, extract from parsed and persist.
+                let img: NSImage? = cachedCover ?? {
+                    guard let bytes = parsed.coverImageData else { return nil }
+                    return cache?.store(bytes, for: b)
+                }()
+
+                print("[BookDetail] total \(ContinuousClock.now - t0)")
                 await MainActor.run {
                     self.info = parsed
                     self.coverImage = img
                 }
             } catch {
-                print("[BookDetail]   ERROR: \(error)")
-                await MainActor.run {
-                    self.info = nil
-                    self.coverImage = nil
-                }
+                print("[BookDetail] ERROR in \(ContinuousClock.now - t0): \(error)")
+                await MainActor.run { self.info = nil }
             }
         }.value
     }
