@@ -4,7 +4,8 @@ import Foundation
 /// Format: authors separated by `:`; each is `LastName,FirstName,MiddleName`.
 /// All three components are optional (any may be empty).
 enum INPAuthorParser {
-    struct Triple: Equatable {
+    /// `Hashable` so `INPXImporter` can dedup authors via a dictionary keyed by triple.
+    struct Triple: Hashable {
         let lastName: String
         let firstName: String
         let middleName: String
