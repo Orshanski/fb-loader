@@ -100,7 +100,13 @@ nonisolated enum INPXImporter {
             let text = String(decoding: inpData, as: UTF8.self)
             let booksBefore = books.count
 
-            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            // Records are separated by CRLF in real Flibusta INPX dumps. Swift's
+            // String treats "\r\n" as a SINGLE extended grapheme cluster, so
+            // `split(separator: "\n")` does NOT find the LF and returns the
+            // whole file as one "line" — that's how we ended up with exactly
+            // one book per .inp before this fix. Use Character.isNewline,
+            // which is true for both bare "\n" and the "\r\n" cluster.
+            for line in text.split(omittingEmptySubsequences: true, whereSeparator: { $0.isNewline }) {
                 let trimmed = String(line).trimmingCharacters(in: trimSet)
                 guard let rec = INPRecordParser.parse(line: trimmed, fieldIndex: fieldIndex)
                 else { continue }
