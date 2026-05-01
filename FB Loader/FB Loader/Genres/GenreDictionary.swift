@@ -2,10 +2,20 @@ import Foundation
 
 /// Loads and queries the FB2 genre dictionary embedded in the app bundle.
 /// Source: extracted from freeLib.sqlite `genre` table.
+///
+/// **Concurrency:** not Sendable. `genre(forCode:)` mutates internal caches
+/// (`syntheticByCode`, `nextSyntheticID`) when synthesizing entries for unknown
+/// codes. Callers must access a single instance from one isolation domain.
+/// In FB Loader this is the importer's actor during INPX parse, then read-only
+/// thereafter via the same `Library` snapshot.
 final class GenreDictionary {
     private struct RawEntry: Decodable {
         let id: Int16
         let name: String
+        // snake_case is intentional: matches the JSON key `"parent_id"` verbatim
+        // under the default key-decoding strategy. Do NOT set
+        // `decoder.keyDecodingStrategy = .convertFromSnakeCase` on the loader —
+        // that would silently default `parent_id` to 0 for every row.
         let parent_id: Int16
         let keys: String?
     }
@@ -31,6 +41,12 @@ final class GenreDictionary {
                 .map(String.init)
             for code in keys {
                 let g = Genre(id: r.id, code: code, name: name, parentID: parent)
+                // Last entry wins on collisions. Source data has 4 codes that
+                // appear twice (adv_animal, adv_geo, child_adv, drama_antique);
+                // three are same-name duplicates from twin subtrees. `child_adv`
+                // is the only true conflict — it always resolves to id=1012
+                // ("Приключения для детей и подростков"). Matches freeLib's
+                // QHash insertion semantics in importthread.cpp:613.
                 byCode[code] = g
             }
             // Also keep one entry per `id` for navigation. Top-level categories
@@ -51,9 +67,13 @@ final class GenreDictionary {
         return GenreDictionary(rawEntries: raw)
     }
 
-    /// Returns a genre for the given FB2 code. For unknown codes, synthesizes
-    /// a `Genre` whose `name` equals the code itself (per spec §7).
+    /// Returns a genre for the given FB2 code. For unknown non-empty codes,
+    /// synthesizes a `Genre` whose `name` equals the code itself (per spec §7)
+    /// and caches it so repeated lookups are stable. Returns `nil` for the
+    /// empty string — there are no "" keys in the source dictionary, and a
+    /// synthetic genre with empty code/name is never useful.
     func genre(forCode code: String) -> Genre? {
+        guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }
         if let g = syntheticByCode[code] { return g }
         let g = Genre(id: nextSyntheticID, code: code, name: code, parentID: nil)
