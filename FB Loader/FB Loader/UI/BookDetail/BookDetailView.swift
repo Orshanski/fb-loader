@@ -96,12 +96,25 @@ struct BookDetailView: View {
         await Task.detached(priority: .utility) {
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
-            let fb2 = try? ZipFB2Reader.readFB2(libid: b.libid, archiveURL: url)
-            let parsed = fb2.flatMap { try? FB2DescriptionParser.parse(data: $0.prefix(64 * 1024)) }
-            let img = cache?.image(for: b, in: lib, archivesRoot: root)
-            await MainActor.run {
-                self.info = parsed
-                self.coverImage = img
+            print("[BookDetail] libid=\(b.libid) archive=\(url.path)")
+            print("[BookDetail]   archive exists: \(FileManager.default.fileExists(atPath: url.path))")
+            do {
+                let fb2 = try ZipFB2Reader.readFB2(libid: b.libid, archiveURL: url)
+                print("[BookDetail]   read .fb2: \(fb2.count) bytes")
+                let parsed = try FB2DescriptionParser.parse(data: fb2.prefix(64 * 1024))
+                print("[BookDetail]   parsed: title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
+                let img = cache?.image(for: b, in: lib, archivesRoot: root)
+                print("[BookDetail]   NSImage: \(img == nil ? "nil" : "ok")")
+                await MainActor.run {
+                    self.info = parsed
+                    self.coverImage = img
+                }
+            } catch {
+                print("[BookDetail]   ERROR: \(error)")
+                await MainActor.run {
+                    self.info = nil
+                    self.coverImage = nil
+                }
             }
         }.value
     }
