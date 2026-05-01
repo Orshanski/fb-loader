@@ -24,6 +24,7 @@ nonisolated enum LibraryBinaryCodec {
         case badMagic
         case unsupportedVersion(UInt16)
         case truncated
+        case invalidArchiveIndex(libid: Int32, archiveIndex: Int16, archivesCount: Int)
     }
     enum EncodeError: Error {
         /// Signalled instead of `precondition` to avoid crashing the whole process
@@ -142,6 +143,12 @@ nonisolated enum LibraryBinaryCodec {
             let archIdx = try r.int16()
             let size = try r.int32()
             let days = try r.int32()
+            guard archIdx >= 0 && Int(archIdx) < archives.count else {
+                throw DecodeError.invalidArchiveIndex(
+                    libid: libid,
+                    archiveIndex: archIdx,
+                    archivesCount: archives.count)
+            }
             books.append(Book(
                 libid: libid, title: title, authorIDs: aIDs,
                 seriesID: s == -1 ? nil : s,

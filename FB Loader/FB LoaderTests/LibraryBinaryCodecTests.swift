@@ -104,4 +104,26 @@ struct LibraryBinaryCodecTests {
             try LibraryBinaryCodec.encode(lib)
         }
     }
+
+    @Test("decode rejects book archive indexes outside archives array")
+    func invalidArchiveIndex() throws {
+        let lib = Library(
+            inpxHash: Data(repeating: 0xAB, count: 32),
+            inpxVersion: "v",
+            archives: ["arch"],
+            authors: [Author.unknown],
+            series: [],
+            genres: [],
+            books: [
+                Book(libid: 1, title: "t", authorIDs: [Author.unknownID],
+                     seriesID: nil, seriesNum: nil, genreIDs: [],
+                     language: "ru", archiveIndex: 1, size: 0, dateAddedDays: 0),
+            ]
+        )
+        let data = try LibraryBinaryCodec.encode(lib)
+
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.decode(data)
+        }
+    }
 }
