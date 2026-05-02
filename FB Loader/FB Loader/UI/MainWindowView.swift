@@ -6,6 +6,11 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var state
     @State private var sidebarVisible = true
 
+    private let booksTableMinHeight: CGFloat = 240
+    private let booksTableIdealHeight: CGFloat = 300
+    private let bookDetailMinHeight: CGFloat = 380
+    private let bookDetailIdealHeight: CGFloat = 400
+
     var body: some View {
         HSplitView {
             if sidebarVisible {
@@ -14,22 +19,27 @@ struct MainWindowView: View {
             }
             VSplitView {
                 BooksTableView(library: library)
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .frame(maxWidth: .infinity,
+                           minHeight: booksTableMinHeight,
+                           idealHeight: booksTableIdealHeight)
                 if let libid = state.selectedBookLibid,
                    let book = library.bookByLibid[libid],
                    let archives = state.userPaths.archivesDirectoryURL {
                     BookDetailView(library: library, archivesRoot: archives, book: book)
-                        .frame(maxWidth: .infinity, minHeight: 200)
+                        .frame(maxWidth: .infinity,
+                               minHeight: bookDetailMinHeight,
+                               idealHeight: bookDetailIdealHeight)
                 } else {
                     Text("Выберите книгу")
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        .frame(minHeight: 200)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .frame(minHeight: bookDetailMinHeight,
+                               idealHeight: bookDetailIdealHeight)
                 }
             }
             .frame(maxWidth: .infinity)
         }
-        .frame(minWidth: 1000, minHeight: 600)
+        .frame(minWidth: 1000, minHeight: 640)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
