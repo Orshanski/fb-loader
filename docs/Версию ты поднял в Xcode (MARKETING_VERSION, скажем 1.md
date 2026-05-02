@@ -1,56 +1,63 @@
 Версию ты поднял в Xcode (MARKETING_VERSION, скажем 1.1). Дальше последовательность из ~7 шагов.
 
-  A. В репо fb-loader/ (исходники):
+## А. В репо fb-loader/ (исходники):
 
-  1. Запушить правки кода
-  git add -A && git commit -m "..." && git push
+Запушить правки кода
+`git add -A && git commit -m "..." && git push`
 
-  2. Собрать архив
-  cd "FB Loader"
+    1. Собрать архив
+
+    cd "FB Loader"
+    
     xcodebuild -scheme "FB Loader" -configuration Release \
-
     -archivePath ./build/FBLoader.xcarchive archive
 
-  3. Экспортировать с Developer ID-подписью
-  xcodebuild -exportArchive \
+    3. Экспортировать с Developer ID-подписью
 
+    xcodebuild -exportArchive \
     -archivePath ./build/FBLoader.xcarchive \
     -exportPath ./build/export \
     -exportOptionsPlist ./build/export-options.plist
 
-  4. Нотаризовать
-  cd build/export
+    4. Нотаризовать
+
+    cd build/export
     ditto -c -k --keepParent "FB Loader.app" "FB Loader.zip"
     xcrun notarytool submit "FB Loader.zip" --keychain-profile FBLoaderNotary --wait
-    Ждёшь Accepted.
 
-  5. Staple
-  xcrun stapler staple "FB Loader.app"
+Ждёшь Accepted.
 
-  6. Сделать DMG
-  create-dmg --volname "FB Loader" --window-size 500 350 \
+    5. Staple
 
+```xcrun stapler staple "FB Loader.app"```
+
+    5. Сделать DMG
+
+    create-dmg --volname "FB Loader" --window-size 500 350 \
     --icon "FB Loader.app" 125 175 \
     --app-drop-link 375 175 \
     "FB Loader-1.1.dmg" "FB Loader.app"
 
-  7. Создать GitHub Release
-  cd /Users/alexey/Documents/code/fb-loader
+    7. Создать GitHub Release
+
+    cd /Users/alexey/Documents/code/fb-loader
+    
     gh release create v1.1 "FB Loader/build/export/FB Loader-1.1.dmg" \
+    --title "1.1" --notes "Приложение закрывается по клику. Изменен размер карточки книги по умолчанию"
 
-    --title "1.1" --notes "Что нового..."
+## B. В репо homebrew-fb-loader/ (cask-меню):
 
-  B. В репо homebrew-fb-loader/ (cask-меню):
+7. Получить sha256 нового DMG
 
-  8. Получить sha256 нового DMG
-  shasum -a 256 "FB Loader/build/export/FB Loader-1.1.dmg"
+```shasum -a 256 "FB Loader/build/export/FB Loader-1.1.dmg"```
 
-  9. Открыть ~/Documents/code/homebrew-fb-loader/Casks/fb-loader.rb, поменять две строки:
-  version "1.1"
+    8. Открыть ~/Documents/code/homebrew-fb-loader/Casks/fb-loader.rb, поменять две строки:
+
+    version "1.1"
     sha256 "новый-хеш"
 
-  10. Запушить cask
-  cd ~/Documents/code/homebrew-fb-loader
-  git add -A && git commit -m "fb-loader 1.1" && git push
+    10. Запушить cask
 
-  Готово. Пользователи получают апдейт командой brew upgrade --cask fb-loader.
+```git add -A && git commit -m "fb-loader 1.1" && git push```
+
+Готово. Пользователи получают апдейт командой brew upgrade --cask fb-loader.
