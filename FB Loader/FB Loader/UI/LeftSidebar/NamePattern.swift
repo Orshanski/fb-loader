@@ -18,7 +18,7 @@ import Foundation
 /// Inputs are matched against pre-lowercased candidate names; the pattern
 /// itself is lowercased once at construction time. Empty / whitespace-only
 /// queries collapse to `.all`.
-enum NamePattern: Sendable, Equatable {
+nonisolated enum NamePattern: Sendable, Equatable {
     case all
     case wordPrefix(String)
     case glob(segments: [String], anchorStart: Bool, anchorEnd: Bool)
