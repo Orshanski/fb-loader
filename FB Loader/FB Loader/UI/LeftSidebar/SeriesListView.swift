@@ -6,49 +6,20 @@ struct SeriesListView: View {
     let languageFilter: String
     @Binding var selectedSeriesID: Int32?
 
-    @State private var filtered: [Series] = []
-
-    private var filterKey: String { "\(languageFilter)|\(filterText)" }
-
     var body: some View {
         let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
             ? ""
             : languageFilter
-        LazyListTable(
-            items: filtered,
-            selectedID: $selectedSeriesID,
+        let counts = library.bookCountBySeriesByLang
+        FilteredSidebarList(
+            items: library.series,
+            lowercasedNames: library.lowercasedSeriesNames,
+            countFor: { s in counts[s.id]?[langKey] ?? 0 },
             labelFor: { s in s.name },
-            trailingLabelFor: { s in
-                let count = library.bookCountBySeriesByLang[s.id]?[langKey] ?? 0
-                return "\(count)"
-            }
+            trailingLabelFor: { s in "\(counts[s.id]?[langKey] ?? 0)" },
+            selectedID: $selectedSeriesID,
+            filterText: filterText,
+            filterKey: "\(languageFilter)|\(filterText)"
         )
-        .task(id: filterKey) { await reloadFilter() }
-    }
-
-    /// Same off-main + 150 ms debounce as AuthorsListView, plus language gate.
-    private func reloadFilter() async {
-        try? await Task.sleep(for: .milliseconds(150))
-        if Task.isCancelled { return }
-
-        let needle = filterText.trimmingCharacters(in: .whitespaces).lowercased()
-        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
-            ? ""
-            : languageFilter
-        let lib = library
-        let result: [Series] = await Task.detached(priority: .userInitiated) {
-            var out: [Series] = []
-            out.reserveCapacity(64)
-            for i in lib.series.indices {
-                let s = lib.series[i]
-                guard (lib.bookCountBySeriesByLang[s.id]?[langKey] ?? 0) > 0 else { continue }
-                if !needle.isEmpty,
-                   !lib.lowercasedSeriesNames[i].contains(needle) { continue }
-                out.append(s)
-            }
-            return out
-        }.value
-        if Task.isCancelled { return }
-        filtered = result
     }
 }
