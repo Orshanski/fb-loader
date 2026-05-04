@@ -37,15 +37,25 @@ struct SearchEngineTests {
         )
     }
 
-    @Test("Точный запрос по имени автора находит автора и его книги")
+    @Test("Точный запрос по имени автора находит автора")
     func authorExactMatch() {
         let lib = makeLibrary()
         let r = SearchEngine.run(query: "Сандерсон", language: "ru", in: lib)
         #expect(r.authors.contains { lib.authors[$0.authorIndex].lastName == "Сандерсон" })
-        // Книги Сандерсона должны быть и в bucket'е книг (через author-токены).
+    }
+
+    @Test("Запрос по имени автора НЕ дублирует его книги в bucket'е")
+    func authorMatchDoesNotPopulateBookBucket() {
+        // Регрессионный тест: книжный бакет матчит только по title-токенам.
+        // Книги, попадающие в выдачу через автора, видны в блоке автора —
+        // здесь не дублируем.
+        let lib = makeLibrary()
+        let r = SearchEngine.run(query: "Сандерсон", language: "ru", in: lib)
         let bookTitles = r.books.map { lib.books[$0.bookIndex].title }
-        #expect(bookTitles.contains("Элантрис"))
-        #expect(bookTitles.contains("Надежда Элантриса"))
+        #expect(!bookTitles.contains("Элантрис"),
+                "«Элантрис» не должна быть в book-bucket по запросу 'Сандерсон'")
+        #expect(!bookTitles.contains("Надежда Элантриса"),
+                "«Надежда Элантриса» не должна быть в book-bucket по запросу 'Сандерсон'")
     }
 
     @Test("Опечатка в имени автора (1 символ) — всё ещё находит")

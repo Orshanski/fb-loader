@@ -51,10 +51,10 @@ struct SearchBooksBucketView: View {
                 )
             }
             if bookHits.count > coord.visibleBooksCount {
-                Button("Загрузить ещё +20") {
+                Button("Загрузить ещё 20 книг") {
                     coord.visibleBooksCount += 20
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }

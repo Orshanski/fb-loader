@@ -14,11 +14,10 @@ nonisolated enum SearchEngine {
         guard !qToks.isEmpty else {
             return SearchResults(authors: [], series: [], books: [])
         }
-        let qPatterns = qToks.map(FuzzyScorer.LcsPattern.init)
 
         // 1. Authors — все matches выше cutoff, отсортированные по убыванию.
         let authorHits = parallelScan(
-            qPatterns: qPatterns,
+            qTokens: qToks,
             count: lib.authors.count,
             cutoff: FuzzyScorer.SCORE_CUTOFF
         ) { i in
@@ -28,7 +27,7 @@ nonisolated enum SearchEngine {
 
         // 2. Series
         let seriesHits = parallelScan(
-            qPatterns: qPatterns,
+            qTokens: qToks,
             count: lib.series.count,
             cutoff: FuzzyScorer.SCORE_CUTOFF
         ) { i in
@@ -37,11 +36,21 @@ nonisolated enum SearchEngine {
         let series = seriesHits.map { SeriesMatch(seriesIndex: $0.index, score: $0.score) }
 
         // 3. Books — language-filtered, combined key (title + author tokens + series tokens).
-        let bookHits = parallelScanBooks(
-            qPatterns: qPatterns,
+        let bookHitsAll = parallelScanBooks(
+            qTokens: qToks,
             language: language,
             in: lib,
             cutoff: FuzzyScorer.SCORE_CUTOFF
+        )
+        // Дедуп с авторами/сериями: книги, чей автор/серия уже сматчились
+        // отдельно, видны в их блоках — в bucket не дублируем.
+        let matchedAuthorIDs = Set(authorHits.map { lib.authors[$0.index].id })
+        let matchedSeriesIDs = Set(seriesHits.map { lib.series[$0.index].id })
+        let bookHits = filterBookHitsAgainstMatched(
+            bookHitsAll,
+            in: lib,
+            matchedAuthorIDs: matchedAuthorIDs,
+            matchedSeriesIDs: matchedSeriesIDs
         )
         let books = bookHits.map { BookMatch(bookIndex: $0.index, score: $0.score) }
 
@@ -71,7 +80,7 @@ nonisolated enum SearchEngine {
     /// (авторы и серии). Книги используют отдельный путь
     /// `parallelScanBooks` с объединением title+author+series tokens.
     nonisolated private static func parallelScan(
-        qPatterns: [FuzzyScorer.LcsPattern],
+        qTokens: [[UInt32]],
         count: Int,
         cutoff: Double,
         keyAt: (Int) -> [[UInt32]]
@@ -90,8 +99,8 @@ nonisolated enum SearchEngine {
                 local.reserveCapacity(64)
                 for i in lo..<hi {
                     let key = keyAt(i)
-                    let s = FuzzyScorer.tokenMinRatioPre(
-                        qPatterns: qPatterns, cTokens: key, cutoff: cutoff)
+                    let s = FuzzyScorer.tokenMinRatioCut(
+                        qTokens: qTokens, cTokens: key, cutoff: cutoff)
                     if s >= cutoff { local.append(Hit(index: i, score: s)) }
                 }
                 wrapped.buf[c] = local
@@ -102,10 +111,16 @@ nonisolated enum SearchEngine {
         return hits
     }
 
-    /// Книжный скан с объединением title + author tokens + series tokens
-    /// на каждой итерации. Дополнительно фильтрует по языку.
+    /// Книжный скан с объединением title + author tokens + series tokens.
+    /// Combined key нужен, чтобы запросы вроде «Толстой Война» находили
+    /// «Войну и мир»: ни автор «Толстой Лев Николаевич» (нет токена «война»),
+    /// ни заголовок «Война и мир» (нет токена «толстой») не пройдут по
+    /// отдельности — а combined ключ книги [война, и, мир, толстой, лев,
+    /// николаевич] матчит оба query-токена идеально. Дополнительно
+    /// фильтрует по языку. Дедуп с авторско-серийными бакетами делается
+    /// постфактум в `run` через `filterBookHitsAgainstMatched`.
     nonisolated private static func parallelScanBooks(
-        qPatterns: [FuzzyScorer.LcsPattern],
+        qTokens: [[UInt32]],
         language: String,
         in lib: Library,
         cutoff: Double
@@ -139,8 +154,8 @@ nonisolated enum SearchEngine {
                     if sIdx >= 0 {
                         combined.append(contentsOf: lib.searchKeySeries[sIdx])
                     }
-                    let s = FuzzyScorer.tokenMinRatioPre(
-                        qPatterns: qPatterns, cTokens: combined, cutoff: cutoff)
+                    let s = FuzzyScorer.tokenMinRatioCut(
+                        qTokens: qTokens, cTokens: combined, cutoff: cutoff)
                     if s >= cutoff { local.append(Hit(index: i, score: s)) }
                 }
                 wrapped.buf[c] = local
@@ -149,5 +164,32 @@ nonisolated enum SearchEngine {
         var hits = perChunk.flatMap { $0 }
         hits.sort { $0.score > $1.score }
         return hits
+    }
+
+    /// Убирает из book-bucket'а книги, чей автор уже сматчился отдельно в
+    /// authors-bucket или серия — в series-bucket. Такие книги остаются
+    /// видимыми внутри блока соответствующего автора/серии — нет смысла
+    /// дублировать их в bucket'е книг. Стоимость: O(books) с O(1)
+    /// hash-lookup на каждую (Set<Int32>.contains), вне зависимости от
+    /// размера matched-сетов.
+    nonisolated private static func filterBookHitsAgainstMatched(
+        _ hits: [Hit],
+        in lib: Library,
+        matchedAuthorIDs: Set<Int32>,
+        matchedSeriesIDs: Set<Int32>
+    ) -> [Hit] {
+        if matchedAuthorIDs.isEmpty && matchedSeriesIDs.isEmpty { return hits }
+        return hits.filter { hit in
+            let b = lib.books[hit.index]
+            if !matchedAuthorIDs.isEmpty {
+                for aid in b.authorIDs where matchedAuthorIDs.contains(aid) {
+                    return false
+                }
+            }
+            if let sid = b.seriesID, matchedSeriesIDs.contains(sid) {
+                return false
+            }
+            return true
+        }
     }
 }

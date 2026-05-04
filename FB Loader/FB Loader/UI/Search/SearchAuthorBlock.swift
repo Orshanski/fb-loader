@@ -60,10 +60,10 @@ struct SearchAuthorBlock: View {
             }
         }
         if !fullyExpanded && allBooks.count > defaultBooksLimit {
-            Button("Загрузить ещё (всего \(allBooks.count))") {
+            Button("Показать все книги автора (\(allBooks.count))") {
                 coord.fullyExpandedAuthors.insert(authorIndex)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
             .padding(.horizontal, 30)
             .padding(.vertical, 6)
         }

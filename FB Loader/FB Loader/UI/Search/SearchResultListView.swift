@@ -30,10 +30,10 @@ struct SearchResultListView: View {
                         )
                     }
                     if results.authors.count > coord.visibleAuthorsCount {
-                        Button("Показать всех (\(results.authors.count))") {
+                        Button("Показать всех авторов (\(results.authors.count))") {
                             coord.visibleAuthorsCount = .max
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                     }
@@ -59,10 +59,10 @@ struct SearchResultListView: View {
                         )
                     }
                     if results.series.count > coord.visibleSeriesCount {
-                        Button("Показать все (\(results.series.count))") {
+                        Button("Показать все серии (\(results.series.count))") {
                             coord.visibleSeriesCount = .max
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                     }

@@ -4,10 +4,12 @@ import Foundation
 
 @Suite("FuzzyScorer corpus")
 struct FuzzyScorerCorpusTests {
-    /// Эталонные пары из `librarium-py/backend/app/search.py`
-    /// (комментарий к `_token_match_score`) + edge-кейсы по нормализации.
+    /// Эталонные пары: librarium-py corpus + edge-кейсы по нормализации +
+    /// false-positive'ы из реальной библиотеки на 167k авторов, отловленные
+    /// при ручной проверке (см. spike4 в `~/code/fb-loader-search-spike`).
     /// Любая регрессия здесь — баг.
     static let corpus: [(q: String, c: String, pass: Bool, label: String)] = [
+        // librarium corpus
         ("прошивка", "прошивки", true, "склонение"),
         ("достоевск", "достоевский", true, "префикс"),
         ("короли", "королей", true, "склонение-окончания"),
@@ -21,9 +23,17 @@ struct FuzzyScorerCorpusTests {
         ("  достоевск  ", "Достоевский", true, "регистр+пробелы"),
         ("сандерсон брэндон", "Брэндон Сандерсон", true, "перестановка слов"),
         ("толк", "толкиен", false, "короткий префикс — drop"),
+        // user-flagged false positives — должны отсеиваться
+        ("сандерсо", "Андерсон", false, "ФП: edge subs"),
+        ("сандерсо", "Андросов", false, "ФП: разные имена"),
+        ("сандерсо", "Сандерсон", true, "Sanderson корректно"),
+        ("Толстой", "Толстиков", false, "ФП: разные фамилии"),
+        ("Достоевский", "Островский", false, "ФП: разные фамилии"),
+        ("Достоевский", "Гостковский", false, "ФП: разные фамилии"),
+        ("Махабрахата", "Махабхарата", true, "опечатка-транспозиция"),
     ]
 
-    @Test("13 эталонных пар librarium корректно ранжируются")
+    @Test("Эталонные пары корректно ранжируются")
     func corpusFullPass() {
         for tc in Self.corpus {
             let qTokens = SearchPreprocess.tokens(tc.q)
@@ -31,7 +41,7 @@ struct FuzzyScorerCorpusTests {
             let score = FuzzyScorer.tokenMinRatio(qTokens: qTokens, cTokens: cTokens)
             let actualPass = score >= FuzzyScorer.SCORE_CUTOFF
             #expect(actualPass == tc.pass,
-                    "\(tc.label): \(tc.q) → \(tc.c) — score \(score), expected \(tc.pass ? "≥75" : "<75")")
+                    "\(tc.label): \(tc.q) → \(tc.c) — score \(score), expected \(tc.pass ? "≥83" : "<83")")
         }
     }
 
@@ -41,9 +51,9 @@ struct FuzzyScorerCorpusTests {
         #expect(FuzzyScorer.tokenMinRatio(qTokens: [[0x61]], cTokens: []) == 0)
     }
 
-    @Test("SCORE_CUTOFF равен 75")
+    @Test("SCORE_CUTOFF равен 83")
     func cutoffConstant() {
-        #expect(FuzzyScorer.SCORE_CUTOFF == 75.0)
+        #expect(FuzzyScorer.SCORE_CUTOFF == 83.0)
     }
 
     @Test("Идентичные одинаковые входы дают 100.0")
@@ -80,77 +90,26 @@ struct FuzzyScorerCorpusTests {
         #expect(score < FuzzyScorer.SCORE_CUTOFF,
                 "score=\(score), expected below cutoff \(FuzzyScorer.SCORE_CUTOFF)")
     }
-}
 
-@Suite("FuzzyScorer bit-parallel")
-struct FuzzyScorerBPTests {
-    /// Все пары из корпуса + дополнительные ровно для cross-check.
-    static let pairs: [(q: String, c: String)] = [
-        ("прошивка", "прошивки"),
-        ("достоевск", "достоевский"),
-        ("короли", "королей"),
-        ("сандерсн", "сандерсон"),
-        ("короли", "космобиолухи"),
-        ("крыса", "корсакова"),
-        ("мария", "информация"),
-        ("мария", "марк"),
-        ("ёлка", "елка"),
-        ("Тайфун!", "тайфуны"),
-        ("сандерсон брэндон", "Брэндон Сандерсон"),
-        ("толк", "толкиен"),
-        ("a", "abcdefghijklmnopqrstuvwxyz"),
-        ("abcdefghijklmnopqrstuvwxyz", "a"),
-        ("", ""),
-    ]
-
-    @Test("DP ≡ BP на всех парах токенов корпуса")
-    func dpEqualsBP() {
-        for (q, c) in Self.pairs {
-            let qToks = SearchPreprocess.tokens(q)
-            let cToks = SearchPreprocess.tokens(c)
-            for qt in qToks {
-                for ct in cToks {
-                    let dp = FuzzyScorer.lcsLengthDP(qt, ct)
-                    let bp = FuzzyScorer.lcsLengthBP(qt, ct)
-                    #expect(dp == bp, "\(q) × \(c): DP=\(dp), BP=\(bp)")
-                }
-            }
-        }
+    @Test("Транспозиция считается одной операцией")
+    func transpositionCountsAsSingleOp() {
+        // ОSA Damerau-Levenshtein учитывает adjacent-транспозицию как 1 op,
+        // а не 2 substitution. «ab» ↔ «ba» имеет distance 1, а не 2.
+        let q: [UInt32] = [97, 98]              // "ab"
+        let c: [UInt32] = [98, 97]              // "ba"
+        let d = FuzzyScorer.damerauLevenshteinOSA(q, c)
+        #expect(d == 1, "DL(ab, ba) = \(d), expected 1 (transposition)")
     }
 
-    @Test("Pre-built scorer даёт те же скоры, что и не-pre-built вариант")
-    func preBuiltMatchesNaive() {
-        for tc in FuzzyScorerCorpusTests.corpus {
-            let qToks = SearchPreprocess.tokens(tc.q)
-            let cToks = SearchPreprocess.tokens(tc.c)
-            let naive = FuzzyScorer.tokenMinRatio(qTokens: qToks, cTokens: cToks)
-            let qPatterns = qToks.map(FuzzyScorer.LcsPattern.init)
-            let pre = FuzzyScorer.tokenMinRatioPre(
-                qPatterns: qPatterns, cTokens: cToks,
-                cutoff: FuzzyScorer.SCORE_CUTOFF
-            )
-            // Pre с cutoff может вернуть 0 раньше naive — но именно когда
-            // `naive < cutoff`. В остальных случаях должны совпадать.
-            if naive >= FuzzyScorer.SCORE_CUTOFF {
-                #expect(abs(pre - naive) < 0.01,
-                        "\(tc.label): \(tc.q) → \(tc.c) — naive=\(naive), pre=\(pre)")
-            } else {
-                #expect(pre == 0,
-                        "\(tc.label): \(tc.q) → \(tc.c) — pre=\(pre), expected 0 due to cutoff")
-            }
-        }
-    }
-
-    @Test("Паттерн >64 codepoint'ов уходит в DP-fallback и работает корректно")
-    func longPatternFallback() {
-        let longPat = String(repeating: "а", count: 70)
-        let target = "а"
-        let qToks = SearchPreprocess.tokens(longPat)
-        let cToks = SearchPreprocess.tokens(target)
-        let qPatterns = qToks.map(FuzzyScorer.LcsPattern.init)
-        #expect(qPatterns[0].isLong == true)
-        // LCS должен быть 1: "а" есть один раз в обеих строках, и "а"
-        // покрывается из паттерна длины 70.
-        #expect(FuzzyScorer.lcsLengthPre(qPatterns[0], cToks[0]) == 1)
+    @Test("Cutoff-pruning возвращает 0 если хоть один qt не дотягивает до cutoff")
+    func cutoffPruningEarlyExit() {
+        // q = ["сандерсон", "хххх"] — второй токен не имеет хорошего матча
+        // нигде в c. Финальный min будет ниже cutoff, метод должен вернуть 0
+        // не дойдя до конца.
+        let q = SearchPreprocess.tokens("сандерсон хххх")
+        let c = SearchPreprocess.tokens("брэндон сандерсон писатель")
+        let pruned = FuzzyScorer.tokenMinRatioCut(
+            qTokens: q, cTokens: c, cutoff: FuzzyScorer.SCORE_CUTOFF)
+        #expect(pruned == 0, "expected pruning to return 0, got \(pruned)")
     }
 }

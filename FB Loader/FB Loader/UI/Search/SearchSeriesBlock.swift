@@ -90,10 +90,10 @@ struct SearchSeriesBlock: View {
             )
         }
         if !fullyExpanded && allBooks.count > defaultBooksLimit {
-            Button("Загрузить ещё (всего \(allBooks.count))") {
+            Button("Показать все книги серии (\(allBooks.count))") {
                 coord.fullyExpandedSeries.insert(seriesIndex)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
             .padding(.horizontal, 30)
             .padding(.vertical, 6)
         }
