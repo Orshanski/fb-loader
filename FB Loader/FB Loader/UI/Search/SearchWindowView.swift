@@ -108,19 +108,3 @@ struct SearchWindowView: View {
         pendingSearchToken = UUID()
     }
 }
-
-// MARK: - Transient stub
-//
-// Replaced (and moved to its own file) by Task 11. Kept here only so the
-// build stays green between tasks.
-
-struct SearchResultListView: View {
-    let coord: SearchCoordinator
-    let library: Library
-    let results: SearchResults
-
-    var body: some View {
-        Text("Список результатов — раздел реализуется в Task 11")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
