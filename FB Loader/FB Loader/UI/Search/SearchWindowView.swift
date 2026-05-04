@@ -51,7 +51,9 @@ struct SearchWindowView: View {
         }
         .sheet(item: Binding(
             get: { exportProgress.map { ProgressIdentifier(progress: $0) } },
-            set: { _ in /* read-only; ExportProgressSheet's done-closure clears exportProgress */ })) { wrapper in
+            set: { _ in
+                // Read-only — ExportProgressSheet's done-closure clears exportProgress.
+            })) { wrapper in
             ExportProgressSheet(progress: wrapper.progress) { exportProgress = nil }
         }
     }
@@ -119,8 +121,13 @@ struct SearchWindowView: View {
             BookDetailView(
                 library: library, archivesRoot: archives, book: book,
                 isCurrentSelection: { coord.selectedBookLibid == book.libid },
-                onSelectAuthor: { _ in /* no-op for v1 in sheet context */ },
-                onSelectSeries: { _ in /* no-op for v1 in sheet context */ }
+                onSelectAuthor: { _ in
+                    // No-op for v1 in sheet context — sidebar navigation
+                    // doesn't apply when viewing a book in the search sheet.
+                },
+                onSelectSeries: { _ in
+                    // No-op for v1 in sheet context.
+                }
             )
                 .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)
         } else {
