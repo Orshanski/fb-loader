@@ -32,10 +32,10 @@ genre.
   with the root genre ID.
 - The language filter applies to genre counters and to the books shown for the
   selected genre.
-- Genre rows remain visible when their count under the active language is
-  `0`; selecting such a row shows an empty books table.
-- The text filter searches genre names. When a child genre matches, its root
-  row remains visible as context.
+- Genre rows with count `0` under the active language are hidden, matching the
+  existing sidebar filter component behavior for authors and series.
+- The text filter searches genre names through the existing sidebar filter
+  component; no separate genre-specific search implementation is added.
 - If the text filter matches no genres, the genre list is empty: do not show
   unmatched rows and do not add a special empty-state message.
 
@@ -53,7 +53,10 @@ Extend `Library` with secondary genre indices:
 - `bookCountByGenreByLang: [Int16: [String: Int]]`
 - `childGenresByParent: [Int16: [Genre]]`
 - `rootGenres: [Genre]`
+- `orphanGenres: [Genre]`
+- `sidebarGenres: [Genre]`
 - `lowercasedGenreNames: [Int16: String]`
+- `lowercasedSidebarGenreNames: [String]`
 
 The genre tree should be derived from `Genre.parentID`. This implementation
 supports the current bundled `genres.json` shape: root genres plus one child
@@ -75,9 +78,9 @@ does not show all fantasy books, only books tagged directly with the
 
 ## Components
 
-Add `GenresListView` under `UI/LeftSidebar`. It should follow the existing
-sidebar-list style but does not need to reuse `FilteredSidebarList`, because
-genres require persistent root section headers and non-selectable rows.
+Add `GenresListView` under `UI/LeftSidebar`. It should reuse the existing
+`FilteredSidebarList` component so genre filtering keeps the same debounced,
+off-main behavior as authors and series.
 
 `LeftSidebarView` routes `AppState.SidebarTab.genres` to `GenresListView`.
 `BooksTableView` updates `visibleBooks` and the header/breadcrumb consistently

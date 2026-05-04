@@ -17,6 +17,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
     let labelFor: (Item) -> String
     /// Optional right-aligned secondary label (e.g. count).
     var trailingLabelFor: ((Item) -> String)? = nil
+    var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
 
     private static var cellIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("LazyListTable.cell")
@@ -57,6 +58,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
 
         coordinator.labelFor = labelFor
         coordinator.trailingLabelFor = trailingLabelFor
+        coordinator.rowStyleFor = rowStyleFor
         coordinator.binding = $selectedID
 
         // Cheap structural-change check: count + first/last IDs is enough to
@@ -74,6 +76,12 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.lastID = lastID
         if dataChanged {
             tableView.reloadData()
+        } else {
+            let visibleRows = tableView.rows(in: tableView.visibleRect)
+            if visibleRows.length > 0 {
+                tableView.reloadData(forRowIndexes: IndexSet(integersIn: visibleRows.location..<visibleRows.location + visibleRows.length),
+                                     columnIndexes: IndexSet(integer: 0))
+            }
         }
 
         // Sync selection from the SwiftUI binding into the NSTableView.
@@ -88,7 +96,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
 
     func makeCoordinator() -> Coordinator {
         Coordinator(items: items, labelFor: labelFor,
-                    trailingLabelFor: trailingLabelFor, binding: $selectedID)
+                    trailingLabelFor: trailingLabelFor,
+                    rowStyleFor: rowStyleFor,
+                    binding: $selectedID)
     }
 
     @MainActor
@@ -99,10 +109,12 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         var lastID: Item.ID?
         var labelFor: (Item) -> String
         var trailingLabelFor: ((Item) -> String)?
+        var rowStyleFor: (Item) -> SidebarRowStyle
         var binding: Binding<Item.ID?>
 
         init(items: [Item], labelFor: @escaping (Item) -> String,
              trailingLabelFor: ((Item) -> String)?,
+             rowStyleFor: @escaping (Item) -> SidebarRowStyle,
              binding: Binding<Item.ID?>) {
             self.items = items
             self.itemCount = items.count
@@ -110,6 +122,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             self.lastID = items.last?.id
             self.labelFor = labelFor
             self.trailingLabelFor = trailingLabelFor
+            self.rowStyleFor = rowStyleFor
             self.binding = binding
         }
 
@@ -124,6 +137,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             if row >= 0 && row < items.count {
                 let item = items[row]
                 cell.mainLabel.stringValue = labelFor(item)
+                cell.apply(style: rowStyleFor(item))
                 if let trailing = trailingLabelFor?(item), !trailing.isEmpty {
                     cell.trailingLabel.stringValue = trailing
                     cell.trailingLabel.isHidden = false
@@ -176,6 +190,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             f.textColor = .secondaryLabelColor
             return f
         }()
+        private var mainLeadingConstraint: NSLayoutConstraint?
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -198,13 +213,20 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             mainLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             NSLayoutConstraint.activate([
-                mainLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
                 mainLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
                 mainLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingLabel.leadingAnchor, constant: -8),
 
                 trailingLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
                 trailingLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             ])
+            let leading = mainLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14)
+            leading.isActive = true
+            mainLeadingConstraint = leading
+        }
+
+        func apply(style: SidebarRowStyle) {
+            mainLeadingConstraint?.constant = style.leadingInset
+            mainLabel.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: style.fontWeight)
         }
     }
 }

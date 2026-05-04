@@ -12,6 +12,7 @@ struct LeftSidebarView: View {
                     Picker("", selection: $s.sidebarTab) {
                         Text("Авторы").tag(AppState.SidebarTab.authors)
                         Text("Серии").tag(AppState.SidebarTab.series)
+                        Text("Жанры").tag(AppState.SidebarTab.genres)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -41,6 +42,11 @@ struct LeftSidebarView: View {
                                filterText: s.sidebarFilter,
                                languageFilter: s.languageFilter,
                                selectedSeriesID: $s.selectedSeriesID)
+            case .genres:
+                GenresListView(library: library,
+                               filterText: s.sidebarFilter,
+                               languageFilter: s.languageFilter,
+                               selectedGenreID: $s.selectedGenreID)
             }
         }
     }

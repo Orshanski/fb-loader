@@ -96,6 +96,7 @@ struct BookDetailView: View {
                             state.sidebarTab = .authors
                             state.selectedAuthorID = aid
                             state.selectedSeriesID = nil
+                            state.selectedGenreID = nil
                         }
                     }
                 }
@@ -112,6 +113,7 @@ struct BookDetailView: View {
                     state.sidebarTab = .series
                     state.selectedSeriesID = sid
                     state.selectedAuthorID = nil
+                    state.selectedGenreID = nil
                 }
             }
         } else {

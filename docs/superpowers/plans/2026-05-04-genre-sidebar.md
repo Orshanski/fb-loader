@@ -4,7 +4,7 @@
 
 **Goal:** Add `Жанры` as a third left-sidebar mode that lets users browse exact-genre book matches with the existing language and text filters.
 
-**Architecture:** Extend the existing `Library` snapshot with genre lookup indices, then route a new `BooksByContext.Context.genre` through the same table flow used by authors and series. Add a focused `GenresListView` because the genre list is grouped by parent/child rows and should not hide zero-count rows.
+**Architecture:** Extend the existing `Library` snapshot with genre lookup indices, then route a new `BooksByContext.Context.genre` through the same table flow used by authors and series. Add `GenresListView` as a thin wrapper over the existing `FilteredSidebarList` so filtering stays DRY and keeps the same zero-count behavior as authors and series.
 
 **Tech Stack:** Swift, SwiftUI, Swift Testing, Xcode/macOS target.
 
@@ -16,7 +16,7 @@
 - Modify `FB Loader/FB Loader/UI/BooksTable/BooksByContext.swift`: add exact genre lookup.
 - Modify `FB Loader/FB Loader/AppState.swift`: add `genres` sidebar tab and `selectedGenreID`.
 - Modify `FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift`: add the `Жанры` segment and route to `GenresListView`.
-- Create `FB Loader/FB Loader/UI/LeftSidebar/GenresListView.swift`: render always-expanded grouped genre rows and filter by genre names.
+- Create `FB Loader/FB Loader/UI/LeftSidebar/GenresListView.swift`: route genre rows through `FilteredSidebarList`.
 - Modify `FB Loader/FB Loader/UI/BooksTable/BooksTableView.swift`: show genre books and genre breadcrumb/header.
 - Modify `FB Loader/FB LoaderTests/BooksByContextTests.swift`: cover genre indices and exact-genre lookup.
 
@@ -59,7 +59,7 @@ func genreIndices() {
         series: [], genres: genres, books: books)
 
     #expect(lib.rootGenres.map(\.id) == [1])
-    #expect(lib.childGenresByParent[1]?.map(\.id) == [100, 1001, 101])
+    #expect(lib.childGenresByParent[1]?.map(\.id) == [100, 101, 1001])
     #expect(lib.orphanGenres.map(\.id) == [9000])
     #expect(lib.booksByGenre[1] == [0])
     #expect(lib.booksByGenre[100] == [1, 2, 3])
@@ -123,7 +123,9 @@ let bookCountByGenreByLang: [Int16: [String: Int]]
 let rootGenres: [Genre]
 let childGenresByParent: [Int16: [Genre]]
 let orphanGenres: [Genre]
+let sidebarGenres: [Genre]
 let lowercasedGenreNames: [Int16: String]
+let lowercasedSidebarGenreNames: [String]
 ```
 
 - [ ] **Step 2: Build the indices in `Library.init`**
@@ -174,10 +176,15 @@ for genre in genres where genre.parentID != nil {
     }
 }
 self.childGenresByParent = childrenByRoot.mapValues { children in
-    children.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    children
 }
-self.orphanGenres = orphans.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+self.orphanGenres = orphans
+let sidebarGenres = rootGenres.flatMap { root in
+    [root] + (childrenByRoot[root.id] ?? [])
+} + orphans
+self.sidebarGenres = sidebarGenres
 self.lowercasedGenreNames = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0.name.lowercased()) })
+self.lowercasedSidebarGenreNames = sidebarGenres.map { $0.name.lowercased() }
 ```
 
 - [ ] **Step 3: Extend `BooksByContext`**
@@ -237,7 +244,8 @@ selectedGenreID = nil
 
 - [ ] **Step 2: Create `GenresListView.swift`**
 
-Create `FB Loader/FB Loader/UI/LeftSidebar/GenresListView.swift`:
+Create `FB Loader/FB Loader/UI/LeftSidebar/GenresListView.swift`. Do not copy
+the filtering/debounce logic; use `FilteredSidebarList`.
 
 ```swift
 import SwiftUI
@@ -248,93 +256,21 @@ struct GenresListView: View {
     let languageFilter: String
     @Binding var selectedGenreID: Int16?
 
-    private var langKey: String {
-        languageFilter == BooksByContext.unspecifiedLanguageToken ? "" : languageFilter
-    }
-
-    private var pattern: NamePattern { NamePattern(query: filterText) }
-
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(library.rootGenres) { root in
-                    let children = matchingChildren(for: root)
-                    if filterText.isEmpty || !children.isEmpty || matches(root) {
-                        GenreRow(genre: root,
-                                 count: count(for: root),
-                                 isSelected: selectedGenreID == root.id,
-                                 isRoot: true) {
-                            selectedGenreID = root.id
-                        }
-                    }
-                    ForEach(children) { child in
-                        GenreRow(genre: child,
-                                 count: count(for: child),
-                                 isSelected: selectedGenreID == child.id,
-                                 isRoot: false) {
-                            selectedGenreID = child.id
-                        }
-                    }
-                }
-                ForEach(matchingOrphans()) { genre in
-                    GenreRow(genre: genre,
-                             count: count(for: genre),
-                             isSelected: selectedGenreID == genre.id,
-                             isRoot: true) {
-                        selectedGenreID = genre.id
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func matchingChildren(for root: Genre) -> [Genre] {
-        let children = library.childGenresByParent[root.id] ?? []
-        guard !filterText.isEmpty else { return children }
-        return children.filter { matches($0) }
-    }
-
-    private func matchingOrphans() -> [Genre] {
-        guard !filterText.isEmpty else { return library.orphanGenres }
-        return library.orphanGenres.filter { matches($0) }
-    }
-
-    private func matches(_ genre: Genre) -> Bool {
-        guard let name = library.lowercasedGenreNames[genre.id] else { return false }
-        return pattern.matches(name)
-    }
-
-    private func count(for genre: Genre) -> Int {
-        library.bookCountByGenreByLang[genre.id]?[langKey] ?? 0
-    }
-}
-
-private struct GenreRow: View {
-    let genre: Genre
-    let count: Int
-    let isSelected: Bool
-    let isRoot: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(genre.name)
-                .font(.system(size: 13, weight: isRoot ? .semibold : .regular))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer()
-            Text("\(count)")
-                .font(.system(size: 12))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
-        .padding(.leading, isRoot ? 16 : 34)
-        .padding(.trailing, 16)
-        .padding(.vertical, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
+            ? ""
+            : languageFilter
+        let counts = library.bookCountByGenreByLang
+        FilteredSidebarList(
+            items: library.sidebarGenres,
+            lowercasedNames: library.lowercasedSidebarGenreNames,
+            countFor: { g in counts[g.id]?[langKey] ?? 0 },
+            labelFor: { g in g.name },
+            trailingLabelFor: { g in "\(counts[g.id]?[langKey] ?? 0)" },
+            selectedID: $selectedGenreID,
+            filterText: filterText,
+            filterKey: "\(languageFilter)|\(filterText)"
+        )
     }
 }
 ```
@@ -506,8 +442,8 @@ Ready for manual testing. Please verify:
 - `Жанры` appears next to `Авторы` and `Серии`.
 - Root genre rows are selectable and show exact-genre books only.
 - Child genre rows are selectable and show exact-genre books only.
-- Rows with 0 books under the active language remain visible.
-- Filtering searches genre names and shows an empty genre list when no rows match.
+- Rows with 0 books under the active language are hidden, matching authors and series.
+- Filtering searches genre names through the existing sidebar filter component.
 - The books header shows the selected genre name.
 ```
 

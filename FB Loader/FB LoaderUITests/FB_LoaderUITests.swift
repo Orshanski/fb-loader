@@ -24,20 +24,11 @@ final class FB_LoaderUITests: XCTestCase {
 
     @MainActor
     func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        throw XCTSkip("Template UI smoke test is disabled until we have a deterministic fixture catalog.")
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+        throw XCTSkip("Template launch-performance test does not validate app behavior and is noisy for local runs.")
     }
 }

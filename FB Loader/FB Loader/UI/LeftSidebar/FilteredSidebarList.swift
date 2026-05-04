@@ -1,5 +1,10 @@
 import SwiftUI
 
+struct SidebarRowStyle {
+    var leadingInset: CGFloat = 14
+    var fontWeight: NSFont.Weight = .regular
+}
+
 /// Sidebar list with a debounced, off-main name filter. Generic over the
 /// item type so authors and series share one implementation.
 ///
@@ -17,6 +22,8 @@ where Item.ID: Hashable & Sendable {
     let countFor: @Sendable (Item) -> Int
     let labelFor: (Item) -> String
     let trailingLabelFor: (Item) -> String
+    var includeZeroCountItem: @Sendable (Item, NamePattern) -> Bool = { _, _ in false }
+    var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
     @Binding var selectedID: Item.ID?
     let filterText: String
     let filterKey: String
@@ -28,7 +35,8 @@ where Item.ID: Hashable & Sendable {
             items: filtered,
             selectedID: $selectedID,
             labelFor: labelFor,
-            trailingLabelFor: trailingLabelFor
+            trailingLabelFor: trailingLabelFor,
+            rowStyleFor: rowStyleFor
         )
         .task(id: filterKey) { await reloadFilter() }
     }
@@ -44,13 +52,20 @@ where Item.ID: Hashable & Sendable {
         let items = items
         let names = lowercasedNames
         let count = countFor
+        let includeZeroCountItem = includeZeroCountItem
         let result: [Item] = await Task.detached(priority: .userInitiated) {
             var out: [Item] = []
             out.reserveCapacity(64)
             for i in items.indices {
                 let item = items[i]
-                guard count(item) > 0 else { continue }
-                if !pattern.matches(names[i]) { continue }
+                let itemCount = count(item)
+                if itemCount > 0 && pattern.matches(names[i]) {
+                    out.append(item)
+                    continue
+                }
+                if !includeZeroCountItem(item, pattern) {
+                    continue
+                }
                 out.append(item)
             }
             return out

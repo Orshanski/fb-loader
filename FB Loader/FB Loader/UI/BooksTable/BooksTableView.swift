@@ -5,14 +5,14 @@ struct BooksTableView: View {
     @Environment(AppState.self) private var state
 
     private struct GroupedRow: Identifiable {
-        enum Kind { case loose(Book); case seriesHeader(Series, [Book]) }
-        let kind: Kind
-        var id: String {
-            switch kind {
-            case .loose(let b): return "b-\(b.libid)"
-            case .seriesHeader(let s, _): return "s-\(s.id)"
-            }
+        struct BookEntry: Identifiable {
+            let id: String
+            let book: Book
         }
+
+        enum Kind { case loose(Book); case seriesHeader(Series, [BookEntry]) }
+        let id: String
+        let kind: Kind
     }
 
     private var visibleBooks: [Book] {
@@ -23,6 +23,11 @@ struct BooksTableView: View {
         }
         if let sid = state.selectedSeriesID, state.sidebarTab == .series {
             return BooksByContext.books(for: .series(sid),
+                                        language: state.languageFilter,
+                                        in: library)
+        }
+        if let gid = state.selectedGenreID, state.sidebarTab == .genres {
+            return BooksByContext.books(for: .genre(gid),
                                         language: state.languageFilter,
                                         in: library)
         }
@@ -37,14 +42,20 @@ struct BooksTableView: View {
             if let sid = b.seriesID { bySeries[sid, default: []].append(b) }
             else { loose.append(b) }
         }
-        var rows: [GroupedRow] = loose.map { GroupedRow(kind: .loose($0)) }
+        var rows: [GroupedRow] = loose.enumerated().map { offset, book in
+            GroupedRow(id: "b-\(book.libid)-\(offset)", kind: .loose(book))
+        }
         // O(1) series name lookup via the secondary index from Library.init.
-        for (sid, items) in bySeries.sorted(by: {
+        for (sectionOffset, entry) in bySeries.sorted(by: {
             (library.seriesByID[$0.key]?.name ?? "") < (library.seriesByID[$1.key]?.name ?? "")
-        }) {
+        }).enumerated() {
+            let (sid, items) = entry
             let s = library.seriesByID[sid] ?? Series(id: sid, name: "?")
             let sorted = items.sorted { ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max) }
-            rows.append(GroupedRow(kind: .seriesHeader(s, sorted)))
+            let entries = sorted.enumerated().map { offset, book in
+                GroupedRow.BookEntry(id: "sb-\(sid)-\(book.libid)-\(offset)", book: book)
+            }
+            rows.append(GroupedRow(id: "s-\(sid)-\(sectionOffset)", kind: .seriesHeader(s, entries)))
         }
         return rows
     }
@@ -61,8 +72,8 @@ struct BooksTableView: View {
                             BookRow(book: b, library: library, indented: false)
                         case .seriesHeader(let s, let items):
                             seriesGroupHeader(s, count: items.count)
-                            ForEach(items) { b in
-                                BookRow(book: b, library: library, indented: true)
+                            ForEach(items) { item in
+                                BookRow(book: item.book, library: library, indented: true)
                             }
                         }
                     }
@@ -91,7 +102,7 @@ struct BooksTableView: View {
                 Text(label.prefix).foregroundStyle(.secondary)
                 Text(label.name).fontWeight(.semibold)
             } else {
-                Text("Выберите автора или серию").foregroundStyle(.secondary)
+                Text("Выберите автора, серию или жанр").foregroundStyle(.secondary)
             }
             Spacer()
             if count > 0 {
@@ -113,6 +124,11 @@ struct BooksTableView: View {
            let sid = state.selectedSeriesID,
            let series = library.seriesByID[sid] {
             return ("Серия", series.name)
+        }
+        if state.sidebarTab == .genres,
+           let gid = state.selectedGenreID,
+           let genre = library.genreByID[gid] {
+            return ("Жанр", genre.name)
         }
         return nil
     }

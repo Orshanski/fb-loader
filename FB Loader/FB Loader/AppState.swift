@@ -18,10 +18,11 @@ final class AppState {
     let userPaths = UserPaths.shared
 
     // UI selection state — explicitly NOT persisted (per spec §4 "Состояние между запусками").
-    enum SidebarTab { case authors, series }
+    enum SidebarTab { case authors, series, genres }
     var sidebarTab: SidebarTab = .authors
     var selectedAuthorID: Int32? = nil
     var selectedSeriesID: Int32? = nil
+    var selectedGenreID: Int16? = nil
     var selectedBookLibid: Int32? = nil
     var languageFilter: String = "ru"
     var sidebarFilter: String = ""
@@ -38,6 +39,7 @@ final class AppState {
         sidebarTab = .authors
         selectedAuthorID = nil
         selectedSeriesID = nil
+        selectedGenreID = nil
         selectedBookLibid = nil
         languageFilter = "ru"
         sidebarFilter = ""

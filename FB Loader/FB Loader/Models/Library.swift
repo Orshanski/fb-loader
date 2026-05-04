@@ -22,6 +22,13 @@ nonisolated final class Library: Sendable {
     let booksBySeries: [Int32: [Int]]
     let bookCountByAuthor: [Int32: Int] // for the "(N)" counters
     let bookCountBySeries: [Int32: Int]
+    let booksByGenre: [Int16: [Int]]
+    let bookCountByGenre: [Int16: Int]
+    let bookCountByGenreByLang: [Int16: [String: Int]]
+    let rootGenres: [Genre]
+    let childGenresByParent: [Int16: [Genre]]
+    let orphanGenres: [Genre]
+    let sidebarGenres: [Genre]
     let languages: [String]             // distinct languages found, sorted
 
     /// Per-language book counts. `bookCountByAuthorByLang[authorID]?[lang]`
@@ -37,6 +44,8 @@ nonisolated final class Library: Sendable {
     // across 100k+ authors. Transient: NOT persisted in LibraryBinaryCodec.
     let lowercasedAuthorNames: [String]
     let lowercasedSeriesNames: [String]
+    let lowercasedGenreNames: [Int16: String]
+    let lowercasedSidebarGenreNames: [String]
 
     init(
         inpxHash: Data,
@@ -77,9 +86,11 @@ nonisolated final class Library: Sendable {
 
         var byAuthor: [Int32: [Int]] = [:]
         var bySeries: [Int32: [Int]] = [:]
+        var byGenre: [Int16: [Int]] = [:]
         var langSet = Set<String>()
         var byAuthorLang: [Int32: [String: Int]] = [:]
         var bySeriesLang: [Int32: [String: Int]] = [:]
+        var byGenreLang: [Int16: [String: Int]] = [:]
         for (i, b) in books.enumerated() {
             for aid in b.authorIDs {
                 byAuthor[aid, default: []].append(i)
@@ -89,17 +100,59 @@ nonisolated final class Library: Sendable {
                 bySeries[sid, default: []].append(i)
                 bySeriesLang[sid, default: [:]][b.language, default: 0] += 1
             }
+            for gid in b.genreIDs {
+                byGenre[gid, default: []].append(i)
+                byGenreLang[gid, default: [:]][b.language, default: 0] += 1
+            }
             langSet.insert(b.language)
         }
         self.booksByAuthor = byAuthor
         self.booksBySeries = bySeries
+        self.booksByGenre = byGenre
         self.bookCountByAuthor = byAuthor.mapValues(\.count)
         self.bookCountBySeries = bySeries.mapValues(\.count)
+        self.bookCountByGenre = byGenre.mapValues(\.count)
         self.bookCountByAuthorByLang = byAuthorLang
         self.bookCountBySeriesByLang = bySeriesLang
+        self.bookCountByGenreByLang = byGenreLang
         self.languages = Array(langSet).sorted()
         self.lowercasedAuthorNames = authors.map { $0.displayName.lowercased() }
         self.lowercasedSeriesNames = series.map { $0.name.lowercased() }
+        self.lowercasedGenreNames = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0.name.lowercased()) })
+
+        let rootGenres = genres.filter { $0.parentID == nil }
+        let rootIDs = Set(rootGenres.map(\.id))
+        let parentByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0.parentID) })
+
+        func nearestRootID(for genre: Genre) -> Int16? {
+            var seen = Set<Int16>()
+            var current = genre.parentID
+            while let id = current {
+                if rootIDs.contains(id) { return id }
+                if seen.contains(id) { return nil }
+                seen.insert(id)
+                current = parentByID[id] ?? nil
+            }
+            return nil
+        }
+
+        self.rootGenres = rootGenres
+        var childrenByRoot: [Int16: [Genre]] = [:]
+        var orphans: [Genre] = []
+        for genre in genres where genre.parentID != nil {
+            if let rootID = nearestRootID(for: genre) {
+                childrenByRoot[rootID, default: []].append(genre)
+            } else {
+                orphans.append(genre)
+            }
+        }
+        self.childGenresByParent = childrenByRoot
+        self.orphanGenres = orphans
+        let sidebarGenres = rootGenres.flatMap { root in
+            [root] + (childrenByRoot[root.id] ?? [])
+        } + orphans
+        self.sidebarGenres = sidebarGenres
+        self.lowercasedSidebarGenreNames = sidebarGenres.map { $0.name.lowercased() }
         print("[Library.init] secondary indices built; \(langSet.count) distinct languages")
         onStatus?("[Library.init] secondary indices built; \(langSet.count) distinct languages")
     }
