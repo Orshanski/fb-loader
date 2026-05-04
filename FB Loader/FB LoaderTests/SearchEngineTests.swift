@@ -72,6 +72,18 @@ struct SearchEngineTests {
         #expect(r.series.contains { lib.series[$0.seriesIndex].name == "Элантрис" })
     }
 
+    @Test("Кросс-токенный запрос «автор + серия» находит серию через расширенный ключ")
+    func seriesByAuthorPlusSeries() {
+        // Запрос «сандерсон элантрис»: авторские токены не содержат «элантрис»,
+        // токены серии не содержат «сандерсон». Серия «Элантрис» должна
+        // найтись благодаря searchKeySeriesExt — base series tokens + tokens
+        // авторов её книг (Сандерсон).
+        let lib = makeLibrary()
+        let r = SearchEngine.run(query: "сандерсон элантрис", language: "ru", in: lib)
+        #expect(r.series.contains { lib.series[$0.seriesIndex].name == "Элантрис" },
+                "ожидалось найти серию «Элантрис» по запросу «сандерсон элантрис»")
+    }
+
     @Test("Многословный запрос по книге находит книгу")
     func multiTokenBook() {
         let lib = makeLibrary()

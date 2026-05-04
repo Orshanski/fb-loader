@@ -25,13 +25,15 @@ nonisolated enum SearchEngine {
         }
         let authors = authorHits.map { AuthorMatch(authorIndex: $0.index, score: $0.score) }
 
-        // 2. Series
+        // 2. Series — uses extended key (series name + author tokens) so
+        // cross-token queries like «сандерсон мстители» match series whose
+        // author is Сандерсон.
         let seriesHits = parallelScan(
             qTokens: qToks,
             count: lib.series.count,
             cutoff: FuzzyScorer.scoreCutoff
         ) { i in
-            lib.searchKeySeries[i]
+            lib.searchKeySeriesExt[i]
         }
         let series = seriesHits.map { SeriesMatch(seriesIndex: $0.index, score: $0.score) }
 

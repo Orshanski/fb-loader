@@ -57,7 +57,13 @@ nonisolated final class Library: Sendable {
     // book scoring the engine dispatches author/series tokens via
     // `searchAuthorIdx` / `searchSeriesIdx` lookups.
     let searchKeyAuthors: [[[UInt32]]]  // parallel to authors
-    let searchKeySeries:  [[[UInt32]]]  // parallel to series
+    let searchKeySeries:  [[[UInt32]]]  // parallel to series — base key, used by parallelScanBooks combined key
+    /// Extended series key: base series tokens + tokens of all distinct
+    /// authors with at least one book in the series. Used only by
+    /// `SearchEngine.parallelScan` for the Series bucket so cross-token
+    /// queries like «сандерсон мстители» match series «Мстители» whose
+    /// author is Сандерсон.
+    let searchKeySeriesExt: [[[UInt32]]]
     let searchKeyTitle:   [[[UInt32]]]  // parallel to books
     let searchAuthorIdx:  [Int32]       // per book: index into searchKeyAuthors, -1 if missing
     let searchSeriesIdx:  [Int32]       // per book: index into searchKeySeries, -1 if no series
@@ -224,6 +230,30 @@ nonisolated final class Library: Sendable {
         self.searchKeyTitle = sTitles
         self.searchAuthorIdx = aIdx
         self.searchSeriesIdx = sIdx
+
+        // Series-bucket extended key: for each series, append the tokens of
+        // every distinct author with at least one book in that series. Cost
+        // ~10 МБ on the full catalog. Lets cross-token queries («сандерсон
+        // мстители») match a series by combining its name with its authors.
+        var authorIdxBySeriesIdx: [Set<Int32>] = Array(repeating: [], count: series.count)
+        for k in 0..<books.count {
+            let sIdxK = sIdx[k]
+            if sIdxK < 0 { continue }
+            let aIdxK = aIdx[k]
+            if aIdxK < 0 { continue }
+            authorIdxBySeriesIdx[Int(sIdxK)].insert(aIdxK)
+        }
+        var sSeriesExt: [[[UInt32]]] = []
+        sSeriesExt.reserveCapacity(series.count)
+        for i in 0..<series.count {
+            var ext = sSeries[i]
+            for aIdxOfSeries in authorIdxBySeriesIdx[i] {
+                ext.append(contentsOf: sAuthors[Int(aIdxOfSeries)])
+            }
+            sSeriesExt.append(ext)
+        }
+        self.searchKeySeriesExt = sSeriesExt
+
         print("[Library.init] search indices built")
         onStatus?("[Library.init] search indices built")
     }
