@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Owns all state for one instance of the search-window sheet.
 /// Recreated each time the sheet opens — no persistence between presentations.
@@ -94,5 +95,33 @@ final class SearchCoordinator {
         visibleSeriesCount = 10
         visibleBooksCount = 20
         selectedBookLibid = nil
+    }
+
+    // MARK: - Per-book bindings (used by per-block views in the search sheet)
+
+    /// Two-way Binding for the export-checkbox state of a book within the
+    /// search sheet. Both author-blocks and series-blocks read from the
+    /// same `checkedBookLibids` set, so checking the same book in two
+    /// places stays in sync.
+    func bindingChecked(_ book: Book) -> Binding<Bool> {
+        Binding(
+            get: { self.checkedBookLibids.contains(book.libid) },
+            set: { isOn in
+                if isOn { self.checkedBookLibids.insert(book.libid) }
+                else    { self.checkedBookLibids.remove(book.libid) }
+            }
+        )
+    }
+
+    /// Two-way Binding for the row-selection state. Selection is global
+    /// (one selected book at a time across all blocks); writing `true`
+    /// updates `selectedBookLibid`, writing `false` is intentionally a
+    /// no-op so that toggling another row's selection doesn't blank the
+    /// detail panel mid-flight.
+    func bindingSelected(_ book: Book) -> Binding<Bool> {
+        Binding(
+            get: { self.selectedBookLibid == book.libid },
+            set: { newValue in if newValue { self.selectedBookLibid = book.libid } }
+        )
     }
 }

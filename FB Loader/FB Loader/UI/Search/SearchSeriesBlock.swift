@@ -85,8 +85,8 @@ struct SearchSeriesBlock: View {
         ForEach(visibleBooks, id: \.libid) { b in
             BookRow(
                 book: b, library: library, indented: true,
-                isChecked: bindingChecked(b),
-                isSelected: bindingSelected(b),
+                isChecked: coord.bindingChecked(b),
+                isSelected: coord.bindingSelected(b),
                 contextMenuBuilder: { exportContextMenu() }
             )
         }
@@ -98,23 +98,6 @@ struct SearchSeriesBlock: View {
             .padding(.horizontal, 30)
             .padding(.vertical, 6)
         }
-    }
-
-    private func bindingChecked(_ b: Book) -> Binding<Bool> {
-        Binding(
-            get: { coord.checkedBookLibids.contains(b.libid) },
-            set: { isOn in
-                if isOn { coord.checkedBookLibids.insert(b.libid) }
-                else    { coord.checkedBookLibids.remove(b.libid) }
-            }
-        )
-    }
-
-    private func bindingSelected(_ b: Book) -> Binding<Bool> {
-        Binding(
-            get: { coord.selectedBookLibid == b.libid },
-            set: { newValue in if newValue { coord.selectedBookLibid = b.libid } }
-        )
     }
 
     private func exportContextMenu() -> AnyView {
