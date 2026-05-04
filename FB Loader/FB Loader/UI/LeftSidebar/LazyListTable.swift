@@ -126,6 +126,14 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             self.binding = binding
         }
 
+        // Explicit empty `nonisolated deinit` — workaround for an ICE in
+        // swift-frontend's `EarlyPerfInliner` (Xcode 26.4.1 / Swift 6.3.1)
+        // when synthesising the implicit MainActor-isolated deinit for a
+        // generic-parameterised class. Crash hits only at -O / Release; Debug
+        // builds and tests are unaffected. Safe to remove if a future Swift
+        // version stops crashing here.
+        nonisolated deinit {}
+
         func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
         func tableView(_ tableView: NSTableView,
@@ -200,6 +208,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             super.init(coder: coder)
             setupSubviews()
         }
+
+        // Same EarlyPerfInliner ICE workaround as Coordinator.deinit above.
+        nonisolated deinit {}
 
         private func setupSubviews() {
             mainLabel.translatesAutoresizingMaskIntoConstraints = false
