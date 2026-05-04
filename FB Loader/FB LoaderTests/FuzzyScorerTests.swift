@@ -81,3 +81,76 @@ struct FuzzyScorerCorpusTests {
                 "score=\(score), expected below cutoff \(FuzzyScorer.SCORE_CUTOFF)")
     }
 }
+
+@Suite("FuzzyScorer bit-parallel")
+struct FuzzyScorerBPTests {
+    /// Все пары из корпуса + дополнительные ровно для cross-check.
+    static let pairs: [(q: String, c: String)] = [
+        ("прошивка", "прошивки"),
+        ("достоевск", "достоевский"),
+        ("короли", "королей"),
+        ("сандерсн", "сандерсон"),
+        ("короли", "космобиолухи"),
+        ("крыса", "корсакова"),
+        ("мария", "информация"),
+        ("мария", "марк"),
+        ("ёлка", "елка"),
+        ("Тайфун!", "тайфуны"),
+        ("сандерсон брэндон", "Брэндон Сандерсон"),
+        ("толк", "толкиен"),
+        ("a", "abcdefghijklmnopqrstuvwxyz"),
+        ("abcdefghijklmnopqrstuvwxyz", "a"),
+        ("", ""),
+    ]
+
+    @Test("DP ≡ BP на всех парах токенов корпуса")
+    func dpEqualsBP() {
+        for (q, c) in Self.pairs {
+            let qToks = SearchPreprocess.tokens(q)
+            let cToks = SearchPreprocess.tokens(c)
+            for qt in qToks {
+                for ct in cToks {
+                    let dp = FuzzyScorer.lcsLengthDP(qt, ct)
+                    let bp = FuzzyScorer.lcsLengthBP(qt, ct)
+                    #expect(dp == bp, "\(q) × \(c): DP=\(dp), BP=\(bp)")
+                }
+            }
+        }
+    }
+
+    @Test("Pre-built scorer даёт те же скоры, что и не-pre-built вариант")
+    func preBuiltMatchesNaive() {
+        for tc in FuzzyScorerCorpusTests.corpus {
+            let qToks = SearchPreprocess.tokens(tc.q)
+            let cToks = SearchPreprocess.tokens(tc.c)
+            let naive = FuzzyScorer.tokenMinRatio(qTokens: qToks, cTokens: cToks)
+            let qPatterns = qToks.map(FuzzyScorer.LcsPattern.init)
+            let pre = FuzzyScorer.tokenMinRatioPre(
+                qPatterns: qPatterns, cTokens: cToks,
+                cutoff: FuzzyScorer.SCORE_CUTOFF
+            )
+            // Pre с cutoff может вернуть 0 раньше naive — но именно когда
+            // `naive < cutoff`. В остальных случаях должны совпадать.
+            if naive >= FuzzyScorer.SCORE_CUTOFF {
+                #expect(abs(pre - naive) < 0.01,
+                        "\(tc.label): \(tc.q) → \(tc.c) — naive=\(naive), pre=\(pre)")
+            } else {
+                #expect(pre == 0,
+                        "\(tc.label): \(tc.q) → \(tc.c) — pre=\(pre), expected 0 due to cutoff")
+            }
+        }
+    }
+
+    @Test("Паттерн >64 codepoint'ов уходит в DP-fallback и работает корректно")
+    func longPatternFallback() {
+        let longPat = String(repeating: "а", count: 70)
+        let target = "а"
+        let qToks = SearchPreprocess.tokens(longPat)
+        let cToks = SearchPreprocess.tokens(target)
+        let qPatterns = qToks.map(FuzzyScorer.LcsPattern.init)
+        #expect(qPatterns[0].isLong == true)
+        // LCS должен быть 1: "а" есть один раз в обеих строках, и "а"
+        // покрывается из паттерна длины 70.
+        #expect(FuzzyScorer.lcsLengthPre(qPatterns[0], cToks[0]) == 1)
+    }
+}
