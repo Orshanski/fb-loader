@@ -18,7 +18,7 @@
 
 ### Создаются
 
-- `FB Loader/FB Loader/Search/SearchPreprocess.swift` — `preprocessTokens(_:)` нормализует строку и разбивает на массив `[UInt32]`-токенов (lowercase, ё→е, не-letter/digit как разделитель).
+- `FB Loader/FB Loader/Search/SearchPreprocess.swift` — `SearchPreprocess.tokens(_:)` нормализует строку и разбивает на массив `[UInt32]`-токенов (lowercase, ё→е, не-letter/digit как разделитель).
 - `FB Loader/FB Loader/Search/FuzzyScorer.swift` — `lcsLengthDP`, `lcsLengthBP`, `LcsPattern`, `makeLcsPattern`, `lcsLengthPre`, `tokenMatchScorePre`, `tokenMinRatioPre`, `SCORE_CUTOFF`.
 - `FB Loader/FB Loader/Search/SearchResult.swift` — value types: `AuthorMatch`, `SeriesMatch`, `BookMatch`, `SearchResults`.
 - `FB Loader/FB Loader/Search/SearchEngine.swift` — `nonisolated enum SearchEngine` с `func run(query:language:in:) -> SearchResults`, параллельный скан по авторам/сериям/книгам.
@@ -61,34 +61,34 @@ import Foundation
 struct SearchPreprocessTests {
     @Test("Пустая строка → пустой массив токенов")
     func empty() {
-        #expect(preprocessTokens("") == [])
+        #expect(SearchPreprocess.tokens("") == [])
     }
 
     @Test("Простое слово ASCII → один токен в нижнем регистре")
     func asciiWord() {
-        let toks = preprocessTokens("Hello")
+        let toks = SearchPreprocess.tokens("Hello")
         #expect(toks.count == 1)
         #expect(String(String.UnicodeScalarView(toks[0].compactMap(Unicode.Scalar.init))) == "hello")
     }
 
     @Test("Кириллица в нижнем регистре")
     func cyrillicLowercase() {
-        let toks = preprocessTokens("Сандерсон")
+        let toks = SearchPreprocess.tokens("Сандерсон")
         #expect(toks.count == 1)
         #expect(String(String.UnicodeScalarView(toks[0].compactMap(Unicode.Scalar.init))) == "сандерсон")
     }
 
     @Test("ё → е, Ё → е")
     func yoToYe() {
-        let lower = preprocessTokens("ёлка")
-        let upper = preprocessTokens("Ёлка")
+        let lower = SearchPreprocess.tokens("ёлка")
+        let upper = SearchPreprocess.tokens("Ёлка")
         #expect(String(String.UnicodeScalarView(lower[0].compactMap(Unicode.Scalar.init))) == "елка")
         #expect(String(String.UnicodeScalarView(upper[0].compactMap(Unicode.Scalar.init))) == "елка")
     }
 
     @Test("Пунктуация и пробелы — разделители токенов, схлопываются")
     func punctuationSplits() {
-        let toks = preprocessTokens("Война и мир!  ")
+        let toks = SearchPreprocess.tokens("Война и мир!  ")
         #expect(toks.count == 3)
         let words = toks.map { String(String.UnicodeScalarView($0.compactMap(Unicode.Scalar.init))) }
         #expect(words == ["война", "и", "мир"])
@@ -96,34 +96,34 @@ struct SearchPreprocessTests {
 
     @Test("Цифры сохраняются")
     func digitsKept() {
-        let toks = preprocessTokens("1984")
+        let toks = SearchPreprocess.tokens("1984")
         #expect(toks.count == 1)
         #expect(String(String.UnicodeScalarView(toks[0].compactMap(Unicode.Scalar.init))) == "1984")
     }
 
     @Test("Микс ASCII и кириллицы в одном слове")
     func mixedScript() {
-        let toks = preprocessTokens("ABC123фыв")
+        let toks = SearchPreprocess.tokens("ABC123фыв")
         #expect(toks.count == 1)
         #expect(String(String.UnicodeScalarView(toks[0].compactMap(Unicode.Scalar.init))) == "abc123фыв")
     }
 
     @Test("Тире и табы — разделители")
     func dashTabAreSeparators() {
-        let toks = preprocessTokens("foo-bar\tbaz")
+        let toks = SearchPreprocess.tokens("foo-bar\tbaz")
         let words = toks.map { String(String.UnicodeScalarView($0.compactMap(Unicode.Scalar.init))) }
         #expect(words == ["foo", "bar", "baz"])
     }
 
     @Test("Украинская кириллица (і, ї, є, ґ) считается буквой")
     func ukrainianCyrillic() {
-        let toks = preprocessTokens("Україна")
+        let toks = SearchPreprocess.tokens("Україна")
         #expect(toks.count == 1, "слово 'Україна' должно остаться одним токеном, не порезаться на 'кра' + 'на'")
     }
 
     @Test("Латиница с диакритикой считается буквой")
     func latinDiacritics() {
-        let toks = preprocessTokens("naïve")
+        let toks = SearchPreprocess.tokens("naïve")
         #expect(toks.count == 1)
     }
 }
@@ -164,13 +164,13 @@ import Foundation
 /// окажется MainActor-isolated, что сломает её вызов из `Task.detached`
 /// внутри `SearchCoordinator` и из `DispatchQueue.concurrentPerform`.
 @inline(__always)
-nonisolated func isAlnumScalar(_ s: UInt32) -> Bool {
+nonisolated func SearchPreprocess.isWordScalar(_ s: UInt32) -> Bool {
     if s >= 0x30 && s <= 0x39 { return true }       // ASCII digits 0..9
     guard let scalar = Unicode.Scalar(s) else { return false }
     return scalar.properties.isAlphabetic
 }
 
-nonisolated func preprocessTokens(_ raw: String) -> [[UInt32]] {
+nonisolated func SearchPreprocess.tokens(_ raw: String) -> [[UInt32]] {
     if raw.isEmpty { return [] }
     var tokens: [[UInt32]] = []
     var current: [UInt32] = []
@@ -184,7 +184,7 @@ nonisolated func preprocessTokens(_ raw: String) -> [[UInt32]] {
         if c >= 0x41 && c <= 0x5A { c += 0x20 }
         // Cyrillic upper А..Я → а..я
         else if c >= 0x0410 && c <= 0x042F { c += 0x20 }
-        if isAlnumScalar(c) {
+        if SearchPreprocess.isWordScalar(c) {
             current.append(c)
         } else if !current.isEmpty {
             tokens.append(current)
@@ -250,8 +250,8 @@ struct FuzzyScorerCorpusTests {
     @Test("13 эталонных пар librarium корректно ранжируются")
     func corpusFullPass() {
         for tc in Self.corpus {
-            let qTokens = preprocessTokens(tc.q)
-            let cTokens = preprocessTokens(tc.c)
+            let qTokens = SearchPreprocess.tokens(tc.q)
+            let cTokens = SearchPreprocess.tokens(tc.c)
             let score = tokenMinRatio(qTokens: qTokens, cTokens: cTokens)
             let actualPass = score >= SCORE_CUTOFF
             #expect(actualPass == tc.pass,
@@ -396,8 +396,8 @@ struct FuzzyScorerBPTests {
     @Test("DP ≡ BP на всех парах токенов корпуса")
     func dpEqualsBP() {
         for (q, c) in Self.pairs {
-            let qToks = preprocessTokens(q)
-            let cToks = preprocessTokens(c)
+            let qToks = SearchPreprocess.tokens(q)
+            let cToks = SearchPreprocess.tokens(c)
             for qt in qToks {
                 for ct in cToks {
                     let dp = lcsLengthDP(qt, ct)
@@ -411,8 +411,8 @@ struct FuzzyScorerBPTests {
     @Test("Pre-built scorer даёт те же скоры, что и не-pre-built вариант")
     func preBuiltMatchesNaive() {
         for tc in FuzzyScorerCorpusTests.corpus {
-            let qToks = preprocessTokens(tc.q)
-            let cToks = preprocessTokens(tc.c)
+            let qToks = SearchPreprocess.tokens(tc.q)
+            let cToks = SearchPreprocess.tokens(tc.c)
             let naive = tokenMinRatio(qTokens: qToks, cTokens: cToks)
             let qPatterns = qToks.map(makeLcsPattern)
             let pre = tokenMinRatioPre(qPatterns: qPatterns, cTokens: cToks,
@@ -433,8 +433,8 @@ struct FuzzyScorerBPTests {
     func longPatternFallback() {
         let longPat = String(repeating: "а", count: 70)
         let target = "а"
-        let qToks = preprocessTokens(longPat)
-        let cToks = preprocessTokens(target)
+        let qToks = SearchPreprocess.tokens(longPat)
+        let cToks = SearchPreprocess.tokens(target)
         let qPatterns = qToks.map(makeLcsPattern)
         #expect(qPatterns[0].isLong == true)
         // LCS должен быть 1: "а" есть один раз в обеих строках, и "а"
@@ -677,14 +677,14 @@ Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -d
         var sAuthors: [[[UInt32]]] = []
         sAuthors.reserveCapacity(authors.count)
         for a in authors {
-            sAuthors.append(preprocessTokens(a.displayName))
+            sAuthors.append(SearchPreprocess.tokens(a.displayName))
         }
         self.searchKeyAuthors = sAuthors
 
         var sSeries: [[[UInt32]]] = []
         sSeries.reserveCapacity(series.count)
         for s in series {
-            sSeries.append(preprocessTokens(s.name))
+            sSeries.append(SearchPreprocess.tokens(s.name))
         }
         self.searchKeySeries = sSeries
 
@@ -703,7 +703,7 @@ Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -d
         seriesIndexByID.reserveCapacity(series.count)
         for (i, s) in series.enumerated() { seriesIndexByID[s.id] = i }
         for b in books {
-            sTitles.append(preprocessTokens(b.title))
+            sTitles.append(SearchPreprocess.tokens(b.title))
             // Primary author: first authorID; -1 if missing.
             if let firstAID = b.authorIDs.first,
                let idx = authorIndexByID[firstAID] {
@@ -961,7 +961,7 @@ import Foundation
 /// всех»; cap живёт в UI, не в engine).
 nonisolated enum SearchEngine {
     static func run(query: String, language: String, in lib: Library) -> SearchResults {
-        let qToks = preprocessTokens(query)
+        let qToks = SearchPreprocess.tokens(query)
         guard !qToks.isEmpty else {
             return SearchResults(authors: [], series: [], books: [])
         }
