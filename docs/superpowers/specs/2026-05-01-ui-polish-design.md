@@ -3,7 +3,7 @@
 **Date:** 2026-05-01
 **Goal:** Polish текущего UI FB Loader с сохранением структуры (toolbar / sidebar / books / book card). Без структурных изменений — только визуальная согласованность, типографика, отступы, чёткие колонки таблицы и аккуратная карточка книги с прокручиваемой аннотацией.
 
-**Reference mockup:** [`assets/2026-05-01-ui-polish/window.html`](assets/2026-05-01-ui-polish/window.html) · [`window.png`](assets/2026-05-01-ui-polish/window.png)
+**Reference mockup:** [`window.png`](assets/2026-05-01-ui-polish/window.png)
 
 ![Итоговый макет окна](assets/2026-05-01-ui-polish/window.png)
 
