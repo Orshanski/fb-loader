@@ -2097,13 +2097,13 @@ git commit -m "feat(search): add local export from search window"
 - Modify: `FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift`
 - Modify: `FB Loader/FB Loader/FB_LoaderApp.swift`
 
-**Задача про «зависимое от главного» окно (не открывающееся где попало):**
+**Связанность окна с главным даётся почти даром:**
 
-- Singleton: ровно один экземпляр окна поиска. Используем `Window(id:)` — он singleton по построению, повторный `openWindow(id:)` фокусирует существующий экземпляр.
-- Lupa-кнопка живёт **только** внутри `LeftSidebarView`, который, в свою очередь, рендерится только когда `AppState.stage == .ready(library)`. Значит, открыть окно поиска без загруженного каталога физически нельзя — нет элемента UI, через который это сделать.
-- Внутри окна доп. защита: если `state.stage != .ready` (теоретически — при reset/перезагрузке каталога), показываем «Каталог ещё не загружен» вместо результатов.
-- `applicationShouldTerminateAfterLastWindowClosed = true` в существующем `AppDelegate` (`FB_LoaderApp.swift:13-15`) обеспечивает: пока хоть одно окно открыто — приложение живёт; после закрытия последнего — quit. То есть окно поиска не «висит само по себе» как зомби, а шарит lifecycle с приложением.
-- `AppState` поднимаем из `ContentView` на уровень `FB_LoaderApp`, обе сцены инжектят его через `.environment(state)` — это даёт окну поиска доступ к тому же `Library`-снапшоту, что у главного.
+- `Window(id:)` (не `WindowGroup`!) — singleton по построению.
+- Лупа живёт в `LeftSidebarView`, а тот рендерится только при `state.stage == .ready` — значит, без загруженного каталога окно открыть нечем.
+- Существующий `applicationShouldTerminateAfterLastWindowClosed = true` (`FB_LoaderApp.swift:13-15`) гарантирует, что приложение завершится, когда главное окно закрывают.
+
+Единственная нужная **обвязка**: поднять `AppState` из `ContentView` на уровень `FB_LoaderApp`, чтобы вторая сцена видела тот же экземпляр.
 
 - [ ] **Step 1: Поднять AppState из ContentView в FB_LoaderApp**
 
@@ -2129,10 +2129,6 @@ struct FB_LoaderApp: App {
             }
         }
 
-        // Singleton-сцена для окна поиска. `Window(id:)` (не `WindowGroup`!)
-        // гарантирует один экземпляр; повторный openWindow(id:) фокусирует
-        // уже открытое окно. Доступ к каталогу — через тот же `state`,
-        // что у главного, — через `.environment`.
         Window("Поиск по библиотеке", id: "library-search") {
             SearchSceneRoot()
                 .environment(state)
@@ -2142,24 +2138,19 @@ struct FB_LoaderApp: App {
 
 private struct SearchSceneRoot: View {
     @Environment(AppState.self) private var state
-
     var body: some View {
-        Group {
-            if case .ready(let lib) = state.stage {
-                SearchWindowView(
-                    library: lib,
-                    archivesRoot: state.userPaths.archivesDirectoryURL,
-                    initialLanguage: state.languageFilter
-                )
-            } else {
-                Text("Каталог ещё не загружен")
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 600, minHeight: 300)
-            }
+        if case .ready(let lib) = state.stage {
+            SearchWindowView(
+                library: lib,
+                archivesRoot: state.userPaths.archivesDirectoryURL,
+                initialLanguage: state.languageFilter
+            )
         }
     }
 }
 ```
+
+> Защитная ветка `else` для `state.stage != .ready` не нужна: `LeftSidebarView` рисует лупу только в `.ready`, открыть окно при незагруженном каталоге нельзя. Если каталог сбросят пока окно открыто (редкий edge-case) — оно просто отрендерит пустоту, юзер закроет крестиком.
 
 В `ContentView.swift` заменить:
 ```swift
