@@ -45,4 +45,39 @@ struct FuzzyScorerCorpusTests {
     func cutoffConstant() {
         #expect(FuzzyScorer.SCORE_CUTOFF == 75.0)
     }
+
+    @Test("Идентичные одинаковые входы дают 100.0")
+    func identicalInputsScore100() {
+        // ASCII single-token
+        let asciiTok = SearchPreprocess.tokens("hello")
+        #expect(FuzzyScorer.tokenMinRatio(qTokens: asciiTok, cTokens: asciiTok) == 100.0)
+        // Cyrillic single-token
+        let cyrTok = SearchPreprocess.tokens("сандерсон")
+        #expect(FuzzyScorer.tokenMinRatio(qTokens: cyrTok, cTokens: cyrTok) == 100.0)
+        // Multi-token, same tokens, same order
+        let multi = SearchPreprocess.tokens("война и мир")
+        #expect(FuzzyScorer.tokenMinRatio(qTokens: multi, cTokens: multi) == 100.0)
+    }
+
+    @Test("Один query-токен против многотокенного choice — score = best per-token match")
+    func singleQueryVsMultiChoice() {
+        let q = SearchPreprocess.tokens("сандерсон")
+        let c = SearchPreprocess.tokens("брэндон сандерсон писатель")
+        let score = FuzzyScorer.tokenMinRatio(qTokens: q, cTokens: c)
+        // q.first matches c.second perfectly → 100.0
+        #expect(score == 100.0)
+    }
+
+    @Test("Многотокенный query против одного choice-токена — оба должны найтись или score падает")
+    func multiQueryVsSingleChoice() {
+        // Choice — одно слово; query — два. Оба query-токена ищут лучший
+        // матч в одном-единственном c-токене. Один совпадёт идеально,
+        // другой даст слабый — итоговый min будет слабым.
+        let q = SearchPreprocess.tokens("сандерсон писатель")
+        let c = SearchPreprocess.tokens("сандерсон")
+        let score = FuzzyScorer.tokenMinRatio(qTokens: q, cTokens: c)
+        // «писатель» против «сандерсон» — низкий скор → итоговый min < cutoff
+        #expect(score < FuzzyScorer.SCORE_CUTOFF,
+                "score=\(score), expected below cutoff \(FuzzyScorer.SCORE_CUTOFF)")
+    }
 }

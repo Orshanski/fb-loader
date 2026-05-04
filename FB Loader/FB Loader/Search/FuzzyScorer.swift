@@ -22,6 +22,11 @@ nonisolated enum FuzzyScorer {
     /// SCORE cutoff used to separate real matches from noise.
     /// Empirically (librarium): real matches land at 80..100, noise ≤ 66.
     /// 75 sits in the gap. Tune via the corpus tests if behaviour drifts.
+    ///
+    /// Naming: SCREAMING_SNAKE_CASE intentionally mirrors
+    /// `librarium-py/backend/app/search.py:SEARCH_SCORE_CUTOFF` so the
+    /// cross-port parity is grep-able. Swift API guidelines would prefer
+    /// `scoreCutoff`; we keep parity over convention here.
     static let SCORE_CUTOFF: Double = 75.0
 
     /// Standard 1D rolling-DP LCS. O(m·n) in time, O(min(m, n)) in memory.
