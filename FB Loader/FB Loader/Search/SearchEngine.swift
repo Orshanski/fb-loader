@@ -9,7 +9,7 @@ import Foundation
 /// `SearchResultListView`). Это прямо соответствует спеке (§ Группы —
 /// «по умолчанию топ-10 + Показать всех»; cap живёт в UI, не в engine).
 nonisolated enum SearchEngine {
-    static func run(query: String, language: String, in lib: Library) -> SearchResults {
+    nonisolated static func run(query: String, language: String, in lib: Library) -> SearchResults {
         let qToks = SearchPreprocess.tokens(query)
         guard !qToks.isEmpty else {
             return SearchResults(authors: [], series: [], books: [])
@@ -52,15 +52,25 @@ nonisolated enum SearchEngine {
 
     /// Internal scoring hit — индекс в исходном массиве + скор.
     /// `Sendable`: пересекает actor boundary внутри `concurrentPerform`.
-    private struct Hit: Sendable {
+    nonisolated private struct Hit: Sendable {
         let index: Int
         let score: Double
+    }
+
+    /// `@unchecked Sendable` обёртка над `UnsafeMutableBufferPointer`. Каждый
+    /// поток `concurrentPerform` пишет в свой непересекающийся слот `buf[c]`
+    /// — алгоритм безопасен, но компилятор не может это доказать (структура
+    /// `UnsafeMutableBufferPointer` не Sendable). Эта обёртка явно говорит
+    /// «trust me, я знаю, что делаю» — стандартный idiom при использовании
+    /// сырых указателей внутри @Sendable-замыканий.
+    nonisolated private struct SendableBuf<T>: @unchecked Sendable {
+        let buf: UnsafeMutableBufferPointer<T>
     }
 
     /// Generic параллельный скан: choice — единый массив токенов на индекс
     /// (авторы и серии). Книги используют отдельный путь
     /// `parallelScanBooks` с объединением title+author+series tokens.
-    private static func parallelScan(
+    nonisolated private static func parallelScan(
         qPatterns: [FuzzyScorer.LcsPattern],
         count: Int,
         cutoff: Double,
@@ -70,7 +80,8 @@ nonisolated enum SearchEngine {
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
         let chunkSize = (count + cores - 1) / cores
         var perChunk: [[Hit]] = Array(repeating: [], count: cores)
-        perChunk.withUnsafeMutableBufferPointer { buf in
+        perChunk.withUnsafeMutableBufferPointer { rawBuf in
+            let wrapped = SendableBuf(buf: rawBuf)
             DispatchQueue.concurrentPerform(iterations: cores) { c in
                 let lo = c * chunkSize
                 let hi = min(lo + chunkSize, count)
@@ -83,7 +94,7 @@ nonisolated enum SearchEngine {
                         qPatterns: qPatterns, cTokens: key, cutoff: cutoff)
                     if s >= cutoff { local.append(Hit(index: i, score: s)) }
                 }
-                buf[c] = local
+                wrapped.buf[c] = local
             }
         }
         var hits = perChunk.flatMap { $0 }
@@ -93,7 +104,7 @@ nonisolated enum SearchEngine {
 
     /// Книжный скан с объединением title + author tokens + series tokens
     /// на каждой итерации. Дополнительно фильтрует по языку.
-    private static func parallelScanBooks(
+    nonisolated private static func parallelScanBooks(
         qPatterns: [FuzzyScorer.LcsPattern],
         language: String,
         in lib: Library,
@@ -106,7 +117,8 @@ nonisolated enum SearchEngine {
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
         let chunkSize = (n + cores - 1) / cores
         var perChunk: [[Hit]] = Array(repeating: [], count: cores)
-        perChunk.withUnsafeMutableBufferPointer { buf in
+        perChunk.withUnsafeMutableBufferPointer { rawBuf in
+            let wrapped = SendableBuf(buf: rawBuf)
             DispatchQueue.concurrentPerform(iterations: cores) { c in
                 let lo = c * chunkSize
                 let hi = min(lo + chunkSize, n)
@@ -131,7 +143,7 @@ nonisolated enum SearchEngine {
                         qPatterns: qPatterns, cTokens: combined, cutoff: cutoff)
                     if s >= cutoff { local.append(Hit(index: i, score: s)) }
                 }
-                buf[c] = local
+                wrapped.buf[c] = local
             }
         }
         var hits = perChunk.flatMap { $0 }

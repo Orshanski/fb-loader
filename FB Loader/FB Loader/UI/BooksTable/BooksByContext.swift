@@ -1,6 +1,14 @@
 import Foundation
 
-enum BooksByContext {
+/// `nonisolated` всему enum — все его члены пользуются нонизолированными
+/// контекстами (sidebar list, BooksTableView body, SearchEngine
+/// `parallelScanBooks` worker thread). Без этой пометки под
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` enum и его статики
+/// автоматически становятся MainActor-isolated, и доступ из nonisolated
+/// контекста (особенно из `concurrentPerform`-worker'а в SearchEngine)
+/// ловит warning «main actor-isolated property … referenced from a
+/// nonisolated context».
+nonisolated enum BooksByContext {
     enum Context { case author(Int32), series(Int32), genre(Int16) }
     /// Sentinel token used in the language filter to mean "language not set in INPX".
     static let unspecifiedLanguageToken = "__none__"

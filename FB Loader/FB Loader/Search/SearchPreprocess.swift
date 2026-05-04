@@ -31,7 +31,7 @@ import Foundation
 /// окажется MainActor-isolated, что сломает её вызов из `Task.detached`
 /// внутри `SearchCoordinator` и из `DispatchQueue.concurrentPerform`.
 nonisolated enum SearchPreprocess {
-    static func tokens(_ raw: String) -> [[UInt32]] {
+    nonisolated static func tokens(_ raw: String) -> [[UInt32]] {
         if raw.isEmpty { return [] }
         var tokens: [[UInt32]] = []
         var current: [UInt32] = []
@@ -70,7 +70,7 @@ nonisolated enum SearchPreprocess {
     /// True if `s` is an ASCII digit OR any Unicode-alphabetic scalar
     /// (letters from any script, including marks-with-letter-semantics
     /// per UAX #29). Drives the token-boundary decision in `tokens(_:)`.
-    static func isWordScalar(_ s: UInt32) -> Bool {
+    nonisolated static func isWordScalar(_ s: UInt32) -> Bool {
         if s >= 0x30 && s <= 0x39 { return true }       // ASCII digits 0..9
         guard let scalar = Unicode.Scalar(s) else { return false }
         return scalar.properties.isAlphabetic

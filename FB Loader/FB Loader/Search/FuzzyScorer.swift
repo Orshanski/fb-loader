@@ -27,13 +27,13 @@ nonisolated enum FuzzyScorer {
     /// `librarium-py/backend/app/search.py:SEARCH_SCORE_CUTOFF` so the
     /// cross-port parity is grep-able. Swift API guidelines would prefer
     /// `scoreCutoff`; we keep parity over convention here.
-    static let SCORE_CUTOFF: Double = 75.0
+    nonisolated static let SCORE_CUTOFF: Double = 75.0
 
     /// Standard 1D rolling-DP LCS. O(m·n) in time, O(min(m, n)) in memory.
     /// Used as the reference implementation for cross-checking the
     /// bit-parallel variant added in Task 3, and as the fallback for
     /// patterns longer than 64 codepoints.
-    static func lcsLengthDP(_ a: [UInt32], _ b: [UInt32]) -> Int {
+    nonisolated static func lcsLengthDP(_ a: [UInt32], _ b: [UInt32]) -> Int {
         let m = a.count, n = b.count
         if m == 0 || n == 0 { return 0 }
         let (s, t): ([UInt32], [UInt32]) = m < n ? (b, a) : (a, b)
@@ -58,7 +58,7 @@ nonisolated enum FuzzyScorer {
     /// `fuzz.ratio`. Returns 0..100. Used by the non-pre-built `tokenMinRatio`
     /// for the DP corpus path; bit-parallel + pre-built variants come in
     /// Task 3.
-    static func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
+    nonisolated static func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
         if q.isEmpty || c.isEmpty { return 0 }
         let lcs = lcsLengthDP(q, c)
         let lcsCov = Double(lcs) / Double(q.count) * 100.0
@@ -69,7 +69,7 @@ nonisolated enum FuzzyScorer {
     /// `token_min_ratio` semantics: every query-token must find a best
     /// match in some choice-token; the weakest per-token best across the
     /// query drags the final `min(...)` score down.
-    static func tokenMinRatio(qTokens: [[UInt32]], cTokens: [[UInt32]]) -> Double {
+    nonisolated static func tokenMinRatio(qTokens: [[UInt32]], cTokens: [[UInt32]]) -> Double {
         if qTokens.isEmpty || cTokens.isEmpty { return 0 }
         var minScore = Double.infinity
         for qt in qTokens {
@@ -96,7 +96,7 @@ nonisolated enum FuzzyScorer {
     /// cross-check tests, not by production scoring). Production scoring
     /// goes through `LcsPattern` + `lcsLengthPre` for the pre-built
     /// pattern-match-vector optimisation.
-    static func lcsLengthBP(_ a: [UInt32], _ b: [UInt32]) -> Int {
+    nonisolated static func lcsLengthBP(_ a: [UInt32], _ b: [UInt32]) -> Int {
         let m = a.count, n = b.count
         if m == 0 || n == 0 { return 0 }
         // Pattern is the shorter of the two so it fits in a single UInt64.
@@ -140,7 +140,7 @@ nonisolated enum FuzzyScorer {
         /// Original raw scalars — used only when `isLong` to feed DP fallback.
         let fallback: [UInt32]
 
-        init(_ pat: [UInt32]) {
+        nonisolated init(_ pat: [UInt32]) {
             self.m = pat.count
             self.fallback = pat
             if pat.count > 64 {
@@ -159,7 +159,7 @@ nonisolated enum FuzzyScorer {
 
     /// Bit-parallel LCS using a pre-built `LcsPattern`. Falls back to DP
     /// for patterns longer than 64 codepoints.
-    static func lcsLengthPre(_ p: LcsPattern, _ text: [UInt32]) -> Int {
+    nonisolated static func lcsLengthPre(_ p: LcsPattern, _ text: [UInt32]) -> Int {
         if p.m == 0 || text.isEmpty { return 0 }
         if p.isLong { return lcsLengthDP(p.fallback, text) }
         var S = UInt64.max
@@ -173,7 +173,7 @@ nonisolated enum FuzzyScorer {
 
     /// Per-token match score using a pre-built `LcsPattern`. Same scoring
     /// formula as `tokenMatchScore` (min of LCS-coverage and `fuzz.ratio`).
-    static func tokenMatchScorePre(_ p: LcsPattern, _ c: [UInt32]) -> Double {
+    nonisolated static func tokenMatchScorePre(_ p: LcsPattern, _ c: [UInt32]) -> Double {
         if p.m == 0 || c.isEmpty { return 0 }
         let lcs = lcsLengthPre(p, c)
         let lcsCov = Double(lcs) / Double(p.m) * 100.0
@@ -187,8 +187,8 @@ nonisolated enum FuzzyScorer {
     /// tokens is below `cutoff`, the final `min(...)` will also be below
     /// `cutoff` — return 0 immediately. Sharply reduces work on multi-token
     /// queries against most candidates.
-    static func tokenMinRatioPre(qPatterns: [LcsPattern], cTokens: [[UInt32]],
-                                 cutoff: Double) -> Double {
+    nonisolated static func tokenMinRatioPre(qPatterns: [LcsPattern], cTokens: [[UInt32]],
+                                             cutoff: Double) -> Double {
         if qPatterns.isEmpty || cTokens.isEmpty { return 0 }
         var minScore = Double.infinity
         for qp in qPatterns {
