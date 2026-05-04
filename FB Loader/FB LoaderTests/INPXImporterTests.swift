@@ -6,10 +6,10 @@ import Foundation
 struct INPXImporterTests {
     @Test("parses tiny.inpx into expected catalog")
     func parsesTiny() throws {
-        let url = try #require(Bundle(for: TinyAnchor.self)
+        let url = try #require(TestBundleAnchor.bundle
             .url(forResource: "tiny", withExtension: "inpx"))
         let dict = try GenreDictionary.loadFromBundle()
-        let lib = try INPXImporter.import_(inpxURL: url, genres: dict)
+        let lib = try INPXImporter.parse(inpxURL: url, genres: dict)
         #expect(lib.books.count == 2)
         #expect(lib.archives == ["lib-001"])
         #expect(lib.inpxVersion == "20260301")
@@ -31,6 +31,3 @@ struct INPXImporterTests {
         #expect(rubezh.size == 6400838)
     }
 }
-
-/// Anchor type used to locate the test bundle resources.
-private final class TinyAnchor {}

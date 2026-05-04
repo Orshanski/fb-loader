@@ -32,7 +32,7 @@ nonisolated enum LibraryLoader {
         onStatus?("Чтение кэша каталога…")
         return try store.loadOrRebuild(inpxURL: inpxURL, onStatus: onStatus) {
             onStatus?("Кэш не найден или устарел — пересборка из INPX")
-            return try INPXImporter.import_(
+            return try INPXImporter.parse(
                 inpxURL: inpxURL,
                 genres: genres,
                 onStatus: onStatus,

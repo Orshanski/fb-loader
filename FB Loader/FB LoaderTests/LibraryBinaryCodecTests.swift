@@ -161,14 +161,14 @@ struct LibraryBinaryCodecTests {
 /// accumulate.
 final class ThreadSafeBox<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private var _value: Value
-    init(_ value: Value) { self._value = value }
+    private var storage: Value
+    init(_ value: Value) { self.storage = value }
     var value: Value {
         lock.lock(); defer { lock.unlock() }
-        return _value
+        return storage
     }
     func mutate(_ block: (inout Value) -> Void) {
         lock.lock(); defer { lock.unlock() }
-        block(&_value)
+        block(&storage)
     }
 }

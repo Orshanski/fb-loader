@@ -4,7 +4,7 @@ import Testing
 
 @Suite("INPRecordParser")
 struct INPRecordParserTests {
-    private let SEP = "\u{04}"
+    private let sep = "\u{04}"
 
     @Test("parses a complete record with default field layout")
     func defaultLayout() throws {
@@ -21,7 +21,7 @@ struct INPRecordParserTests {
             "fb2",                            // EXT    (9)
             "2010-05-15",                     // DATE   (10)
             "ru",                             // LANG   (11)
-        ].joined(separator: SEP)
+        ].joined(separator: sep)
         let r = try #require(INPRecordParser.parse(line: line, fieldIndex: .defaults))
         #expect(r.title == "Война и мир")
         #expect(r.libid == 12345)
@@ -47,7 +47,7 @@ struct INPRecordParserTests {
     func languageTruncation() throws {
         // Some INPX have "ru-RU" or longer; freeLib uses .left(2).
         let parts = ["A,B,C","g","T","","","1","1","1","0","fb2","","ru-RU"]
-        let line = parts.joined(separator: SEP)
+        let line = parts.joined(separator: sep)
         let r = try #require(INPRecordParser.parse(line: line, fieldIndex: .defaults))
         #expect(r.language == "ru")
     }

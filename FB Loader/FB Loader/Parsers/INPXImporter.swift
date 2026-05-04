@@ -21,7 +21,7 @@ nonisolated enum INPXImporter {
     /// the first small .inp (which may have <1000 books).
     private static let progressEveryNBooks = 200
 
-    static func import_(
+    static func parse(
         inpxURL: URL,
         genres: GenreDictionary,
         onStatus: (@Sendable (String) -> Void)? = nil,

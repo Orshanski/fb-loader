@@ -6,7 +6,7 @@ import Foundation
 struct FB2DescriptionParserTests {
     @Test("parses sample.fb2 description")
     func parsesSample() throws {
-        let url = try #require(Bundle(for: SampleAnchor.self)
+        let url = try #require(TestBundleAnchor.bundle
             .url(forResource: "sample", withExtension: "fb2"))
         let data = try Data(contentsOf: url)
         let info = try FB2DescriptionParser.parse(data: data)
@@ -18,4 +18,3 @@ struct FB2DescriptionParserTests {
         #expect(info.coverImageData != nil)
     }
 }
-private final class SampleAnchor {}

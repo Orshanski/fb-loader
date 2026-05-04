@@ -7,7 +7,7 @@
 
 import XCTest
 
-final class FB_LoaderUITestsLaunchTests: XCTestCase {
+final class FBLoaderUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         false

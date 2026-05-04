@@ -11,9 +11,10 @@ struct UserPathsTests {
         #expect(paths.inpxURL == nil)
         #expect(paths.archivesDirectoryURL == nil)
         #expect(paths.lastExportDirectoryURL == nil)
-        let inpx = URL(fileURLWithPath: "/tmp/test.inpx")
-        let arch = URL(fileURLWithPath: "/Volumes/disk")
-        let exp = URL(fileURLWithPath: "/Users/me/Downloads")
+        let tmp = FileManager.default.temporaryDirectory
+        let inpx = tmp.appendingPathComponent("test.inpx")
+        let arch = tmp.appendingPathComponent("archives")
+        let exp = tmp.appendingPathComponent("exports")
         paths.inpxURL = inpx
         paths.archivesDirectoryURL = arch
         paths.lastExportDirectoryURL = exp
@@ -26,7 +27,8 @@ struct UserPathsTests {
     func clearViaNil() {
         let suite = UserDefaults(suiteName: "FB_Loader.test.\(UUID())")!
         let paths = UserPaths(defaults: suite)
-        paths.inpxURL = URL(fileURLWithPath: "/tmp/x.inpx")
+        paths.inpxURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("x.inpx")
         #expect(paths.inpxURL != nil)
         paths.inpxURL = nil
         #expect(paths.inpxURL == nil)

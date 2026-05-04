@@ -11,14 +11,14 @@ struct LibraryCacheStoreTests {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let store = LibraryCacheStore(applicationSupportRoot: tmp)
-        let inpx = try #require(Bundle(for: TinyAnchor2.self)
+        let inpx = try #require(TestBundleAnchor.bundle
             .url(forResource: "tiny", withExtension: "inpx"))
         let dict = try GenreDictionary.loadFromBundle()
 
         var didReparse = false
         let lib1 = try store.loadOrRebuild(inpxURL: inpx) {
             didReparse = true
-            return try INPXImporter.import_(inpxURL: inpx, genres: dict)
+            return try INPXImporter.parse(inpxURL: inpx, genres: dict)
         }
         #expect(didReparse == true)
         #expect(lib1.books.count == 2)
@@ -27,7 +27,7 @@ struct LibraryCacheStoreTests {
         var didReparseAgain = false
         let lib2 = try store.loadOrRebuild(inpxURL: inpx) {
             didReparseAgain = true
-            return try INPXImporter.import_(inpxURL: inpx, genres: dict)
+            return try INPXImporter.parse(inpxURL: inpx, genres: dict)
         }
         #expect(didReparseAgain == false)
         #expect(lib2.books.count == 2)
@@ -40,13 +40,13 @@ struct LibraryCacheStoreTests {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let store = LibraryCacheStore(applicationSupportRoot: tmp)
-        let inpx = try #require(Bundle(for: TinyAnchor2.self)
+        let inpx = try #require(TestBundleAnchor.bundle
             .url(forResource: "tiny", withExtension: "inpx"))
         let dict = try GenreDictionary.loadFromBundle()
 
         // Prime the cache.
         _ = try store.loadOrRebuild(inpxURL: inpx) {
-            try INPXImporter.import_(inpxURL: inpx, genres: dict)
+            try INPXImporter.parse(inpxURL: inpx, genres: dict)
         }
 
         // Corrupt the stored inpxHash so it no longer matches the file's actual hash.
@@ -59,9 +59,8 @@ struct LibraryCacheStoreTests {
         var didReparse = false
         _ = try store.loadOrRebuild(inpxURL: inpx) {
             didReparse = true
-            return try INPXImporter.import_(inpxURL: inpx, genres: dict)
+            return try INPXImporter.parse(inpxURL: inpx, genres: dict)
         }
         #expect(didReparse == true)
     }
 }
-private final class TinyAnchor2 {}

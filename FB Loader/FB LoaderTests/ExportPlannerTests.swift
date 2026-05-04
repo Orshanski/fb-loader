@@ -29,7 +29,7 @@ struct ExportPlannerTests {
     @Test("uses selected author when on Authors tab")
     func selectedAuthor() {
         let lib = miniLibrary()
-        let plan = ExportPlanner.plan(libids: [200], rootFolder: URL(fileURLWithPath: "/tmp/x"),
+        let plan = ExportPlanner.plan(libids: [200], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
                                       selectedAuthorID: 2, selectedSeriesID: nil, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("Дяченко Марина/Рубеж.fb2") ?? false)
     }
@@ -37,7 +37,7 @@ struct ExportPlannerTests {
     @Test("uses first author when no author selected")
     func firstAuthorFallback() {
         let lib = miniLibrary()
-        let plan = ExportPlanner.plan(libids: [200], rootFolder: URL(fileURLWithPath: "/tmp/x"),
+        let plan = ExportPlanner.plan(libids: [200], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
                                       selectedAuthorID: nil, selectedSeriesID: 1, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("Олди Генри Лайон/Рубеж.fb2") ?? false)
     }
@@ -45,7 +45,7 @@ struct ExportPlannerTests {
     @Test("books with no author go into '(Без автора)' folder")
     func unknownAuthor() {
         let lib = miniLibrary()
-        let plan = ExportPlanner.plan(libids: [300], rootFolder: URL(fileURLWithPath: "/tmp/x"),
+        let plan = ExportPlanner.plan(libids: [300], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
                                       selectedAuthorID: nil, selectedSeriesID: nil, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("(Без автора)/Без авторов.fb2") ?? false)
     }
@@ -53,7 +53,7 @@ struct ExportPlannerTests {
     @Test("forbidden filename characters are replaced with underscore")
     func sanitization() {
         let lib = miniLibrary()
-        let plan = ExportPlanner.plan(libids: [100], rootFolder: URL(fileURLWithPath: "/tmp/x"),
+        let plan = ExportPlanner.plan(libids: [100], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
                                       selectedAuthorID: 1, selectedSeriesID: nil, in: lib)
         let path = plan.first!.destination.path
         let filename = (path as NSString).lastPathComponent
