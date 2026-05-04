@@ -73,10 +73,10 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     /// inter-tag whitespace from pretty-printing instead of accumulating it.
     private var inAnnotationParagraph = false
 
-    func parser(_ parser: XMLParser,
+    func parser(_ _: XMLParser,
                 didStartElement elementName: String,
-                namespaceURI: String?,
-                qualifiedName qName: String?,
+                namespaceURI _: String?,
+                qualifiedName _: String?,
                 attributes attributeDict: [String : String] = [:]) {
         let n = elementName.lowercased()
         if n == "description" { inDescription = true }
@@ -117,7 +117,7 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
         }
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
+    func parser(_ _: XMLParser, foundCharacters string: String) {
         if section == .binary { currentBinaryBuffer += string; return }
         if section == .annotation {
             // Skip inter-tag whitespace from FB2 pretty-printing — only keep
@@ -128,10 +128,10 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
         if inSmallField { currentTextField += string }
     }
 
-    func parser(_ parser: XMLParser,
+    func parser(_ _: XMLParser,
                 didEndElement elementName: String,
-                namespaceURI: String?,
-                qualifiedName qName: String?) {
+                namespaceURI _: String?,
+                qualifiedName _: String?) {
         let n = elementName.lowercased()
         switch n {
         case "binary":

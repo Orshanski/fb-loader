@@ -68,7 +68,8 @@ struct SearchSeriesBlock: View {
     }
 
     private func booksCountLabel(_ n: Int) -> String {
-        let mod10 = n % 10, mod100 = n % 100
+        let mod10 = n % 10
+        let mod100 = n % 100
         let word: String
         if mod100 >= 11 && mod100 <= 14 { word = "книг" }
         else if mod10 == 1 { word = "книга" }

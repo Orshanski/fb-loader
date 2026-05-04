@@ -19,10 +19,14 @@ nonisolated enum ExportPlanner {
                      in library: Library) -> [ExportItem] {
         // Use the precomputed indices on Library — building a fresh
         // 700k-entry Dictionary on every export was the original cost here.
+        // selectedSeriesID is accepted by the public API for future use
+        // (series-grouped export) but currently not part of folder-naming —
+        // folders are always per-author. See "Как именуются файлы при
+        // экспорте" in README.
+        _ = selectedSeriesID
         return libids.compactMap { library.bookByLibid[$0] }.map { book in
             let folderName = folderName(for: book,
                                         selectedAuthorID: selectedAuthorID,
-                                        selectedSeriesID: selectedSeriesID,
                                         authorsByID: library.authorByID)
             let folder = rootFolder.appendingPathComponent(sanitized(folderName), isDirectory: true)
             let dest = folder.appendingPathComponent(sanitized(book.title) + ".fb2")
@@ -32,7 +36,6 @@ nonisolated enum ExportPlanner {
 
     private static func folderName(for book: Book,
                                    selectedAuthorID: Int32?,
-                                   selectedSeriesID: Int32?,
                                    authorsByID: [Int32: Author]) -> String {
         // 1. If user has selected an author in the sidebar — use that author's name,
         //    even if they are not the first author of the book.

@@ -12,12 +12,12 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 4
     var lineSpacing: CGFloat = 4
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
         return arrange(subviews: subviews, maxWidth: maxWidth).size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         let layout = arrange(subviews: subviews, maxWidth: bounds.width)
         for (index, frame) in layout.frames.enumerated() {
             subviews[index].place(

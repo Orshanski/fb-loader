@@ -4,7 +4,7 @@ import Foundation
 /// вызывать с любого actor'а (в т.ч. из `Task.detached` фоновой задачи).
 ///
 /// Engine не вводит каких-либо собственных лимитов на количество matches —
-/// возвращает всё, что прошло `FuzzyScorer.SCORE_CUTOFF`. Пагинация и
+/// возвращает всё, что прошло `FuzzyScorer.scoreCutoff`. Пагинация и
 /// cap-логика — чисто UI-уровня (см. `SearchCoordinator` /
 /// `SearchResultListView`). Это прямо соответствует спеке (§ Группы —
 /// «по умолчанию топ-10 + Показать всех»; cap живёт в UI, не в engine).
@@ -19,7 +19,7 @@ nonisolated enum SearchEngine {
         let authorHits = parallelScan(
             qTokens: qToks,
             count: lib.authors.count,
-            cutoff: FuzzyScorer.SCORE_CUTOFF
+            cutoff: FuzzyScorer.scoreCutoff
         ) { i in
             lib.searchKeyAuthors[i]
         }
@@ -29,7 +29,7 @@ nonisolated enum SearchEngine {
         let seriesHits = parallelScan(
             qTokens: qToks,
             count: lib.series.count,
-            cutoff: FuzzyScorer.SCORE_CUTOFF
+            cutoff: FuzzyScorer.scoreCutoff
         ) { i in
             lib.searchKeySeries[i]
         }
@@ -40,7 +40,7 @@ nonisolated enum SearchEngine {
             qTokens: qToks,
             language: language,
             in: lib,
-            cutoff: FuzzyScorer.SCORE_CUTOFF
+            cutoff: FuzzyScorer.scoreCutoff
         )
         // Дедуп с авторами/сериями: книги, чей автор/серия уже сматчились
         // отдельно, видны в их блоках — в bucket не дублируем.

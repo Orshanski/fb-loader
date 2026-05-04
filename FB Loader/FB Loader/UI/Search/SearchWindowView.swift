@@ -51,7 +51,7 @@ struct SearchWindowView: View {
         }
         .sheet(item: Binding(
             get: { exportProgress.map { ProgressIdentifier(progress: $0) } },
-            set: { _ in })) { wrapper in
+            set: { _ in /* read-only; ExportProgressSheet's done-closure clears exportProgress */ })) { wrapper in
             ExportProgressSheet(progress: wrapper.progress) { exportProgress = nil }
         }
     }

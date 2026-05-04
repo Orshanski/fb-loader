@@ -28,14 +28,15 @@ nonisolated enum FuzzyScorer {
     /// Достоевский» = 90), and reject the previously-leaking false
     /// positives («сандерсо → Андерсон» = 74, «Достоевский → Островский» =
     /// 73, «Толстой → Толстиков» = 81.2).
-    nonisolated static let SCORE_CUTOFF: Double = 83.0
+    nonisolated static let scoreCutoff: Double = 83.0
 
     /// Damerau-Levenshtein distance, OSA variant: substitutions and
     /// adjacent transpositions count as 1 op. Standard 3-row rolling DP,
     /// O(m·n) time, O(n) space. The 3rd row (`prev2`) is needed for the
     /// transposition lookback.
     nonisolated static func damerauLevenshteinOSA(_ a: [UInt32], _ b: [UInt32]) -> Int {
-        let m = a.count, n = b.count
+        let m = a.count
+        let n = b.count
         if m == 0 { return n }
         if n == 0 { return m }
         var prev2 = [Int](repeating: 0, count: n + 1)

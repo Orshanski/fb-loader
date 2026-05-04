@@ -23,8 +23,8 @@ nonisolated enum LibraryLoader {
     /// for hopping to MainActor before mutating UI state.
     static func load(
         inpxURL: URL,
-        onStatus: @escaping @Sendable (String) -> Void = { _ in },
-        onProgress: @escaping @Sendable (Int) -> Void = { _ in }
+        onStatus: @escaping @Sendable (String) -> Void = { _ in /* default no-op for callers that don't need progress */ },
+        onProgress: @escaping @Sendable (Int) -> Void = { _ in /* default no-op */ }
     ) async throws -> Library {
         let appSupport = try appSupportRoot()
         let store = LibraryCacheStore(applicationSupportRoot: appSupport)

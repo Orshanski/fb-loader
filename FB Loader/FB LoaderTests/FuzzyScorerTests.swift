@@ -39,7 +39,7 @@ struct FuzzyScorerCorpusTests {
             let qTokens = SearchPreprocess.tokens(tc.q)
             let cTokens = SearchPreprocess.tokens(tc.c)
             let score = FuzzyScorer.tokenMinRatio(qTokens: qTokens, cTokens: cTokens)
-            let actualPass = score >= FuzzyScorer.SCORE_CUTOFF
+            let actualPass = score >= FuzzyScorer.scoreCutoff
             #expect(actualPass == tc.pass,
                     "\(tc.label): \(tc.q) → \(tc.c) — score \(score), expected \(tc.pass ? "≥83" : "<83")")
         }
@@ -51,9 +51,9 @@ struct FuzzyScorerCorpusTests {
         #expect(FuzzyScorer.tokenMinRatio(qTokens: [[0x61]], cTokens: []) == 0)
     }
 
-    @Test("SCORE_CUTOFF равен 83")
+    @Test("scoreCutoff равен 83")
     func cutoffConstant() {
-        #expect(FuzzyScorer.SCORE_CUTOFF == 83.0)
+        #expect(FuzzyScorer.scoreCutoff == 83.0)
     }
 
     @Test("Идентичные одинаковые входы дают 100.0")
@@ -87,8 +87,8 @@ struct FuzzyScorerCorpusTests {
         let c = SearchPreprocess.tokens("сандерсон")
         let score = FuzzyScorer.tokenMinRatio(qTokens: q, cTokens: c)
         // «писатель» против «сандерсон» — низкий скор → итоговый min < cutoff
-        #expect(score < FuzzyScorer.SCORE_CUTOFF,
-                "score=\(score), expected below cutoff \(FuzzyScorer.SCORE_CUTOFF)")
+        #expect(score < FuzzyScorer.scoreCutoff,
+                "score=\(score), expected below cutoff \(FuzzyScorer.scoreCutoff)")
     }
 
     @Test("Транспозиция считается одной операцией")
@@ -109,7 +109,7 @@ struct FuzzyScorerCorpusTests {
         let q = SearchPreprocess.tokens("сандерсон хххх")
         let c = SearchPreprocess.tokens("брэндон сандерсон писатель")
         let pruned = FuzzyScorer.tokenMinRatioCut(
-            qTokens: q, cTokens: c, cutoff: FuzzyScorer.SCORE_CUTOFF)
+            qTokens: q, cTokens: c, cutoff: FuzzyScorer.scoreCutoff)
         #expect(pruned == 0, "expected pruning to return 0, got \(pruned)")
     }
 }

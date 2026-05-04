@@ -132,12 +132,12 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         // generic-parameterised class. Crash hits only at -O / Release; Debug
         // builds and tests are unaffected. Safe to remove if a future Swift
         // version stops crashing here.
-        nonisolated deinit {}
+        nonisolated deinit { /* Empty by design — see comment above. */ }
 
-        func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+        func numberOfRows(in _: NSTableView) -> Int { items.count }
 
         func tableView(_ tableView: NSTableView,
-                       viewFor tableColumn: NSTableColumn?,
+                       viewFor _: NSTableColumn?,
                        row: Int) -> NSView? {
             let id = NSUserInterfaceItemIdentifier("LazyListTable.cell")
             let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? TwoLabelCell)
@@ -210,7 +210,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         }
 
         // Same EarlyPerfInliner ICE workaround as Coordinator.deinit above.
-        nonisolated deinit {}
+        nonisolated deinit { /* Empty by design — see comment above. */ }
 
         private func setupSubviews() {
             mainLabel.translatesAutoresizingMaskIntoConstraints = false

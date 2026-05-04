@@ -1,7 +1,7 @@
 import Foundation
 
 /// Один матч-автор: индекс в `Library.authors` + скор.
-/// Скор — `Double` 0..100, отсечка по `FuzzyScorer.SCORE_CUTOFF` уже
+/// Скор — `Double` 0..100, отсечка по `FuzzyScorer.scoreCutoff` уже
 /// применена при формировании результата, в выдачу попадают только
 /// matches >= cutoff.
 nonisolated struct AuthorMatch: Sendable, Equatable {

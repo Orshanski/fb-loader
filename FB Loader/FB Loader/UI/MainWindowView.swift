@@ -72,7 +72,7 @@ struct MainWindowView: View {
         }
         .sheet(item: Binding(
             get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },
-            set: { _ in })) { wrapper in
+            set: { _ in /* read-only binding; sheet dismissal is handled by ExportProgressSheet's done-closure below */ })) { wrapper in
                 ExportProgressSheet(progress: wrapper.progress) {
                     state.exportProgress = nil
                 }
