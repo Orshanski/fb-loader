@@ -7,9 +7,10 @@ struct SearchPreprocessTests {
     // MARK: - decoding helpers
 
     private func decode(_ token: [UInt32]) -> String {
-        // Force-unwrap is intentional: scalars come from preprocessTokens,
-        // which always emits valid `Unicode.Scalar`-convertible values.
-        // A nil here is a bug in `tokens(_:)` — we want the test to crash.
+        // Force-via-compactMap is intentional: scalars come from
+        // `SearchPreprocess.tokens(_:)`, which always emits valid
+        // `Unicode.Scalar`-convertible values. A nil here would be a bug
+        // in `tokens(_:)` — we want it visible at decode time.
         String(String.UnicodeScalarView(token.compactMap { Unicode.Scalar($0) }))
     }
 
