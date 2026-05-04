@@ -114,6 +114,18 @@ struct SearchPreprocessTests {
         let words = toks.map { String(String.UnicodeScalarView($0.compactMap(Unicode.Scalar.init))) }
         #expect(words == ["foo", "bar", "baz"])
     }
+
+    @Test("Украинская кириллица (і, ї, є, ґ) считается буквой")
+    func ukrainianCyrillic() {
+        let toks = preprocessTokens("Україна")
+        #expect(toks.count == 1, "слово 'Україна' должно остаться одним токеном, не порезаться на 'кра' + 'на'")
+    }
+
+    @Test("Латиница с диакритикой считается буквой")
+    func latinDiacritics() {
+        let toks = preprocessTokens("naïve")
+        #expect(toks.count == 1)
+    }
 }
 ```
 
@@ -139,18 +151,26 @@ import Foundation
 ///    `String.lowercased()` — избегаем grapheme-cluster overhead в горячем
 ///    цикле).
 /// 3. Любой не-буквенный/не-цифровой codepoint — разделитель токенов.
+///    Буквенность проверяем через `Unicode.Scalar.properties.isAlphabetic` —
+///    это покрывает украинскую кириллицу (і, ї, є, ґ), белорусскую (ў),
+///    латиницу с диакритикой (é, ü, ł) и пр. Без этого port-плана срезал бы
+///    легитимные буквы во многих именах (см. ревью C2).
 ///
 /// Возвращает массив непустых токенов, каждый — массив raw scalar.value
 /// (UInt32). Скорер дальше работает на UInt32 и не возвращается в `String`.
+///
+/// `nonisolated` обязательно: проект собирается с
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, и без этой пометки функция
+/// окажется MainActor-isolated, что сломает её вызов из `Task.detached`
+/// внутри `SearchCoordinator` и из `DispatchQueue.concurrentPerform`.
 @inline(__always)
-func isAlnumScalar(_ s: UInt32) -> Bool {
+nonisolated func isAlnumScalar(_ s: UInt32) -> Bool {
     if s >= 0x30 && s <= 0x39 { return true }       // ASCII digits 0..9
-    if s >= 0x61 && s <= 0x7A { return true }       // ASCII lower a..z
-    if s >= 0x0430 && s <= 0x044F { return true }   // Cyrillic lower а..я
-    return false
+    guard let scalar = Unicode.Scalar(s) else { return false }
+    return scalar.properties.isAlphabetic
 }
 
-func preprocessTokens(_ raw: String) -> [[UInt32]] {
+nonisolated func preprocessTokens(_ raw: String) -> [[UInt32]] {
     if raw.isEmpty { return [] }
     var tokens: [[UInt32]] = []
     var current: [UInt32] = []
@@ -267,12 +287,15 @@ import Foundation
 /// SCORE cutoff used to separate real matches from noise.
 /// Empirically (librarium): real matches land at 80–100, noise ≤66.
 /// 75 sits in the gap. Tune via the corpus tests if behaviour drifts.
-public let SCORE_CUTOFF: Double = 75.0
+///
+/// `nonisolated` обязательно — глобальная константа, которой пользуются
+/// background-задачи (см. C1 в ревью плана).
+nonisolated public let SCORE_CUTOFF: Double = 75.0
 
 /// Standard 1D rolling DP — used as the reference and as the fallback for
 /// patterns longer than 64 codepoints (where bit-parallel won't fit in a
 /// single UInt64 register).
-func lcsLengthDP(_ a: [UInt32], _ b: [UInt32]) -> Int {
+nonisolated func lcsLengthDP(_ a: [UInt32], _ b: [UInt32]) -> Int {
     let m = a.count, n = b.count
     if m == 0 || n == 0 { return 0 }
     let (s, t): ([UInt32], [UInt32]) = m < n ? (b, a) : (a, b)
@@ -296,7 +319,7 @@ func lcsLengthDP(_ a: [UInt32], _ b: [UInt32]) -> Int {
 /// Naïve scorer (used by the non-pre-built `tokenMinRatio` for the DP corpus
 /// path). Bit-parallel + pre-built variants for production are added in Task 3.
 @inline(__always)
-func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
+nonisolated func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
     if q.isEmpty || c.isEmpty { return 0 }
     let lcs = lcsLengthDP(q, c)
     let lcsCov = Double(lcs) / Double(q.count) * 100.0
@@ -307,7 +330,7 @@ func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
 /// `token_min_ratio` semantics: every query-token must find a best match in
 /// some choice-token; the weakest per-token best across the query drags the
 /// final min(...) score down.
-func tokenMinRatio(qTokens: [[UInt32]], cTokens: [[UInt32]]) -> Double {
+nonisolated func tokenMinRatio(qTokens: [[UInt32]], cTokens: [[UInt32]]) -> Double {
     if qTokens.isEmpty || cTokens.isEmpty { return 0 }
     var minScore = Double.infinity
     for qt in qTokens {
@@ -439,7 +462,7 @@ Append at the end of `FB Loader/FB Loader/Search/FuzzyScorer.swift`:
 // (rare in our use case — words rarely exceed 30 chars).
 
 @inline(__always)
-func lcsLengthBP(_ a: [UInt32], _ b: [UInt32]) -> Int {
+nonisolated func lcsLengthBP(_ a: [UInt32], _ b: [UInt32]) -> Int {
     let m = a.count, n = b.count
     if m == 0 || n == 0 { return 0 }
     // Pattern is the shorter of the two so it fits in a single UInt64.
@@ -465,14 +488,18 @@ func lcsLengthBP(_ a: [UInt32], _ b: [UInt32]) -> Int {
 // PMV для каждого query-токена строится ОДИН раз на нажатие «Поиск» и
 // переиспользуется на всех 581k+ кандидатах. На спайке это даёт ~6×.
 
-struct LcsPattern {
+/// `nonisolated ... : Sendable` так как объект разделяется между потоками
+/// в `parallelScan` (`DispatchQueue.concurrentPerform`) и пересекается через
+/// `Task.detached` boundary в `SearchCoordinator`. Все поля let-овые и
+/// иммутабельные после init — Sendable conformance безопасен (см. C1).
+nonisolated struct LcsPattern: Sendable {
     let m: Int
     let pmv: [UInt32: UInt64]   // empty if isLong
     let isLong: Bool
     let fallback: [UInt32]      // raw scalars for DP fallback if isLong
 }
 
-func makeLcsPattern(_ pat: [UInt32]) -> LcsPattern {
+nonisolated func makeLcsPattern(_ pat: [UInt32]) -> LcsPattern {
     if pat.count > 64 {
         return LcsPattern(m: pat.count, pmv: [:], isLong: true, fallback: pat)
     }
@@ -484,7 +511,7 @@ func makeLcsPattern(_ pat: [UInt32]) -> LcsPattern {
 }
 
 @inline(__always)
-func lcsLengthPre(_ p: LcsPattern, _ text: [UInt32]) -> Int {
+nonisolated func lcsLengthPre(_ p: LcsPattern, _ text: [UInt32]) -> Int {
     if p.m == 0 || text.isEmpty { return 0 }
     if p.isLong { return lcsLengthDP(p.fallback, text) }
     var S = UInt64.max
@@ -497,7 +524,7 @@ func lcsLengthPre(_ p: LcsPattern, _ text: [UInt32]) -> Int {
 }
 
 @inline(__always)
-func tokenMatchScorePre(_ p: LcsPattern, _ c: [UInt32]) -> Double {
+nonisolated func tokenMatchScorePre(_ p: LcsPattern, _ c: [UInt32]) -> Double {
     if p.m == 0 || c.isEmpty { return 0 }
     let lcs = lcsLengthPre(p, c)
     let lcsCov = Double(lcs) / Double(p.m) * 100.0
@@ -511,8 +538,8 @@ func tokenMatchScorePre(_ p: LcsPattern, _ c: [UInt32]) -> Double {
 /// ниже cutoff, и можно сразу выйти. Сильно режет работу на многословных
 /// запросах против большинства кандидатов.
 @inline(__always)
-func tokenMinRatioPre(qPatterns: [LcsPattern], cTokens: [[UInt32]],
-                      cutoff: Double) -> Double {
+nonisolated func tokenMinRatioPre(qPatterns: [LcsPattern], cTokens: [[UInt32]],
+                                  cutoff: Double) -> Double {
     if qPatterns.isEmpty || cTokens.isEmpty { return 0 }
     var minScore = Double.infinity
     for qp in qPatterns {
@@ -926,15 +953,13 @@ import Foundation
 
 /// Параллельный fuzzy-скан по `Library`. `nonisolated` чтобы можно было
 /// вызывать с любого actor'а (в т.ч. из `Task.detached` фоновой задачи).
+///
+/// Engine не вводит каких-либо собственных лимитов на количество matches —
+/// возвращает всё, что прошло `SCORE_CUTOFF`. Пагинация и cap-логика —
+/// чисто UI-уровня (см. `SearchCoordinator`/`SearchResultListView`). Это
+/// прямо соответствует спеке (§ Группы — «по умолчанию топ-10 + Показать
+/// всех»; cap живёт в UI, не в engine).
 nonisolated enum SearchEngine {
-    /// Кап на число matches в категориях `authors` и `series`. Книги
-    /// возвращаем все, что прошли cutoff — пагинацию делает UI.
-    static let authorsSeriesCap: Int = 1000
-
-    /// Книги выше cutoff отдаём целиком (UI пагинирует). Защитный кап
-    /// чтоб не складировать миллионы при странном запросе.
-    static let booksCap: Int = 2000
-
     static func run(query: String, language: String, in lib: Library) -> SearchResults {
         let qToks = preprocessTokens(query)
         guard !qToks.isEmpty else {
@@ -942,12 +967,11 @@ nonisolated enum SearchEngine {
         }
         let qPatterns = qToks.map(makeLcsPattern)
 
-        // 1. Authors
+        // 1. Authors — все matches выше cutoff, отсортированные по убыванию.
         let authorHits = parallelScan(
             qPatterns: qPatterns,
             count: lib.authors.count,
-            cutoff: SCORE_CUTOFF,
-            limit: authorsSeriesCap
+            cutoff: SCORE_CUTOFF
         ) { i in
             lib.searchKeyAuthors[i]
         }
@@ -957,8 +981,7 @@ nonisolated enum SearchEngine {
         let seriesHits = parallelScan(
             qPatterns: qPatterns,
             count: lib.series.count,
-            cutoff: SCORE_CUTOFF,
-            limit: authorsSeriesCap
+            cutoff: SCORE_CUTOFF
         ) { i in
             lib.searchKeySeries[i]
         }
@@ -969,8 +992,7 @@ nonisolated enum SearchEngine {
             qPatterns: qPatterns,
             language: language,
             in: lib,
-            cutoff: SCORE_CUTOFF,
-            limit: booksCap
+            cutoff: SCORE_CUTOFF
         )
         let books = bookHits.map { BookMatch(bookIndex: $0.index, score: $0.score) }
 
@@ -979,7 +1001,9 @@ nonisolated enum SearchEngine {
 }
 
 /// Internal scoring hit — индекс в исходном массиве + скор.
-private struct Hit {
+/// `nonisolated ... Sendable`: пересекает actor boundary внутри
+/// `concurrentPerform` и `Task.detached` (ревью C1).
+nonisolated private struct Hit: Sendable {
     let index: Int
     let score: Double
 }
@@ -987,11 +1011,10 @@ private struct Hit {
 /// Generic параллельный скан, отделяет авторов/серии (тут choice — единый
 /// массив токенов, доступаемый напрямую по индексу) от книг (где надо
 /// объединять title + author + series на лету).
-private func parallelScan(
+nonisolated private func parallelScan(
     qPatterns: [LcsPattern],
     count: Int,
     cutoff: Double,
-    limit: Int,
     keyAt: (Int) -> [[UInt32]]
 ) -> [Hit] {
     if count == 0 { return [] }
@@ -1015,18 +1038,16 @@ private func parallelScan(
     }
     var hits = perChunk.flatMap { $0 }
     hits.sort { $0.score > $1.score }
-    if hits.count > limit { hits = Array(hits.prefix(limit)) }
     return hits
 }
 
 /// Книжный скан с объединением title + author + series tokens на каждой
 /// итерации. Доп. фильтр по языку.
-private func parallelScanBooks(
+nonisolated private func parallelScanBooks(
     qPatterns: [LcsPattern],
     language: String,
     in lib: Library,
-    cutoff: Double,
-    limit: Int
+    cutoff: Double
 ) -> [Hit] {
     let n = lib.books.count
     if n == 0 { return [] }
@@ -1065,7 +1086,6 @@ private func parallelScanBooks(
     }
     var hits = perChunk.flatMap { $0 }
     hits.sort { $0.score > $1.score }
-    if hits.count > limit { hits = Array(hits.prefix(limit)) }
     return hits
 }
 ```
@@ -1443,18 +1463,28 @@ struct SearchWindowView: View {
             topBar
             Divider()
             content
-            if let libid = coord.selectedBookLibid,
-               let book = library.bookByLibid[libid],
-               let archives = archivesRoot {
-                Divider()
-                BookDetailView(library: library, archivesRoot: archives, book: book)
-                    .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)
-            }
+            Divider()
+            detailPanel
         }
         .frame(minWidth: 1000, minHeight: 700)
         .task(id: pendingSearchToken) {
             guard pendingSearchToken != nil else { return }
             await coord.runSearch(in: library)
+        }
+    }
+
+    @ViewBuilder
+    private var detailPanel: some View {
+        if let libid = coord.selectedBookLibid,
+           let book = library.bookByLibid[libid],
+           let archives = archivesRoot {
+            BookDetailView(library: library, archivesRoot: archives, book: book)
+                .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)
+        } else {
+            Text("Выберите книгу")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(minHeight: 380, idealHeight: 420)
         }
     }
 
@@ -1783,6 +1813,24 @@ struct SearchSeriesBlock: View {
         }
     }
 
+    /// Книги серии в текущем языке, отсортированные по `seriesNum`.
+    /// Кэшируем тут, чтобы header (для primaryAuthor / count) и body
+    /// не пересчитывали два раза.
+    private var booksInLanguage: [Book] {
+        BooksByContext.books(for: .series(series.id),
+                             language: coord.languageFilter,
+                             in: library)
+            .sorted { ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max) }
+    }
+
+    /// «Основной» автор серии — автор её первой книги в выбранном языке.
+    private var primaryAuthor: Author? {
+        guard let first = booksInLanguage.first,
+              let aid = first.authorIDs.first
+        else { return nil }
+        return library.authorByID[aid]
+    }
+
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -1792,6 +1840,13 @@ struct SearchSeriesBlock: View {
             Text("серия").foregroundStyle(.secondary)
             Text(series.name).fontWeight(.semibold)
             Spacer()
+            // Спека § Серии: «Справа от заголовка — короткая контекстная
+            // строка (имя «основного» автора серии + счётчик «N книг»)».
+            if let author = primaryAuthor {
+                Text("\(author.displayName) — \(booksCountLabel(booksInLanguage.count))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .font(.system(size: 13))
         .padding(.horizontal, 16)
@@ -1803,12 +1858,19 @@ struct SearchSeriesBlock: View {
         }
     }
 
+    private func booksCountLabel(_ n: Int) -> String {
+        let mod10 = n % 10, mod100 = n % 100
+        let word: String
+        if mod100 >= 11 && mod100 <= 14 { word = "книг" }
+        else if mod10 == 1 { word = "книга" }
+        else if mod10 >= 2 && mod10 <= 4 { word = "книги" }
+        else { word = "книг" }
+        return "\(n) \(word)"
+    }
+
     @ViewBuilder
     private var booksList: some View {
-        let books = BooksByContext.books(for: .series(series.id),
-                                         language: coord.languageFilter,
-                                         in: library)
-            .sorted { ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max) }
+        let books = booksInLanguage
         ForEach(books, id: \.libid) { b in
             BookRow(
                 book: b, library: library, indented: true,
@@ -1956,15 +2018,19 @@ git commit -m "feat(ui): add search result groups (authors / series / books buck
 ```swift
     @MainActor
     private func runExport() async {
-        guard let archives = archivesRoot else { return }
+        guard !coord.checkedBookLibids.isEmpty,
+              let archives = archivesRoot else { return }
+        let userPaths = UserPaths.shared
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory,
-                                                      in: .userDomainMask).first
-        guard await panel.selectedDirectory() != nil,
-              let folder = panel.url else { return }
+        // Pre-fill последней папкой экспорта, как в MainWindowView.runExport.
+        panel.directoryURL = userPaths.lastExportDirectoryURL
+            ?? FileManager.default.urls(for: .downloadsDirectory,
+                                        in: .userDomainMask).first
+        guard let folder = await panel.selectedDirectory() else { return }
+        userPaths.lastExportDirectoryURL = folder
 
         let items = ExportPlanner.plan(
             libids: coord.checkedBookLibids,
@@ -2031,91 +2097,17 @@ git commit -m "feat(search): add local export from search window"
 - Modify: `FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift`
 - Modify: `FB Loader/FB Loader/FB_LoaderApp.swift`
 
-- [ ] **Step 1: Добавить кнопку-лупу в сайдбар**
+**Задача про «зависимое от главного» окно (не открывающееся где попало):**
 
-В `LeftSidebarView.swift`, в верхнем `HStack` (тот, что с пикером и языковым фильтром), добавить кнопку перед `Picker`:
+- Singleton: ровно один экземпляр окна поиска. Используем `Window(id:)` — он singleton по построению, повторный `openWindow(id:)` фокусирует существующий экземпляр.
+- Lupa-кнопка живёт **только** внутри `LeftSidebarView`, который, в свою очередь, рендерится только когда `AppState.stage == .ready(library)`. Значит, открыть окно поиска без загруженного каталога физически нельзя — нет элемента UI, через который это сделать.
+- Внутри окна доп. защита: если `state.stage != .ready` (теоретически — при reset/перезагрузке каталога), показываем «Каталог ещё не загружен» вместо результатов.
+- `applicationShouldTerminateAfterLastWindowClosed = true` в существующем `AppDelegate` (`FB_LoaderApp.swift:13-15`) обеспечивает: пока хоть одно окно открыто — приложение живёт; после закрытия последнего — quit. То есть окно поиска не «висит само по себе» как зомби, а шарит lifecycle с приложением.
+- `AppState` поднимаем из `ContentView` на уровень `FB_LoaderApp`, обе сцены инжектят его через `.environment(state)` — это даёт окну поиска доступ к тому же `Library`-снапшоту, что у главного.
 
-```swift
-                HStack(spacing: 8) {
-                    Button {
-                        openWindow(id: "library-search",
-                                   value: SearchWindowParams(initialLanguage: s.languageFilter))
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Поиск по библиотеке")
+- [ ] **Step 1: Поднять AppState из ContentView в FB_LoaderApp**
 
-                    Picker("", selection: $s.sidebarTab) {
-                        Text("Авторы").tag(AppState.SidebarTab.authors)
-                        Text("Серии").tag(AppState.SidebarTab.series)
-                        Text("Жанры").tag(AppState.SidebarTab.genres)
-                    }
-                    ...
-```
-
-В `LeftSidebarView` body тоже импорт окна:
-
-```swift
-struct LeftSidebarView: View {
-    let library: Library
-    @Environment(AppState.self) private var state
-    @Environment(\.openWindow) private var openWindow
-    ...
-```
-
-И value-тип:
-```swift
-struct SearchWindowParams: Hashable, Codable {
-    let initialLanguage: String
-}
-```
-
-(этот type рекомендуется положить рядом с `SearchWindowView.swift` как `internal`).
-
-- [ ] **Step 2: Добавить сцену в `FB_LoaderApp.swift`**
-
-В `FB_LoaderApp.swift`, в `body`:
-
-```swift
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        .commands { ... existing commands ... }
-
-        WindowGroup(id: "library-search", for: SearchWindowParams.self) { $params in
-            if case .ready(let lib) = AppState.sharedStage,
-               let p = params {
-                SearchWindowView(library: lib,
-                                 archivesRoot: UserPaths.shared.archivesDirectoryURL,
-                                 initialLanguage: p.initialLanguage)
-            } else {
-                Text("Каталог ещё не загружен").foregroundStyle(.secondary)
-                    .frame(width: 600, height: 300)
-            }
-        }
-    }
-```
-
-> **Проблема:** `AppState` создаётся в `ContentView` (`@State private var state = AppState()`). Из второй сцены нет доступа к этому экземпляру. Для совместного доступа есть три варианта:
->
-> A) **Поднять `AppState` на уровень `FB_LoaderApp`** через `@State private var state = AppState()` + `.environment(state)` для обеих сцен. Самый чистый. Изменение: `ContentView` теперь принимает `state` через `@Environment(AppState.self)`. Затрагиваются: `FB_LoaderApp.swift`, `ContentView.swift`.
->
-> B) **Передавать `library` через value** при `openWindow`. Library — Sendable, можно положить в Hashable wrapper (или ID-based lookup). Минус: на каждом `openWindow` дублируем reference.
->
-> C) **Singleton-like static reference** — некрасиво.
->
-> Выбираем **A**. Делаем рефактор:
->
-> 1. В `FB_LoaderApp.swift` добавить `@State private var state = AppState()`.
-> 2. В обеих сценах: `.environment(state)`.
-> 3. В `ContentView.swift` заменить `@State private var state = AppState()` на `@Environment(AppState.self) private var state`.
-> 4. В новой `library-search` сцене читать `state.stage` через тот же `@Environment`.
-
-- [ ] **Step 3: Реализовать вариант A**
-
-В `FB_LoaderApp.swift`:
+В `FB_LoaderApp.swift`, заменить `body`:
 
 ```swift
 @main
@@ -2137,25 +2129,31 @@ struct FB_LoaderApp: App {
             }
         }
 
-        WindowGroup(id: "library-search", for: SearchWindowParams.self) { $params in
-            SearchSceneRoot(params: $params)
+        // Singleton-сцена для окна поиска. `Window(id:)` (не `WindowGroup`!)
+        // гарантирует один экземпляр; повторный openWindow(id:) фокусирует
+        // уже открытое окно. Доступ к каталогу — через тот же `state`,
+        // что у главного, — через `.environment`.
+        Window("Поиск по библиотеке", id: "library-search") {
+            SearchSceneRoot()
                 .environment(state)
         }
     }
 }
 
 private struct SearchSceneRoot: View {
-    @Binding var params: SearchWindowParams?
     @Environment(AppState.self) private var state
 
     var body: some View {
         Group {
-            if case .ready(let lib) = state.stage, let p = params {
-                SearchWindowView(library: lib,
-                                 archivesRoot: state.userPaths.archivesDirectoryURL,
-                                 initialLanguage: p.initialLanguage)
+            if case .ready(let lib) = state.stage {
+                SearchWindowView(
+                    library: lib,
+                    archivesRoot: state.userPaths.archivesDirectoryURL,
+                    initialLanguage: state.languageFilter
+                )
             } else {
-                Text("Каталог ещё не загружен").foregroundStyle(.secondary)
+                Text("Каталог ещё не загружен")
+                    .foregroundStyle(.secondary)
                     .frame(minWidth: 600, minHeight: 300)
             }
         }
@@ -2172,32 +2170,83 @@ private struct SearchSceneRoot: View {
 @Environment(AppState.self) private var state
 ```
 
-- [ ] **Step 4: Build, expect успех**
+- [ ] **Step 2: Добавить кнопку-лупу в сайдбар**
+
+В `LeftSidebarView.swift`, в верхнем `VStack(spacing: 8)`-блоке (тот, что с пикером вкладок и `LanguageFilterPicker`), добавить кнопку **перед** `Picker`:
+
+```swift
+struct LeftSidebarView: View {
+    let library: Library
+    @Environment(AppState.self) private var state
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        @Bindable var s = state
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        openWindow(id: "library-search")
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Поиск по библиотеке")
+
+                    Picker("", selection: $s.sidebarTab) {
+                        Text("Авторы").tag(AppState.SidebarTab.authors)
+                        Text("Серии").tag(AppState.SidebarTab.series)
+                        Text("Жанры").tag(AppState.SidebarTab.genres)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    LanguageFilterPicker(library: library,
+                                         selection: $s.languageFilter)
+                }
+
+                TextField("Фильтр", text: $s.sidebarFilter)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 72)
+            // ... остальное тело — как сейчас
+            ...
+        }
+    }
+}
+```
+
+> **Замечание про язык-наследование.** `Window(id:)` не принимает value-параметры (в отличие от `WindowGroup(for:)`). Поэтому язык наследуется в SearchSceneRoot напрямую из `state.languageFilter` через `@Environment`. На **первое** открытие окна `SearchWindowView.init` копирует это значение в `coord.languageFilter`, дальше окно живёт независимо. На **повторное** открытие (singleton фокусируется) — coord не пересоздаётся, языковой пикер сохраняет своё текущее значение. Это допустимо: пользователь видит окно с тем состоянием, в котором его оставил.
+>
+> Если захочется «при каждом открытии — пересинхронизировать с главным», это делается через `.task(id:)` на event-token из AppState. Для v1 не делаем — лишняя сложность.
+
+- [ ] **Step 3: Build, expect успех**
 
 Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -destination "platform=macOS" build 2>&1 | tail -5`
 Expected: BUILD SUCCEEDED.
 
-- [ ] **Step 5: Smoke test в Xcode**
+- [ ] **Step 4: Smoke test в Xcode**
 - Запустить приложение.
 - Загрузить каталог (или дождаться кэш-хита).
 - Кликнуть лупу в сайдбаре → откроется окно поиска.
 - Ввести «Сандерсон», нажать Поиск → результаты появляются.
 - Кликнуть строку книги → деталь снизу.
 - Отметить пару книг → кнопка «Экспорт отмеченных» активна.
-- Закрыть окно, повторно открыть лупой → пустое окно (без персиста).
+- Закрыть окно, повторно открыть лупой → singleton-окно фокусируется (то же содержимое, что было).
+- Закрыть главное окно (cmd-W или ⊗) → приложение завершается (так как `applicationShouldTerminateAfterLastWindowClosed = true`); окно поиска тоже не «висит само по себе».
 
-- [ ] **Step 6: Run полный test-suite — ничего не сломали**
+- [ ] **Step 5: Run полный test-suite — ничего не сломали**
 
 Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -destination "platform=macOS" test 2>&1 | tail -10`
 Expected: всё зелёное.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add "FB Loader/FB Loader/FB_LoaderApp.swift" \
         "FB Loader/FB Loader/ContentView.swift" \
-        "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift" \
-        "FB Loader/FB Loader/UI/Search/SearchWindowView.swift"
+        "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift"
 git commit -m "feat(search): wire lupa button and Search window scene"
 ```
 
