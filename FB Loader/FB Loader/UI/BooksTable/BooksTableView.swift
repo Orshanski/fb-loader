@@ -61,6 +61,7 @@ struct BooksTableView: View {
     }
 
     var body: some View {
+        @Bindable var s = state
         VStack(spacing: 0) {
             header
             Divider()
@@ -69,11 +70,11 @@ struct BooksTableView: View {
                     ForEach(groups) { row in
                         switch row.kind {
                         case .loose(let b):
-                            BookRow(book: b, library: library, indented: false)
-                        case .seriesHeader(let s, let items):
-                            seriesGroupHeader(s, count: items.count)
+                            bookRow(for: b, indented: false, state: s)
+                        case .seriesHeader(let series, let items):
+                            seriesGroupHeader(series, count: items.count)
                             ForEach(items) { item in
-                                BookRow(book: item.book, library: library, indented: true)
+                                bookRow(for: item.book, indented: true, state: s)
                             }
                         }
                     }
@@ -81,6 +82,36 @@ struct BooksTableView: View {
                 .padding(.vertical, 4)
             }
         }
+    }
+
+    @ViewBuilder
+    private func bookRow(for b: Book, indented: Bool, state s: AppState) -> some View {
+        BookRow(
+            book: b,
+            library: library,
+            indented: indented,
+            isChecked: Binding(
+                get: { s.checkedBookLibids.contains(b.libid) },
+                set: { isOn in
+                    if isOn { s.checkedBookLibids.insert(b.libid) }
+                    else    { s.checkedBookLibids.remove(b.libid) }
+                }
+            ),
+            isSelected: Binding(
+                get: { s.selectedBookLibid == b.libid },
+                set: { newValue in if newValue { s.selectedBookLibid = b.libid } }
+            ),
+            contextMenuBuilder: {
+                AnyView(
+                    Button("Выгрузить отмеченные (\(s.checkedBookLibids.count))") {
+                        // Export is kicked off by MainWindowView via the
+                        // shouldStartExport flag on AppState.
+                        s.shouldStartExport = true
+                    }
+                    .disabled(s.checkedBookLibids.isEmpty)
+                )
+            }
+        )
     }
 
     // MARK: - Header
@@ -175,95 +206,6 @@ struct BooksTableView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
-    }
-}
-
-// MARK: - Single book row
-
-private struct BookRow: View {
-    let book: Book
-    let library: Library
-    let indented: Bool
-    @Environment(AppState.self) private var state
-    @State private var hovered = false
-
-    static let checkboxWidth: CGFloat = 28
-    static let numWidth: CGFloat = 50
-    static let sizeWidth: CGFloat = 80
-    static let dateWidth: CGFloat = 100
-    static let genresWidth: CGFloat = 220
-
-    var body: some View {
-        @Bindable var s = state
-        let isSelected = s.selectedBookLibid == book.libid
-
-        HStack(spacing: 10) {
-            Toggle("", isOn: Binding(
-                get: { s.checkedBookLibids.contains(book.libid) },
-                set: { isOn in
-                    if isOn { s.checkedBookLibids.insert(book.libid) }
-                    else    { s.checkedBookLibids.remove(book.libid) }
-                }))
-                .toggleStyle(.compactCheckbox)
-                .labelsHidden()
-                .frame(width: BookRow.checkboxWidth, alignment: .center)
-
-            Text(book.title)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(book.seriesNum.map { "\($0)" } ?? "—")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.numWidth, alignment: .trailing)
-
-            Text(byteCount(book.size))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.sizeWidth, alignment: .trailing)
-
-            Text(date(book.dateAdded))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.dateWidth, alignment: .trailing)
-
-            Text(genresString)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.genresWidth, alignment: .leading)
-        }
-        .font(.system(size: 13))
-        .padding(.leading, indented ? 30 : 16)
-        .padding(.trailing, 16)
-        .padding(.vertical, 4)
-        .background(hovered ? Color.black.opacity(0.03) : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 }
-        .onTapGesture { s.selectedBookLibid = book.libid }
-        .contextMenu {
-            Button("Выгрузить отмеченные (\(s.checkedBookLibids.count))") {
-                // The actual export is started by MainWindowView via the
-                // `shouldStartExport` flag on AppState (Phase 12.3).
-                s.shouldStartExport = true
-            }
-            .disabled(s.checkedBookLibids.isEmpty)
-        }
-    }
-
-    private func byteCount(_ n: Int32) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
-    }
-    private func date(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
-        return f.string(from: d)
-    }
-    private var genresString: String {
-        let names = book.genreIDs.compactMap { library.genreByID[$0]?.name }
-        return names.joined(separator: ", ")
     }
 }
 
