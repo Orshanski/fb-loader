@@ -26,15 +26,39 @@ import sys
 from xml.sax.saxutils import escape
 
 
+def _is_test_target(name: str) -> bool:
+    return "Tests" in name or name == "Test"
+
+
+def _iter_production_swift_files(report):
+    """Yield absolute paths of .swift files from non-test targets."""
+    for target in report.get("targets", []):
+        if _is_test_target(target.get("name", "")):
+            continue
+        for file_entry in target.get("files", []):
+            path = file_entry.get("path", "")
+            if path.endswith(".swift"):
+                yield path
+
+
+def _format_file_block(rel_path: str, lines):
+    """Build the `<file>...</file>` block for one source file."""
+    parts = [f'  <file path="{escape(rel_path)}">']
+    for line_num, covered in lines:
+        cov = "true" if covered else "false"
+        parts.append(
+            f'    <lineToCover lineNumber="{line_num}" covered="{cov}"/>'
+        )
+    parts.append('  </file>')
+    return parts
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
     xcresult, repo_root = sys.argv[1], sys.argv[2]
-    if not repo_root.endswith("/"):
-        repo_root_prefix = repo_root + "/"
-    else:
-        repo_root_prefix = repo_root
+    repo_prefix = repo_root if repo_root.endswith("/") else repo_root + "/"
 
     # Top-level report: list of targets, each with files (absolute paths).
     report = json.loads(subprocess.check_output([
@@ -42,29 +66,13 @@ def main() -> int:
     ]))
 
     out = ['<?xml version="1.0" encoding="UTF-8"?>', '<coverage version="1">']
-
-    for target in report.get("targets", []):
-        name = target.get("name", "")
-        # Skip test bundles — they aren't production code.
-        if "Tests" in name or "Test" == name:
-            continue
-        for file_entry in target.get("files", []):
-            path = file_entry.get("path", "")
-            if not path.endswith(".swift"):
-                continue
-            rel = path[len(repo_root_prefix):] if path.startswith(repo_root_prefix) else path
-            lines = per_file_lines(xcresult, path)
-            if not lines:
-                continue
-            out.append(f'  <file path="{escape(rel)}">')
-            for line_num, covered in lines:
-                out.append(
-                    f'    <lineToCover lineNumber="{line_num}" '
-                    f'covered="{"true" if covered else "false"}"/>'
-                )
-            out.append('  </file>')
-
+    for path in _iter_production_swift_files(report):
+        rel = path[len(repo_prefix):] if path.startswith(repo_prefix) else path
+        lines = per_file_lines(xcresult, path)
+        if lines:
+            out.extend(_format_file_block(rel, lines))
     out.append('</coverage>')
+
     sys.stdout.write("\n".join(out) + "\n")
     return 0
 

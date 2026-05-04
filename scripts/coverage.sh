@@ -24,6 +24,14 @@ mkdir -p "$REPO_ROOT/build"
 # (avoids picking up an old timestamped one in the find below).
 rm -rf "$DERIVED"
 
+# Project lives in ~/Documents (iCloud Drive). iCloud continuously stamps
+# files with com.apple.fileprovider/com.apple.FinderInfo extended
+# attributes, which breaks `codesign` on the .xctest test bundle with
+# "resource fork, Finder information, or similar detritus not allowed".
+# A pre-build `xattr -cr` doesn't help — iCloud restamps faster than
+# xcodebuild reaches the codesign step. Fix: skip codesign for the test
+# build (CODE_SIGNING_ALLOWED=NO). Local test execution doesn't need a
+# signed bundle on macOS — the runner trusts the development host.
 echo "==> Running tests with code coverage…"
 xcodebuild \
   -project "FB Loader/FB Loader.xcodeproj" \
@@ -31,10 +39,12 @@ xcodebuild \
   -destination "platform=macOS" \
   -derivedDataPath "$DERIVED" \
   -enableCodeCoverage YES \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
   test "$@"
 
 XCRESULT=$(find "$DERIVED" -type d -name "*.xcresult" -print | head -1)
-if [ -z "$XCRESULT" ]; then
+if [[ -z "$XCRESULT" ]]; then
   echo "ERROR: no .xcresult bundle found under $DERIVED" >&2
   exit 1
 fi

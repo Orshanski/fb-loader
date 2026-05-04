@@ -16,20 +16,18 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ "${1:-}" = "--with-coverage" ]; then
+if [[ "${1:-}" == "--with-coverage" ]]; then
   shift
   "$REPO_ROOT/scripts/coverage.sh"
 fi
 
 # Pull SONAR_TOKEN (and friends) from interactive shell config if not already set.
-if [ -z "${SONAR_TOKEN:-}" ]; then
-  if [ -f "$HOME/.zshrc" ]; then
-    # shellcheck disable=SC1091
-    source "$HOME/.zshrc" >/dev/null 2>&1 || true
-  fi
+if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.zshrc" ]]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.zshrc" >/dev/null 2>&1 || true
 fi
 
-if [ -z "${SONAR_TOKEN:-}" ]; then
+if [[ -z "${SONAR_TOKEN:-}" ]]; then
   echo "ERROR: SONAR_TOKEN is empty. Set it in ~/.zshrc as 'export SONAR_TOKEN=...' or pass it inline." >&2
   exit 1
 fi
