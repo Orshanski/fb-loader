@@ -1507,8 +1507,14 @@ struct SearchWindowView: View {
             Button(coord.isSearching ? "Поиск…" : "Поиск") {
                 triggerSearch()
             }
-            .keyboardShortcut(.return, modifiers: [])
             .disabled(coord.isSearching || coord.query.trimmingCharacters(in: .whitespaces).isEmpty)
+            // Enter в TextField обрабатывается через `.onSubmit { triggerSearch() }`
+            // на самом поле — этого достаточно. `.keyboardShortcut(.return)` на
+            // кнопке тут добавлять не надо: SwiftUI на macOS отдаёт Enter
+            // фокусированному TextField через onSubmit, а второй обработчик на
+            // кнопке создаст конкуренцию (двойной запуск или пропуск, по
+            // настроению фокуса). Picking one path: onSubmit — единственный
+            // путь.
 
             Button("Закрыть") { onClose() }
                 .keyboardShortcut(.cancelAction)   // Escape
@@ -2177,8 +2183,10 @@ Expected: BUILD SUCCEEDED.
 - Ввести «Сандерсон», нажать `Поиск` → появляются группы Авторы/Серии/Совпадения по книгам.
 - Кликнуть строку книги → деталь книги в нижней панели sheet'a.
 - Отметить пару книг → кнопка «Экспорт отмеченных» активна.
+- Запустить экспорт из sheet'а → должен появиться **второй sheet** (`ExportProgressSheet`) поверх search-sheet'а, search-sheet остаётся открытым под ним; по завершению экспорта верхний sheet закрывается, поиск снова в фокусе.
 - Нажать `Escape` или кнопку `Закрыть` → sheet закрывается, главное окно снова доступно.
 - Повторно открыть лупой → sheet чистый (новый `SearchCoordinator`), без сохранённого предыдущего состояния (это особенность sheet — каждый показ инстанцирует контент заново).
+- Проверить, что главное окно ≥ 1000×700 — если у пользователя меньше, sheet может выглядеть тесно (sheet с `.frame(minWidth: 1000, minHeight: 700)` подгоняется под parent window). Для v1 это «known good enough», полное responsive-поведение — потом.
 
 - [ ] **Step 4: Run полный test-suite — ничего не сломали**
 
@@ -2188,10 +2196,11 @@ Expected: всё зелёное.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift" \
-        "FB Loader/FB Loader/UI/Search/SearchWindowView.swift"
+git add "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift"
 git commit -m "feat(search): wire lupa button and search sheet"
 ```
+
+> `SearchWindowView.swift` правится в Task 10 (init + onClose) и Task 12 (export sheet) — здесь не пересоздаём, поэтому в `git add` не включаем.
 
 ---
 
