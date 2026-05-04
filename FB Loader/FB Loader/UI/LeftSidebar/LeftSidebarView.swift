@@ -17,7 +17,7 @@ struct LeftSidebarView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
 
-                    LanguageFilterPicker(library: library)
+                    LanguageFilterPicker(library: library, selection: $s.languageFilter)
                 }
 
                 TextField("Фильтр", text: $s.sidebarFilter)

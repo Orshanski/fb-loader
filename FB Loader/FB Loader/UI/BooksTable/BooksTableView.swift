@@ -275,11 +275,10 @@ struct LanguageFilterLabel: View {
 
 struct LanguageFilterPicker: View {
     let library: Library
-    @Environment(AppState.self) private var state
+    @Binding var selection: String
 
     var body: some View {
-        @Bindable var s = state
-        Picker("", selection: $s.languageFilter) {
+        Picker("", selection: $selection) {
             ForEach(displayLanguages(), id: \.self) { code in
                 Text(label(for: code)).tag(code)
             }
@@ -298,6 +297,7 @@ struct LanguageFilterPicker: View {
         }
         return langs
     }
+
     private func label(for code: String) -> String {
         if code == BooksByContext.unspecifiedLanguageToken { return "Не указан" }
         return code.uppercased()
