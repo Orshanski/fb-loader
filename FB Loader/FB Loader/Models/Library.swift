@@ -47,6 +47,21 @@ nonisolated final class Library: Sendable {
     let lowercasedGenreNames: [Int16: String]
     let lowercasedSidebarGenreNames: [String]
 
+    // MARK: - Search index (transient, built in init, NOT persisted)
+    //
+    // Token-level fuzzy-search keys, parallel to authors / series / books.
+    // Each token is `[UInt32]` — raw codepoints after `SearchPreprocess.tokens`
+    // (lowercase + ё→е + non-alnum-as-separator). Built once at init,
+    // ~2 s on full Flibusta-scale catalog (581k books / 167k authors /
+    // 69k series). Light variant: per-book keeps only title tokens; for
+    // book scoring the engine dispatches author/series tokens via
+    // `searchAuthorIdx` / `searchSeriesIdx` lookups.
+    let searchKeyAuthors: [[[UInt32]]]  // parallel to authors
+    let searchKeySeries:  [[[UInt32]]]  // parallel to series
+    let searchKeyTitle:   [[[UInt32]]]  // parallel to books
+    let searchAuthorIdx:  [Int32]       // per book: index into searchKeyAuthors, -1 if missing
+    let searchSeriesIdx:  [Int32]       // per book: index into searchKeySeries, -1 if no series
+
     init(
         inpxHash: Data,
         inpxVersion: String,
@@ -155,5 +170,61 @@ nonisolated final class Library: Sendable {
         self.lowercasedSidebarGenreNames = sidebarGenres.map { $0.name.lowercased() }
         print("[Library.init] secondary indices built; \(langSet.count) distinct languages")
         onStatus?("[Library.init] secondary indices built; \(langSet.count) distinct languages")
+
+        // Search-ключи строятся синхронно — пользователь видит «Считаем
+        // индексы поиска…» как часть нормальной загрузки каталога. Стоимость
+        // ~2 с на полном каталоге.
+        let searchStatus = "Считаем индексы поиска…"
+        print("[Library.init] \(searchStatus)")
+        onStatus?(searchStatus)
+
+        var sAuthors: [[[UInt32]]] = []
+        sAuthors.reserveCapacity(authors.count)
+        for a in authors {
+            sAuthors.append(SearchPreprocess.tokens(a.displayName))
+        }
+        self.searchKeyAuthors = sAuthors
+
+        var sSeries: [[[UInt32]]] = []
+        sSeries.reserveCapacity(series.count)
+        for s in series {
+            sSeries.append(SearchPreprocess.tokens(s.name))
+        }
+        self.searchKeySeries = sSeries
+
+        var sTitles: [[[UInt32]]] = []
+        sTitles.reserveCapacity(books.count)
+        var aIdx: [Int32] = []
+        aIdx.reserveCapacity(books.count)
+        var sIdx: [Int32] = []
+        sIdx.reserveCapacity(books.count)
+        // Lookup tables: id → index (мы уже строили *byID Dictionary, но
+        // нам нужен индекс в массивах authors/series, не сам объект).
+        var authorIndexByID: [Int32: Int] = [:]
+        authorIndexByID.reserveCapacity(authors.count)
+        for (i, a) in authors.enumerated() { authorIndexByID[a.id] = i }
+        var seriesIndexByID: [Int32: Int] = [:]
+        seriesIndexByID.reserveCapacity(series.count)
+        for (i, s) in series.enumerated() { seriesIndexByID[s.id] = i }
+        for b in books {
+            sTitles.append(SearchPreprocess.tokens(b.title))
+            // Primary author: first authorID; -1 if missing.
+            if let firstAID = b.authorIDs.first,
+               let idx = authorIndexByID[firstAID] {
+                aIdx.append(Int32(idx))
+            } else {
+                aIdx.append(-1)
+            }
+            if let sid = b.seriesID, let idx = seriesIndexByID[sid] {
+                sIdx.append(Int32(idx))
+            } else {
+                sIdx.append(-1)
+            }
+        }
+        self.searchKeyTitle = sTitles
+        self.searchAuthorIdx = aIdx
+        self.searchSeriesIdx = sIdx
+        print("[Library.init] search indices built")
+        onStatus?("[Library.init] search indices built")
     }
 }
