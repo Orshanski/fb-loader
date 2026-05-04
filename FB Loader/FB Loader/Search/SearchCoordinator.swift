@@ -50,6 +50,14 @@ final class SearchCoordinator {
     /// Collapsed series-group blocks. Keys are indices into `Library.series`.
     var collapsedSeries: Set<Int> = []
 
+    /// Author-blocks that the user has clicked «Загрузить ещё» on — those
+    /// show all books of that author. Default-state blocks show first 10.
+    /// Keys are author indices into `Library.authors`.
+    var fullyExpandedAuthors: Set<Int> = []
+
+    /// Series-blocks similarly. Default-state shows first 5 books.
+    var fullyExpandedSeries: Set<Int> = []
+
     /// Default visible counts per group. "Показать всех" sets to `.max`,
     /// "Загрузить ещё +20" increments by 20 for books.
     var visibleAuthorsCount: Int = 10
@@ -80,6 +88,8 @@ final class SearchCoordinator {
         // Reset per-result UI state so each new search starts fresh.
         collapsedAuthors.removeAll()
         collapsedSeries.removeAll()
+        fullyExpandedAuthors.removeAll()
+        fullyExpandedSeries.removeAll()
         visibleAuthorsCount = 10
         visibleSeriesCount = 10
         visibleBooksCount = 20

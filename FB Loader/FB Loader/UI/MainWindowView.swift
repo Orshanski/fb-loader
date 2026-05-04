@@ -25,7 +25,22 @@ struct MainWindowView: View {
                 if let libid = state.selectedBookLibid,
                    let book = library.bookByLibid[libid],
                    let archives = state.userPaths.archivesDirectoryURL {
-                    BookDetailView(library: library, archivesRoot: archives, book: book)
+                    BookDetailView(
+                        library: library, archivesRoot: archives, book: book,
+                        isCurrentSelection: { state.selectedBookLibid == book.libid },
+                        onSelectAuthor: { aid in
+                            state.sidebarTab = .authors
+                            state.selectedAuthorID = aid
+                            state.selectedSeriesID = nil
+                            state.selectedGenreID = nil
+                        },
+                        onSelectSeries: { sid in
+                            state.sidebarTab = .series
+                            state.selectedSeriesID = sid
+                            state.selectedAuthorID = nil
+                            state.selectedGenreID = nil
+                        }
+                    )
                         .frame(maxWidth: .infinity,
                                minHeight: bookDetailMinHeight,
                                idealHeight: bookDetailIdealHeight)

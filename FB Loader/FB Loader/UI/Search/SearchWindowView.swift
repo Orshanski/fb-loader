@@ -29,7 +29,6 @@ struct SearchWindowView: View {
             topBar
             Divider()
             content
-            footerBar
             Divider()
             detailPanel
         }
@@ -88,7 +87,10 @@ struct SearchWindowView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
-                SearchResultListView(coord: coord, library: library, results: r)
+                SearchResultListView(
+                    coord: coord, library: library, results: r,
+                    onRequestExport: { Task { await runExport() } }
+                )
             }
         } else {
             Text("Введите запрос и нажмите «Поиск»")
@@ -102,7 +104,12 @@ struct SearchWindowView: View {
         if let libid = coord.selectedBookLibid,
            let book = library.bookByLibid[libid],
            let archives = archivesRoot {
-            BookDetailView(library: library, archivesRoot: archives, book: book)
+            BookDetailView(
+                library: library, archivesRoot: archives, book: book,
+                isCurrentSelection: { coord.selectedBookLibid == book.libid },
+                onSelectAuthor: { _ in /* no-op for v1 in sheet context */ },
+                onSelectSeries: { _ in /* no-op for v1 in sheet context */ }
+            )
                 .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)
         } else {
             Text("Выберите книгу")
@@ -110,23 +117,6 @@ struct SearchWindowView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .frame(minHeight: 380, idealHeight: 420)
         }
-    }
-
-    @ViewBuilder
-    private var footerBar: some View {
-        HStack {
-            if !coord.checkedBookLibids.isEmpty {
-                Text("Отмечено: \(coord.checkedBookLibids.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Экспорт отмеченных") { Task { await runExport() } }
-                .disabled(coord.checkedBookLibids.isEmpty || archivesRoot == nil)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.gray.opacity(0.05))
     }
 
     private func triggerSearch() {

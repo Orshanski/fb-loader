@@ -5,7 +5,22 @@ struct BookDetailView: View {
     let library: Library
     let archivesRoot: URL
     let book: Book
-    @Environment(AppState.self) private var state
+
+    /// Returns true if the current `book` is still the user's active
+    /// selection. Used to discard stale `loadDetail` results when the user
+    /// has clicked another book mid-load. Owner provides the closure
+    /// (main window: AppState's selected libid == book.libid; search sheet:
+    /// `coord.selectedBookLibid == book.libid`).
+    let isCurrentSelection: () -> Bool
+
+    /// Called when the user taps an author chip in the detail card. Owner
+    /// decides what to do (main window: navigate to author tab; search
+    /// sheet: no-op for v1).
+    let onSelectAuthor: (Int32) -> Void
+
+    /// Called when the user taps the series chip.
+    let onSelectSeries: (Int32) -> Void
+
     @State private var coverImage: NSImage?
     @State private var info: FB2BookInfo?
     @State private var translatorsExpanded = false
@@ -93,10 +108,7 @@ struct BookDetailView: View {
                 ForEach(book.authorIDs, id: \.self) { aid in
                     if let author = library.authorByID[aid] {
                         Chip(title: author.displayName) {
-                            state.sidebarTab = .authors
-                            state.selectedAuthorID = aid
-                            state.selectedSeriesID = nil
-                            state.selectedGenreID = nil
+                            onSelectAuthor(aid)
                         }
                     }
                 }
@@ -110,10 +122,7 @@ struct BookDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 label("Серия")
                 Chip(title: seriesChipTitle(s)) {
-                    state.sidebarTab = .series
-                    state.selectedSeriesID = sid
-                    state.selectedAuthorID = nil
-                    state.selectedGenreID = nil
+                    onSelectSeries(sid)
                 }
             }
         } else {
@@ -252,7 +261,7 @@ struct BookDetailView: View {
             if cachedCover != nil, !Task.isCancelled {
                 let img = cachedCover
                 await MainActor.run {
-                    guard state.selectedBookLibid == b.libid else { return }
+                    guard isCurrentSelection() else { return }
                     self.coverImage = img
                 }
                 print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
@@ -276,7 +285,7 @@ struct BookDetailView: View {
 
                 print("[BookDetail] total \(ContinuousClock.now - t0)")
                 await MainActor.run {
-                    guard state.selectedBookLibid == b.libid else { return }
+                    guard isCurrentSelection() else { return }
                     self.info = parsed
                     self.coverImage = img
                 }

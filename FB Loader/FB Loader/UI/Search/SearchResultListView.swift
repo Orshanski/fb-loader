@@ -6,6 +6,7 @@ struct SearchResultListView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let results: SearchResults
+    let onRequestExport: () -> Void
 
     var body: some View {
         ScrollView {
@@ -24,7 +25,8 @@ struct SearchResultListView: View {
                         SearchAuthorBlock(
                             coord: coord,
                             library: library,
-                            authorIndex: m.authorIndex
+                            authorIndex: m.authorIndex,
+                            onRequestExport: onRequestExport
                         )
                     }
                     if results.authors.count > coord.visibleAuthorsCount {
@@ -52,7 +54,8 @@ struct SearchResultListView: View {
                         SearchSeriesBlock(
                             coord: coord,
                             library: library,
-                            seriesIndex: m.seriesIndex
+                            seriesIndex: m.seriesIndex,
+                            onRequestExport: onRequestExport
                         )
                     }
                     if results.series.count > coord.visibleSeriesCount {
@@ -71,7 +74,8 @@ struct SearchResultListView: View {
                     SearchBooksBucketView(
                         coord: coord,
                         library: library,
-                        bookHits: results.books
+                        bookHits: results.books,
+                        onRequestExport: onRequestExport
                     )
                 }
             }

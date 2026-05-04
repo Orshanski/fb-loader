@@ -7,9 +7,13 @@ struct SearchSeriesBlock: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let seriesIndex: Int
+    let onRequestExport: () -> Void
+
+    private let defaultBooksLimit = 5
 
     private var series: Series { library.series[seriesIndex] }
     private var collapsed: Bool { coord.collapsedSeries.contains(seriesIndex) }
+    private var fullyExpanded: Bool { coord.fullyExpandedSeries.contains(seriesIndex) }
 
     /// Books of the series in current language, sorted by `seriesNum`.
     /// Computed once and shared between header (count + primary author)
@@ -75,22 +79,49 @@ struct SearchSeriesBlock: View {
 
     @ViewBuilder
     private var booksList: some View {
-        let books = booksInLanguage
-        ForEach(books, id: \.libid) { b in
+        let allBooks = booksInLanguage
+        let visibleBooks = fullyExpanded ? allBooks : Array(allBooks.prefix(defaultBooksLimit))
+        ForEach(visibleBooks, id: \.libid) { b in
             BookRow(
                 book: b, library: library, indented: true,
-                isChecked: Binding(
-                    get: { coord.checkedBookLibids.contains(b.libid) },
-                    set: { isOn in
-                        if isOn { coord.checkedBookLibids.insert(b.libid) }
-                        else    { coord.checkedBookLibids.remove(b.libid) }
-                    }
-                ),
-                isSelected: Binding(
-                    get: { coord.selectedBookLibid == b.libid },
-                    set: { newValue in if newValue { coord.selectedBookLibid = b.libid } }
-                )
+                isChecked: bindingChecked(b),
+                isSelected: bindingSelected(b),
+                contextMenuBuilder: { exportContextMenu() }
             )
         }
+        if !fullyExpanded && allBooks.count > defaultBooksLimit {
+            Button("Загрузить ещё (всего \(allBooks.count))") {
+                coord.fullyExpandedSeries.insert(seriesIndex)
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 30)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func bindingChecked(_ b: Book) -> Binding<Bool> {
+        Binding(
+            get: { coord.checkedBookLibids.contains(b.libid) },
+            set: { isOn in
+                if isOn { coord.checkedBookLibids.insert(b.libid) }
+                else    { coord.checkedBookLibids.remove(b.libid) }
+            }
+        )
+    }
+
+    private func bindingSelected(_ b: Book) -> Binding<Bool> {
+        Binding(
+            get: { coord.selectedBookLibid == b.libid },
+            set: { newValue in if newValue { coord.selectedBookLibid = b.libid } }
+        )
+    }
+
+    private func exportContextMenu() -> AnyView {
+        AnyView(
+            Button("Выгрузить отмеченные (\(coord.checkedBookLibids.count))") {
+                onRequestExport()
+            }
+            .disabled(coord.checkedBookLibids.isEmpty)
+        )
     }
 }

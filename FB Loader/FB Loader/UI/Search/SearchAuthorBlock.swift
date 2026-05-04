@@ -8,9 +8,13 @@ struct SearchAuthorBlock: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let authorIndex: Int
+    let onRequestExport: () -> Void
+
+    private let defaultBooksLimit = 10
 
     private var author: Author { library.authors[authorIndex] }
     private var collapsed: Bool { coord.collapsedAuthors.contains(authorIndex) }
+    private var fullyExpanded: Bool { coord.fullyExpandedAuthors.contains(authorIndex) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -41,10 +45,11 @@ struct SearchAuthorBlock: View {
 
     @ViewBuilder
     private var groupedBooks: some View {
-        let books = BooksByContext.books(for: .author(author.id),
-                                         language: coord.languageFilter,
-                                         in: library)
-        let (loose, bySeries) = groupBooks(books)
+        let allBooks = BooksByContext.books(for: .author(author.id),
+                                            language: coord.languageFilter,
+                                            in: library)
+        let visibleBooks = fullyExpanded ? allBooks : Array(allBooks.prefix(defaultBooksLimit))
+        let (loose, bySeries) = groupBooks(visibleBooks)
         ForEach(Array(loose.enumerated()), id: \.element.libid) { _, b in
             row(for: b, indented: false)
         }
@@ -54,13 +59,31 @@ struct SearchAuthorBlock: View {
                 row(for: b, indented: true)
             }
         }
+        if !fullyExpanded && allBooks.count > defaultBooksLimit {
+            Button("Загрузить ещё (всего \(allBooks.count))") {
+                coord.fullyExpandedAuthors.insert(authorIndex)
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 30)
+            .padding(.vertical, 6)
+        }
     }
 
     private func row(for b: Book, indented: Bool) -> some View {
         BookRow(
             book: b, library: library, indented: indented,
             isChecked: bindingChecked(b),
-            isSelected: bindingSelected(b)
+            isSelected: bindingSelected(b),
+            contextMenuBuilder: { exportContextMenu() }
+        )
+    }
+
+    private func exportContextMenu() -> AnyView {
+        AnyView(
+            Button("Выгрузить отмеченные (\(coord.checkedBookLibids.count))") {
+                onRequestExport()
+            }
+            .disabled(coord.checkedBookLibids.isEmpty)
         )
     }
 

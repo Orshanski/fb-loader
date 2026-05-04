@@ -6,6 +6,7 @@ struct SearchBooksBucketView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let bookHits: [BookMatch]
+    let onRequestExport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,7 +39,15 @@ struct SearchBooksBucketView: View {
                     isSelected: Binding(
                         get: { coord.selectedBookLibid == b.libid },
                         set: { newValue in if newValue { coord.selectedBookLibid = b.libid } }
-                    )
+                    ),
+                    contextMenuBuilder: {
+                        AnyView(
+                            Button("Выгрузить отмеченные (\(coord.checkedBookLibids.count))") {
+                                onRequestExport()
+                            }
+                            .disabled(coord.checkedBookLibids.isEmpty)
+                        )
+                    }
                 )
             }
             if bookHits.count > coord.visibleBooksCount {
