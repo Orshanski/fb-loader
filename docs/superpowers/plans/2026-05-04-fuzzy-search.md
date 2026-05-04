@@ -1446,15 +1446,19 @@ struct SearchWindowView: View {
     let archivesRoot: URL?
     /// Initial language inherited from main window at open time.
     let initialLanguage: String
+    /// Closure to dismiss the sheet — provided by the parent (LeftSidebarView).
+    let onClose: () -> Void
 
     @State private var coord: SearchCoordinator
     /// Search state-id for SwiftUI `.task(id:)` — запускается при изменении.
     @State private var pendingSearchToken: UUID? = nil
 
-    init(library: Library, archivesRoot: URL?, initialLanguage: String) {
+    init(library: Library, archivesRoot: URL?, initialLanguage: String,
+         onClose: @escaping () -> Void) {
         self.library = library
         self.archivesRoot = archivesRoot
         self.initialLanguage = initialLanguage
+        self.onClose = onClose
         _coord = State(initialValue: SearchCoordinator(initialLanguage: initialLanguage))
     }
 
@@ -1505,6 +1509,9 @@ struct SearchWindowView: View {
             }
             .keyboardShortcut(.return, modifiers: [])
             .disabled(coord.isSearching || coord.query.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            Button("Закрыть") { onClose() }
+                .keyboardShortcut(.cancelAction)   // Escape
         }
         .padding(12)
     }
@@ -2091,85 +2098,22 @@ git commit -m "feat(search): add local export from search window"
 
 ---
 
-## Task 13: Lupa icon + Window scene wiring
+## Task 13: Lupa icon + sheet wiring
 
 **Files:**
 - Modify: `FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift`
-- Modify: `FB Loader/FB Loader/FB_LoaderApp.swift`
 
-**Связанность окна с главным даётся почти даром:**
+Поиск открывается как **модальный sheet** поверх главного окна. Никаких отдельных сцен, никакого подъёма `AppState`, никаких lifecycle-edge-кейсов: пока sheet открыт — главное окно блокировано (нельзя зайти в `Настройки`/`Перестроить кэш`/etc.), пока закрыт — sheet'а просто нет. Закрытие — через явную кнопку в sheet'е или клавишу Escape.
 
-- `Window(id:)` (не `WindowGroup`!) — singleton по построению.
-- Лупа живёт в `LeftSidebarView`, а тот рендерится только при `state.stage == .ready` — значит, без загруженного каталога окно открыть нечем.
-- Существующий `applicationShouldTerminateAfterLastWindowClosed = true` (`FB_LoaderApp.swift:13-15`) гарантирует, что приложение завершится, когда главное окно закрывают.
+- [ ] **Step 1: Добавить кнопку-лупу и `.sheet` в сайдбар**
 
-Единственная нужная **обвязка**: поднять `AppState` из `ContentView` на уровень `FB_LoaderApp`, чтобы вторая сцена видела тот же экземпляр.
-
-- [ ] **Step 1: Поднять AppState из ContentView в FB_LoaderApp**
-
-В `FB_LoaderApp.swift`, заменить `body`:
-
-```swift
-@main
-struct FB_LoaderApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var state = AppState()
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environment(state)
-        }
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Настройки…") {
-                    NotificationCenter.default.post(name: .openSettings, object: nil)
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-        }
-
-        Window("Поиск по библиотеке", id: "library-search") {
-            SearchSceneRoot()
-                .environment(state)
-        }
-    }
-}
-
-private struct SearchSceneRoot: View {
-    @Environment(AppState.self) private var state
-    var body: some View {
-        if case .ready(let lib) = state.stage {
-            SearchWindowView(
-                library: lib,
-                archivesRoot: state.userPaths.archivesDirectoryURL,
-                initialLanguage: state.languageFilter
-            )
-        }
-    }
-}
-```
-
-> Защитная ветка `else` для `state.stage != .ready` не нужна: `LeftSidebarView` рисует лупу только в `.ready`, открыть окно при незагруженном каталоге нельзя. Если каталог сбросят пока окно открыто (редкий edge-case) — оно просто отрендерит пустоту, юзер закроет крестиком.
-
-В `ContentView.swift` заменить:
-```swift
-@State private var state = AppState()
-```
-на:
-```swift
-@Environment(AppState.self) private var state
-```
-
-- [ ] **Step 2: Добавить кнопку-лупу в сайдбар**
-
-В `LeftSidebarView.swift`, в верхнем `VStack(spacing: 8)`-блоке (тот, что с пикером вкладок и `LanguageFilterPicker`), добавить кнопку **перед** `Picker`:
+В `LeftSidebarView.swift`, добавить `@State private var showSearch = false`, кнопку с `magnifyingglass` иконкой в `HStack` перед сегментным `Picker`-ом, и `.sheet(isPresented:)` на корневом `VStack`:
 
 ```swift
 struct LeftSidebarView: View {
     let library: Library
     @Environment(AppState.self) private var state
-    @Environment(\.openWindow) private var openWindow
+    @State private var showSearch = false
 
     var body: some View {
         @Bindable var s = state
@@ -2177,7 +2121,7 @@ struct LeftSidebarView: View {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Button {
-                        openWindow(id: "library-search")
+                        showSearch = true
                     } label: {
                         Image(systemName: "magnifyingglass")
                     }
@@ -2201,44 +2145,52 @@ struct LeftSidebarView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 72)
-            // ... остальное тело — как сейчас
-            ...
+
+            // ... остальное тело LeftSidebarView (Divider, switch по sidebarTab, etc.)
+            //     — оставляем как есть.
+            // ... existing code ...
+        }
+        .sheet(isPresented: $showSearch) {
+            SearchWindowView(
+                library: library,
+                archivesRoot: state.userPaths.archivesDirectoryURL,
+                initialLanguage: state.languageFilter,
+                onClose: { showSearch = false }
+            )
         }
     }
 }
 ```
 
-> **Замечание про язык-наследование.** `Window(id:)` не принимает value-параметры (в отличие от `WindowGroup(for:)`). Поэтому язык наследуется в SearchSceneRoot напрямую из `state.languageFilter` через `@Environment`. На **первое** открытие окна `SearchWindowView.init` копирует это значение в `coord.languageFilter`, дальше окно живёт независимо. На **повторное** открытие (singleton фокусируется) — coord не пересоздаётся, языковой пикер сохраняет своё текущее значение. Это допустимо: пользователь видит окно с тем состоянием, в котором его оставил.
+> Sheet-приглашённый `SearchWindowView` принимает дополнительный параметр `onClose: () -> Void` (см. правки Task 10 — добавлены) — он вызывается из кнопки «Закрыть» внутри sheet'а и при нажатии Escape.
 >
-> Если захочется «при каждом открытии — пересинхронизировать с главным», это делается через `.task(id:)` на event-token из AppState. Для v1 не делаем — лишняя сложность.
+> `archivesRoot` и `initialLanguage` читаются из `state` напрямую при создании sheet'а — никакого подъёма `AppState`, никаких сцен.
 
-- [ ] **Step 3: Build, expect успех**
+- [ ] **Step 2: Build, expect успех**
 
 Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -destination "platform=macOS" build 2>&1 | tail -5`
 Expected: BUILD SUCCEEDED.
 
-- [ ] **Step 4: Smoke test в Xcode**
-- Запустить приложение.
-- Загрузить каталог (или дождаться кэш-хита).
-- Кликнуть лупу в сайдбаре → откроется окно поиска.
-- Ввести «Сандерсон», нажать Поиск → результаты появляются.
-- Кликнуть строку книги → деталь снизу.
+- [ ] **Step 3: Smoke test в Xcode**
+- Запустить приложение, дождаться загрузки каталога.
+- Кликнуть лупу в сайдбаре → sheet «Поиск по библиотеке» появляется поверх главного окна; главное окно блокировано.
+- Ввести «Сандерсон», нажать `Поиск` → появляются группы Авторы/Серии/Совпадения по книгам.
+- Кликнуть строку книги → деталь книги в нижней панели sheet'a.
 - Отметить пару книг → кнопка «Экспорт отмеченных» активна.
-- Закрыть окно, повторно открыть лупой → singleton-окно фокусируется (то же содержимое, что было).
-- Закрыть главное окно (cmd-W или ⊗) → приложение завершается (так как `applicationShouldTerminateAfterLastWindowClosed = true`); окно поиска тоже не «висит само по себе».
+- Нажать `Escape` или кнопку `Закрыть` → sheet закрывается, главное окно снова доступно.
+- Повторно открыть лупой → sheet чистый (новый `SearchCoordinator`), без сохранённого предыдущего состояния (это особенность sheet — каждый показ инстанцирует контент заново).
 
-- [ ] **Step 5: Run полный test-suite — ничего не сломали**
+- [ ] **Step 4: Run полный test-suite — ничего не сломали**
 
 Run: `xcodebuild -project "FB Loader/FB Loader.xcodeproj" -scheme "FB Loader" -destination "platform=macOS" test 2>&1 | tail -10`
 Expected: всё зелёное.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add "FB Loader/FB Loader/FB_LoaderApp.swift" \
-        "FB Loader/FB Loader/ContentView.swift" \
-        "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift"
-git commit -m "feat(search): wire lupa button and Search window scene"
+git add "FB Loader/FB Loader/UI/LeftSidebar/LeftSidebarView.swift" \
+        "FB Loader/FB Loader/UI/Search/SearchWindowView.swift"
+git commit -m "feat(search): wire lupa button and search sheet"
 ```
 
 ---
