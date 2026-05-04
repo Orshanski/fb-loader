@@ -30,7 +30,7 @@ nonisolated enum LibraryLoader {
         let store = LibraryCacheStore(applicationSupportRoot: appSupport)
         let genres = try GenreDictionary.loadFromBundle()
         onStatus("Чтение кэша каталога…")
-        return try store.loadOrRebuild(inpxURL: inpxURL) {
+        return try store.loadOrRebuild(inpxURL: inpxURL, onStatus: onStatus) {
             onStatus("Кэш не найден или устарел — пересборка из INPX")
             return try INPXImporter.import_(
                 inpxURL: inpxURL,

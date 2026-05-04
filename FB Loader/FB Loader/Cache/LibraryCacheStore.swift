@@ -15,12 +15,13 @@ nonisolated final class LibraryCacheStore {
 
     func loadOrRebuild(
         inpxURL: URL,
+        onStatus: (@Sendable (String) -> Void)? = nil,
         rebuild: () throws -> Library
     ) throws -> Library {
         let currentHash = try SHA256.hash(ofFileAt: inpxURL)
 
         if let cached = try? Data(contentsOf: cacheURL),
-           let lib = try? LibraryBinaryCodec.decode(cached),
+           let lib = try? LibraryBinaryCodec.decode(cached, onStatus: onStatus),
            lib.inpxHash == currentHash {
             return lib
         }

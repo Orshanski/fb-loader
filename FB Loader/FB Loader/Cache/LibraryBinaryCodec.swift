@@ -91,7 +91,7 @@ nonisolated enum LibraryBinaryCodec {
         return w.data
     }
 
-    static func decode(_ data: Data) throws -> Library {
+    static func decode(_ data: Data, onStatus: (@Sendable (String) -> Void)? = nil) throws -> Library {
         var r = BinaryReader(data: data)
         guard try r.bytes(4) == magic else { throw DecodeError.badMagic }
         let v = try r.uint16()
@@ -164,7 +164,8 @@ nonisolated enum LibraryBinaryCodec {
             authors: authors,
             series: series,
             genres: genres,
-            books: books
+            books: books,
+            onStatus: onStatus
         )
     }
 }

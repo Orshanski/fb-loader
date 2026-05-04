@@ -126,4 +126,49 @@ struct LibraryBinaryCodecTests {
             try LibraryBinaryCodec.decode(data)
         }
     }
+
+    @Test("decode forwards onStatus to Library.init (cache-hit path shows search-index progress)")
+    func decodeForwardsOnStatus() throws {
+        let original = Library(
+            inpxHash: Data(repeating: 0xAB, count: 32),
+            inpxVersion: "v",
+            archives: ["arch"],
+            authors: [Author.unknown],
+            series: [],
+            genres: [],
+            books: []
+        )
+        let data = try LibraryBinaryCodec.encode(original)
+
+        // Collect status messages fired during decode → Library.init.
+        let statuses = ThreadSafeBox<[String]>([])
+        _ = try LibraryBinaryCodec.decode(data, onStatus: { msg in
+            statuses.mutate { $0.append(msg) }
+        })
+
+        let collected = statuses.value
+        // Library.init fires multiple status messages; we only assert that
+        // the search-index status is among them — that's the regression
+        // we're guarding against.
+        #expect(collected.contains(where: { $0.contains("Считаем индексы поиска") }),
+                "decode must forward onStatus to Library.init; collected=\(collected)")
+    }
+}
+
+/// Test helper — thread-safe box for collecting messages fired from
+/// non-MainActor contexts. `Library.init`'s `onStatus` is `@Sendable`, so
+/// the closure can be called from any actor; we need a safe place to
+/// accumulate.
+final class ThreadSafeBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: Value
+    init(_ value: Value) { self._value = value }
+    var value: Value {
+        lock.lock(); defer { lock.unlock() }
+        return _value
+    }
+    func mutate(_ block: (inout Value) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        block(&_value)
+    }
 }
