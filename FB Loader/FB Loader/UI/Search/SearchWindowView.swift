@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SearchWindowView: View {
@@ -12,6 +13,7 @@ struct SearchWindowView: View {
     /// Search trigger token for SwiftUI `.task(id:)` — flipping it kicks
     /// off a search. Initial nil → no search until the user clicks «Поиск».
     @State private var pendingSearchToken: UUID? = nil
+    @State private var exportProgress: ExportProgress? = nil
 
     init(library: Library, archivesRoot: URL?, initialLanguage: String,
          onClose: @escaping () -> Void) {
@@ -27,6 +29,7 @@ struct SearchWindowView: View {
             topBar
             Divider()
             content
+            footerBar
             Divider()
             detailPanel
         }
@@ -34,6 +37,11 @@ struct SearchWindowView: View {
         .task(id: pendingSearchToken) {
             guard pendingSearchToken != nil else { return }
             await coord.runSearch(in: library)
+        }
+        .sheet(item: Binding(
+            get: { exportProgress.map { ProgressIdentifier(progress: $0) } },
+            set: { _ in })) { wrapper in
+            ExportProgressSheet(progress: wrapper.progress) { exportProgress = nil }
         }
     }
 
@@ -104,7 +112,69 @@ struct SearchWindowView: View {
         }
     }
 
+    @ViewBuilder
+    private var footerBar: some View {
+        HStack {
+            if !coord.checkedBookLibids.isEmpty {
+                Text("Отмечено: \(coord.checkedBookLibids.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Экспорт отмеченных") { Task { await runExport() } }
+                .disabled(coord.checkedBookLibids.isEmpty || archivesRoot == nil)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(0.05))
+    }
+
     private func triggerSearch() {
         pendingSearchToken = UUID()
+    }
+
+    @MainActor
+    private func runExport() async {
+        guard !coord.checkedBookLibids.isEmpty,
+              let archives = archivesRoot else { return }
+        let userPaths = UserPaths.shared
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        // Pre-fill последней папкой экспорта, как в MainWindowView.runExport.
+        panel.directoryURL = userPaths.lastExportDirectoryURL
+            ?? FileManager.default.urls(for: .downloadsDirectory,
+                                        in: .userDomainMask).first
+        guard let folder = await panel.selectedDirectory() else { return }
+        userPaths.lastExportDirectoryURL = folder
+
+        let items = ExportPlanner.plan(
+            libids: coord.checkedBookLibids,
+            rootFolder: folder,
+            selectedAuthorID: nil,
+            selectedSeriesID: nil,
+            in: library
+        )
+        let progress = ExportProgress()
+        exportProgress = progress
+        Task {
+            await ExportRunner.run(items: items, archivesRoot: archives,
+                                   library: library, progress: progress)
+        }
+    }
+}
+
+private struct ProgressIdentifier: Identifiable {
+    let progress: ExportProgress
+    var id: ObjectIdentifier { ObjectIdentifier(progress) }
+}
+
+private extension NSOpenPanel {
+    @MainActor
+    func selectedDirectory() async -> URL? {
+        await withCheckedContinuation { c in
+            begin { r in c.resume(returning: r == .OK ? self.url : nil) }
+        }
     }
 }
