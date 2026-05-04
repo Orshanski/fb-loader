@@ -8,6 +8,11 @@ struct SearchWindowView: View {
     let initialLanguage: String
     /// Closure to dismiss the sheet — provided by the parent (LeftSidebarView).
     let onClose: () -> Void
+    /// Preferred sheet size — рассчитывается родителем как 80% от главного
+    /// окна (10% полей с каждой стороны). Параметром, чтобы не лезть в
+    /// `NSApp.mainWindow` из контента sheet'а, который сам не знает, кто
+    /// его родитель.
+    let preferredSize: CGSize
 
     @State private var coord: SearchCoordinator
     /// Search trigger token for SwiftUI `.task(id:)` — flipping it kicks
@@ -16,10 +21,12 @@ struct SearchWindowView: View {
     @State private var exportProgress: ExportProgress? = nil
 
     init(library: Library, archivesRoot: URL?, initialLanguage: String,
+         preferredSize: CGSize,
          onClose: @escaping () -> Void) {
         self.library = library
         self.archivesRoot = archivesRoot
         self.initialLanguage = initialLanguage
+        self.preferredSize = preferredSize
         self.onClose = onClose
         _coord = State(initialValue: SearchCoordinator(initialLanguage: initialLanguage))
     }
@@ -32,7 +39,12 @@ struct SearchWindowView: View {
             Divider()
             detailPanel
         }
-        .frame(minWidth: 1000, minHeight: 700)
+        // Фиксированный размер sheet'а на основе размера главного окна
+        // (80% — родитель в LeftSidebarView читает NSApp.mainWindow и
+        // считает .width * 0.8 / .height * 0.8). Фиксированный (не min/max)
+        // фрейм убирает AppKit-recursion warning во время первого layout
+        // pass'а sheet'а.
+        .frame(width: preferredSize.width, height: preferredSize.height)
         .task(id: pendingSearchToken) {
             guard pendingSearchToken != nil else { return }
             await coord.runSearch(in: library)
