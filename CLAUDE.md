@@ -28,7 +28,10 @@ This file provides instructions and context for AI coding agents working on this
 ### Правила
 
 - **НЕ СПОРИТЬ с Alexey.** Если Alexey говорит, что что-то не работает или сломано — СНАЧАЛА проверить, потом отвечать. Не доверять своим предположениям, доверять фактам.
-- **Показывать ВСЕ findings из ревью.** Не фильтровать, не предлагать «отложить незначительное». Решение о приоритете — только за Alexey.
+- **Эскалация findings из ревью — только архитектура и бизнес-поведение.**
+  - **К Alexey:** изменения семантики продукта (что должно произойти, какой UX), архитектурные развилки (где жить компоненту, какой контракт у API, какой инвариант), бизнес-правила (что считается корректным результатом).
+  - **Чиню сам до зелени:** формулировки, нечёткие фразы, стилистика, опечатки, повторы, ссылки на код, мелкие неточности в счётчиках, тестовая обвязка (`@MainActor` на suite, имена кейсов, разбивка), технические нюансы реализации (атомарность API, локальные паттерны SwiftUI), follow-up'ы без бизнес-смысла.
+  - Если сомневаюсь — отношу к архитектуре/бизнесу и эскалирую, не наоборот.
 - **НИКОГДА не мержить/пушить без явного разрешения.** При любой двусмысленности — переспросить.
 - **Never work in main.** Always create a feature branch.
 - **TDD:** tests first, then implementation.
@@ -84,6 +87,7 @@ macOS Swift 6 / SwiftUI приложение, открывает INPX-индек
 
 ## Conventions & Patterns
 
+- **Поиск по символам — через LSP, не через grep.** В проекте установлен `swift-lsp` plugin (SourceKit-LSP). Для всего, что есть символ — свойство, метод, тип, enum-case, протокол — использовать LSP-операции (`findReferences`, `goToDefinition`, `hover`, `workspaceSymbol`, `documentSymbol`). grep оставлен только для текстовых паттернов (TODO-комментарии, строковые литералы, поиск по regex). Семантические запросы grep'ом дают ложные срабатывания (комментарии, одноимённые локальные, строки) и пропуски (квалифицированные ссылки).
 - **Swift 6 strict concurrency.** Проект собирается с `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` — все типы/функции по умолчанию MainActor-isolated. Для CPU-bound кода (парсеры, скоры, индексы), который вызывается из background-задач (`Task.detached`, `DispatchQueue.concurrentPerform`), помечать **`nonisolated`** на типе или функции. Где нужно — `Sendable` conformance.
 - **`Library` — `nonisolated final class … : Sendable`,** все stored properties — `let`-ы, mutate'ить нельзя после `init`. Любой новый параллельный массив (lowercased-кеш, search-key) добавляется по тому же паттерну.
 - **Тесты — Swift Testing**, не XCTest. `import Testing`, `@Suite`, `@Test`, `#expect`. Файлы — в `FB Loader/FB LoaderTests/`.
