@@ -58,6 +58,7 @@ struct AppStateTests {
         s.sidebarFilter = "x"
         s.checkedBookLibids = [1]
         s.selectedBookLibid = 7
+        s.languageFilter = "en"
 
         s.selectSection(.authors(nil))
 
@@ -65,6 +66,7 @@ struct AppStateTests {
         #expect(s.sidebarFilter == "")
         #expect(s.checkedBookLibids.isEmpty)
         #expect(s.selectedBookLibid == nil)
+        #expect(s.languageFilter == "en")
     }
 
     @Test("selectAuthor без имени — same-case другой ID: гасит preview и галочки")
