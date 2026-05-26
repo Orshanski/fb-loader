@@ -15,6 +15,7 @@ enum ExportRunner {
         progress.currentTitle = ""
         progress.cancelled = false
         progress.failed = []
+        progress.succeeded = []
 
         for item in items {
             if progress.cancelled { return }
@@ -41,8 +42,13 @@ enum ExportRunner {
                 }
             }.value
 
+            // Invariant: succeeded/failed обновляются ДО `done += 1`,
+            // чтобы `.onChange(of: progress.done)` в родительской вьюхе
+            // видел консистентное состояние при срабатывании.
             if let msg = errorMessage {
                 progress.failed.append((book.title, msg))
+            } else {
+                progress.succeeded.insert(book.libid)
             }
             progress.done += 1
         }

@@ -16,11 +16,20 @@ struct ExportProgressSheet: View {
                     .foregroundStyle(.red)
             }
             HStack {
+                // «Отмена» гаснет после нажатия, чтобы не дать выставить
+                // `cancelled` повторно. «Закрыть» становится активной при
+                // `cancelled == true` НЕ дожидаясь возврата runner'а из
+                // последнего Task.detached — пользователь должен иметь
+                // возможность выйти из окна сразу. Этот вариант требует
+                // финального пересчёта `checkedBookLibids` после
+                // `await ExportRunner.run` в родительских вьюхах: без него
+                // libid'ы, дописавшиеся в `succeeded` уже после закрытия
+                // окна, не снимутся с галочки.
                 Button("Отмена") { progress.cancelled = true }
-                    .disabled(progress.done >= progress.total)
+                    .disabled(progress.done >= progress.total || progress.cancelled)
                 Spacer()
                 Button("Закрыть") { onClose() }
-                    .disabled(progress.total > 0 && progress.done < progress.total)
+                    .disabled(progress.total > 0 && progress.done < progress.total && !progress.cancelled)
                     .keyboardShortcut(.defaultAction)
             }.frame(width: 360)
         }

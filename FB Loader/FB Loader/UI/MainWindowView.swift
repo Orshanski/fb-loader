@@ -80,6 +80,10 @@ struct MainWindowView: View {
                     state.exportProgress = nil
                 }
         }
+        .onExportProgress(state.exportProgress) { progress in
+            state.checkedBookLibids = progress.removingSucceeded(
+                from: state.checkedBookLibids)
+        }
     }
 
     private struct ProgressIdentifier: Identifiable {
@@ -88,6 +92,11 @@ struct MainWindowView: View {
     }
 
     private func runExport() async {
+        // Гард против двойного запуска: если предыдущий ExportRunner ещё
+        // не вернулся (sheet жив, либо last in-flight книга дописывается),
+        // повторный клик «Выгрузить» игнорируется — иначе два Task'а
+        // погонятся за общим state.checkedBookLibids.
+        guard state.exportProgress == nil else { return }
         guard !state.checkedBookLibids.isEmpty,
               let archives = state.userPaths.archivesDirectoryURL else { return }
         let panel = NSOpenPanel()
@@ -110,6 +119,15 @@ struct MainWindowView: View {
         Task {
             await ExportRunner.run(items: items, archivesRoot: archives,
                                    library: library, progress: progress)
+            // Финальный пересчёт — страховка от любого пути, при котором
+            // последний `.onChange` не был доставлен или потерял
+            // `state.exportProgress`: пользователь закрыл sheet после
+            // «Отмена», SwiftUI переставил порядок диспатчей, runner
+            // дописал последнюю книгу после обнуления биндинга и т.п.
+            // Здесь берём полное `progress.succeeded` с захваченного
+            // объекта и снимаем оставшееся.
+            state.checkedBookLibids = progress.removingSucceeded(
+                from: state.checkedBookLibids)
         }
     }
 }

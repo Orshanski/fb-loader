@@ -56,6 +56,10 @@ struct SearchWindowView: View {
             })) { wrapper in
             ExportProgressSheet(progress: wrapper.progress) { exportProgress = nil }
         }
+        .onExportProgress(exportProgress) { progress in
+            coord.checkedBookLibids = progress.removingSucceeded(
+                from: coord.checkedBookLibids)
+        }
     }
 
     @ViewBuilder
@@ -144,6 +148,8 @@ struct SearchWindowView: View {
 
     @MainActor
     private func runExport() async {
+        // Гард против двойного запуска (см. MainWindowView.runExport).
+        guard exportProgress == nil else { return }
         guard !coord.checkedBookLibids.isEmpty,
               let archives = archivesRoot else { return }
         let userPaths = UserPaths.shared
@@ -170,6 +176,9 @@ struct SearchWindowView: View {
         Task {
             await ExportRunner.run(items: items, archivesRoot: archives,
                                    library: library, progress: progress)
+            // Финальный пересчёт (см. MainWindowView.runExport).
+            coord.checkedBookLibids = progress.removingSucceeded(
+                from: coord.checkedBookLibids)
         }
     }
 }
