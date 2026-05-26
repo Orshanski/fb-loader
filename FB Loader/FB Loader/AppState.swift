@@ -20,6 +20,14 @@ final class AppState {
     // UI selection state — explicitly NOT persisted (per spec §4 "Состояние между запусками").
     enum SidebarTab { case authors, series, genres }
     var sidebarTab: SidebarTab = .authors
+
+    enum SidebarSelection: Equatable {
+        case authors(Int32?)
+        case series(Int32?)
+        case genres(Int16?)
+    }
+
+    private(set) var sidebar: SidebarSelection = .authors(nil)
     var selectedAuthorID: Int32? = nil
     var selectedSeriesID: Int32? = nil
     var selectedGenreID: Int16? = nil
