@@ -29,16 +29,12 @@ struct MainWindowView: View {
                         library: library, archivesRoot: archives, book: book,
                         isCurrentSelection: { state.selectedBookLibid == book.libid },
                         onSelectAuthor: { aid in
-                            state.sidebarTab = .authors
-                            state.selectedAuthorID = aid
-                            state.selectedSeriesID = nil
-                            state.selectedGenreID = nil
+                            let name = library.authorByID[aid]?.displayName
+                            state.selectAuthor(aid, deepLinkName: name)
                         },
                         onSelectSeries: { sid in
-                            state.sidebarTab = .series
-                            state.selectedSeriesID = sid
-                            state.selectedAuthorID = nil
-                            state.selectedGenreID = nil
+                            let name = library.seriesByID[sid]?.name
+                            state.selectSeries(sid, deepLinkName: name)
                         }
                     )
                         .frame(maxWidth: .infinity,
@@ -108,11 +104,15 @@ struct MainWindowView: View {
         guard let folder = await panel.selectedDirectory() else { return }
         state.userPaths.lastExportDirectoryURL = folder
 
+        let authorID: Int32?
+        if case .authors(let id) = state.sidebar { authorID = id } else { authorID = nil }
+        let seriesID: Int32?
+        if case .series(let id) = state.sidebar { seriesID = id } else { seriesID = nil }
         let items = ExportPlanner.plan(
             libids: state.checkedBookLibids,
             rootFolder: folder,
-            selectedAuthorID: state.sidebarTab == .authors ? state.selectedAuthorID : nil,
-            selectedSeriesID: state.sidebarTab == .series ? state.selectedSeriesID : nil,
+            selectedAuthorID: authorID,
+            selectedSeriesID: seriesID,
             in: library)
         let progress = ExportProgress()
         state.exportProgress = progress
