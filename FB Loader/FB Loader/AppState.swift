@@ -36,6 +36,41 @@ final class AppState {
     var sidebarFilter: String = ""
     var checkedBookLibids: Set<Int32> = []
 
+    func selectSection(_ section: SidebarSelection) {
+        guard sidebar != section else { return }
+        sidebar = section
+        selectedBookLibid = nil
+        sidebarFilter = ""
+        checkedBookLibids.removeAll()
+    }
+
+    func selectAuthor(_ id: Int32?, deepLinkName: String? = nil) {
+        applyEntitySelection(.authors(id), deepLinkName: deepLinkName)
+    }
+
+    func selectSeries(_ id: Int32?, deepLinkName: String? = nil) {
+        applyEntitySelection(.series(id), deepLinkName: deepLinkName)
+    }
+
+    func selectGenre(_ id: Int16?) {
+        applyEntitySelection(.genres(id), deepLinkName: nil)
+    }
+
+    private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {
+        if let name = deepLinkName {
+            // Сценарий 2: deep-link с прицельным фильтром, preview сохраняется.
+            sidebar = next
+            sidebarFilter = name
+            checkedBookLibids.removeAll()
+            return
+        }
+        // Сценарий 3: клик в списке.
+        guard sidebar != next else { return }
+        sidebar = next
+        selectedBookLibid = nil
+        checkedBookLibids.removeAll()
+    }
+
     /// Set to `true` from BooksTableView's context-menu action; observed by
     /// MainWindowView which runs the export and resets it back to false.
     var shouldStartExport: Bool = false
@@ -44,6 +79,7 @@ final class AppState {
     var exportProgress: ExportProgress? = nil
 
     func reset() {
+        sidebar = .authors(nil)
         sidebarTab = .authors
         selectedAuthorID = nil
         selectedSeriesID = nil
