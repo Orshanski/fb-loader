@@ -16,22 +16,22 @@ struct BooksTableView: View {
     }
 
     private var visibleBooks: [Book] {
-        if let aid = state.selectedAuthorID, state.sidebarTab == .authors {
-            return BooksByContext.books(for: .author(aid),
+        switch state.sidebar {
+        case .authors(let id?):
+            return BooksByContext.books(for: .author(id),
                                         language: state.languageFilter,
                                         in: library)
-        }
-        if let sid = state.selectedSeriesID, state.sidebarTab == .series {
-            return BooksByContext.books(for: .series(sid),
+        case .series(let id?):
+            return BooksByContext.books(for: .series(id),
                                         language: state.languageFilter,
                                         in: library)
-        }
-        if let gid = state.selectedGenreID, state.sidebarTab == .genres {
-            return BooksByContext.books(for: .genre(gid),
+        case .genres(let id?):
+            return BooksByContext.books(for: .genre(id),
                                         language: state.languageFilter,
                                         in: library)
+        case .authors, .series, .genres:
+            return []
         }
-        return []
     }
 
     private var groups: [GroupedRow] {
@@ -146,22 +146,19 @@ struct BooksTableView: View {
     }
 
     private var breadcrumbLabel: (prefix: String, name: String)? {
-        if state.sidebarTab == .authors,
-           let aid = state.selectedAuthorID,
-           let author = library.authorByID[aid] {
+        switch state.sidebar {
+        case .authors(let id?):
+            guard let author = library.authorByID[id] else { return nil }
             return ("Книги автора", author.displayName)
-        }
-        if state.sidebarTab == .series,
-           let sid = state.selectedSeriesID,
-           let series = library.seriesByID[sid] {
+        case .series(let id?):
+            guard let series = library.seriesByID[id] else { return nil }
             return ("Серия", series.name)
-        }
-        if state.sidebarTab == .genres,
-           let gid = state.selectedGenreID,
-           let genre = library.genreByID[gid] {
+        case .genres(let id?):
+            guard let genre = library.genreByID[id] else { return nil }
             return ("Жанр", genre.name)
+        case .authors, .series, .genres:
+            return nil
         }
-        return nil
     }
 
     private func booksCountLabel(_ n: Int) -> String {
