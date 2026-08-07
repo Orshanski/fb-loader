@@ -14,12 +14,12 @@ struct ExportPlannerTests {
         let series = [Series(id: 1, name: "Серия/со/слешами")]
         let books = [
             Book(libid: 100, title: "Война: и мир", authorIDs: [1], seriesID: 1, seriesNum: 1,
-                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 200, title: "Рубеж", authorIDs: [3, 2], seriesID: nil, seriesNum: nil,
-                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 300, title: "Без авторов", authorIDs: [Author.unknownID],
                  seriesID: nil, seriesNum: nil, genreIDs: [], language: "ru",
-                 archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 archiveIndex: 0, size: 0, dateAdded: nil),
         ]
         return Library(inpxHash: Data(count: 32), inpxVersion: "v",
                        archives: ["lib"], authors: authors, series: series,

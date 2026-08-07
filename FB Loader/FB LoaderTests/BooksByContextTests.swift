@@ -7,11 +7,11 @@ struct BooksByContextTests {
     private func buildLibrary() -> Library {
         let books = [
             Book(libid: 1, title: "A", authorIDs: [1], seriesID: nil, seriesNum: nil,
-                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 2, title: "B", authorIDs: [1, 2], seriesID: 1, seriesNum: 1,
-                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 genreIDs: [], language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 3, title: "C", authorIDs: [2], seriesID: 1, seriesNum: 2,
-                 genreIDs: [], language: "en", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 genreIDs: [], language: "en", archiveIndex: 0, size: 0, dateAdded: nil),
         ]
         return Library(
             inpxHash: Data(count: 32), inpxVersion: "v",
@@ -53,7 +53,7 @@ struct BooksByContextTests {
             series: [], genres: [],
             books: [Book(libid: 9, title: "?", authorIDs: [1], seriesID: nil,
                          seriesNum: nil, genreIDs: [], language: "",
-                         archiveIndex: 0, size: 0, dateAddedDays: 0)])
+                         archiveIndex: 0, size: 0, dateAdded: nil)])
         let r = BooksByContext.books(for: .author(1),
                                      language: BooksByContext.unspecifiedLanguageToken,
                                      in: lib)
@@ -72,16 +72,16 @@ struct BooksByContextTests {
         let books = [
             Book(libid: 10, title: "Root", authorIDs: [1], seriesID: nil,
                  seriesNum: nil, genreIDs: [1], language: "ru",
-                 archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 11, title: "SF RU", authorIDs: [1], seriesID: nil,
                  seriesNum: nil, genreIDs: [100], language: "ru",
-                 archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 12, title: "SF EN", authorIDs: [1], seriesID: nil,
                  seriesNum: nil, genreIDs: [100], language: "en",
-                 archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 archiveIndex: 0, size: 0, dateAdded: nil),
             Book(libid: 13, title: "Both", authorIDs: [1], seriesID: nil,
                  seriesNum: nil, genreIDs: [100, 101], language: "ru",
-                 archiveIndex: 0, size: 0, dateAddedDays: 0),
+                 archiveIndex: 0, size: 0, dateAdded: nil),
         ]
         let lib = Library(
             inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
@@ -115,13 +115,13 @@ struct BooksByContextTests {
             books: [
                 Book(libid: 20, title: "Root", authorIDs: [1], seriesID: nil,
                      seriesNum: nil, genreIDs: [1], language: "ru",
-                     archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 21, title: "Child RU", authorIDs: [1], seriesID: nil,
                      seriesNum: nil, genreIDs: [100], language: "ru",
-                     archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 22, title: "Child EN", authorIDs: [1], seriesID: nil,
                      seriesNum: nil, genreIDs: [100], language: "en",
-                     archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     archiveIndex: 0, size: 0, dateAdded: nil),
             ])
 
         #expect(BooksByContext.books(for: .genre(1), language: "ru", in: lib).map(\.libid) == [20])

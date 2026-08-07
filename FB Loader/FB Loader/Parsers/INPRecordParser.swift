@@ -13,6 +13,8 @@ nonisolated struct INPRecord {
     let libid: Int32
     let deleted: Bool
     let format: String
+    /// Полночь дня, записанного в INPX строкой `YYYY-MM-DD`; `nil`, если
+    /// поля не было или оно не разобралось.
     let dateAdded: Date?
     let language: String
 }
@@ -58,16 +60,19 @@ nonisolated enum INPRecordParser {
         )
     }
 
+    /// `YYYY-MM-DD` → полночь этого дня в календаре пользователя.
+    /// Тот же календарь потом строит границы фильтра, поэтому книга
+    /// граничного дня попадает в диапазон точно.
     private static func parseDate(_ s: String) -> Date? {
         guard s.count == 10 else { return nil }
         let comps = s.split(separator: "-")
         guard comps.count == 3,
-              let y = Int(comps[0]), let m = Int(comps[1]), let d = Int(comps[2]) else {
+              let y = Int(comps[0]), let m = Int(comps[1]), let d = Int(comps[2]),
+              y > 0, (1...12).contains(m), (1...31).contains(d) else {
             return nil
         }
         var dc = DateComponents()
         dc.year = y; dc.month = m; dc.day = d
-        dc.timeZone = TimeZone(identifier: "UTC")
-        return Calendar(identifier: .gregorian).date(from: dc)
+        return Calendar.current.date(from: dc)
     }
 }

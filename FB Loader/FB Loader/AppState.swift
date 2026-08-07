@@ -30,12 +30,28 @@ final class AppState {
     var sidebarFilter: String = ""
     var checkedBookLibids: Set<Int32> = []
 
+    /// Диапазон дат добавления, применённый кнопкой «Найти» в поповере
+    /// колонки «Дата». `nil` — фильтра нет.
+    private(set) var dateFilter: DateRangeFilter? = nil
+
+    /// Пользовательский путь: «Найти» / «Сбросить» в поповере и крестик
+    /// в шапке таблицы. Гасит галочки и превью — один раз, по нажатию.
+    /// Смена автора/серии/жанра фильтр обнуляет НЕ через этот метод, а
+    /// прямым присваиванием: там свои правила для превью.
+    func applyDateFilter(_ next: DateRangeFilter?) {
+        guard dateFilter != next else { return }
+        dateFilter = next
+        selectedBookLibid = nil
+        checkedBookLibids.removeAll()
+    }
+
     func selectSection(_ section: SidebarSelection) {
         guard sidebar != section else { return }
         sidebar = section
         selectedBookLibid = nil
         sidebarFilter = ""
         checkedBookLibids.removeAll()
+        dateFilter = nil
     }
 
     func selectAuthor(_ id: Int32?, deepLinkName: String? = nil) {
@@ -53,9 +69,12 @@ final class AppState {
     private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {
         if let name = deepLinkName {
             // Сценарий 2: deep-link с прицельным фильтром, preview сохраняется.
+            // dateFilter гасится присваиванием, а не applyDateFilter — тот
+            // обнулил бы selectedBookLibid, который здесь обязан выжить.
             sidebar = next
             sidebarFilter = name
             checkedBookLibids.removeAll()
+            dateFilter = nil
             return
         }
         // Сценарий 3: клик в списке.
@@ -63,6 +82,7 @@ final class AppState {
         sidebar = next
         selectedBookLibid = nil
         checkedBookLibids.removeAll()
+        dateFilter = nil
     }
 
     /// Set to `true` from BooksTableView's context-menu action; observed by
@@ -78,5 +98,6 @@ final class AppState {
         languageFilter = "ru"
         sidebarFilter = ""
         checkedBookLibids.removeAll()
+        dateFilter = nil
     }
 }

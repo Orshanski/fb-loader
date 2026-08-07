@@ -3,6 +3,7 @@ import SwiftUI
 struct BooksTableView: View {
     let library: Library
     @Environment(AppState.self) private var state
+    @State private var showDateFilter = false
 
     private struct GroupedRow: Identifiable {
         struct BookEntry: Identifiable {
@@ -15,27 +16,24 @@ struct BooksTableView: View {
         let kind: Kind
     }
 
-    private var visibleBooks: [Book] {
+    private var context: BooksByContext.Context? {
         switch state.sidebar {
-        case .authors(let id?):
-            return BooksByContext.books(for: .author(id),
-                                        language: state.languageFilter,
-                                        in: library)
-        case .series(let id?):
-            return BooksByContext.books(for: .series(id),
-                                        language: state.languageFilter,
-                                        in: library)
-        case .genres(let id?):
-            return BooksByContext.books(for: .genre(id),
-                                        language: state.languageFilter,
-                                        in: library)
-        case .authors, .series, .genres:
-            return []
+        case .authors(let id?): return .author(id)
+        case .series(let id?):  return .series(id)
+        case .genres(let id?):  return .genre(id)
+        case .authors, .series, .genres: return nil
         }
     }
 
-    private var groups: [GroupedRow] {
-        let books = visibleBooks
+    private var visibleBooks: (books: [Book], total: Int) {
+        guard let context else { return ([], 0) }
+        return BooksByContext.booksWithTotal(for: context,
+                                             language: state.languageFilter,
+                                             dates: state.dateFilter,
+                                             in: library)
+    }
+
+    private func groups(from books: [Book]) -> [GroupedRow] {
         var loose: [Book] = []
         var bySeries: [Int32: [Book]] = [:]
         for b in books {
@@ -62,12 +60,16 @@ struct BooksTableView: View {
 
     var body: some View {
         @Bindable var s = state
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    ForEach(groups) { row in
+        // Считается один раз за проход body: и счётчик в шапке, и список
+        // берут отсюда — раньше тот же фильтр выполнялся дважды.
+        let result = visibleBooks
+        // Шапка живёт ВНУТРИ ScrollView закреплённой секцией. Снаружи она
+        // была шире строк ровно на ширину полосы прокрутки, и подписи
+        // колонок стояли правее своих значений.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    ForEach(groups(from: result.books)) { row in
                         switch row.kind {
                         case .loose(let b):
                             bookRow(for: b, indented: false, state: s)
@@ -78,9 +80,15 @@ struct BooksTableView: View {
                             }
                         }
                     }
+                } header: {
+                    VStack(spacing: 0) {
+                        header(count: result.books.count, total: result.total)
+                        Divider()
+                    }
+                    .background(Color(nsColor: .windowBackgroundColor))
                 }
-                .padding(.vertical, 4)
             }
+            .padding(.bottom, 4)
         }
     }
 
@@ -116,9 +124,9 @@ struct BooksTableView: View {
 
     // MARK: - Header
 
-    private var header: some View {
+    private func header(count: Int, total: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            breadcrumbRow
+            titleRow(count: count, total: total)
             colsRow
         }
         .padding(.horizontal, 16)
@@ -126,26 +134,48 @@ struct BooksTableView: View {
     }
 
     @ViewBuilder
-    private var breadcrumbRow: some View {
-        let count = visibleBooks.count
+    private func titleRow(count: Int, total: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if let label = breadcrumbLabel {
+            if let label = titleLabel {
                 Text(label.prefix).foregroundStyle(.secondary)
                 Text(label.name).fontWeight(.semibold)
             } else {
                 Text("Выберите автора, серию или жанр").foregroundStyle(.secondary)
             }
             Spacer()
-            if count > 0 {
-                Text(booksCountLabel(count))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            counter(count: count, total: total)
         }
         .font(.system(size: 13))
     }
 
-    private var breadcrumbLabel: (prefix: String, name: String)? {
+    @ViewBuilder
+    private func counter(count: Int, total: Int) -> some View {
+        if let filter = state.dateFilter {
+            HStack(spacing: 6) {
+                // Без склонения и всегда видимо, включая «0 из 264»: иначе у
+                // пустой таблицы пропадает единственное объяснение, почему
+                // она пуста.
+                Text("\(count) из \(total)")
+                Text("·").foregroundStyle(.tertiary)
+                Text(filter.label)
+                Button {
+                    state.applyDateFilter(nil)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .help("Снять фильтр по дате")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if count > 0 {
+            Text(booksCountLabel(count))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var titleLabel: (prefix: String, name: String)? {
         switch state.sidebar {
         case .authors(let id?):
             guard let author = library.authorByID[id] else { return nil }
@@ -181,8 +211,7 @@ struct BooksTableView: View {
                 .frame(width: BookRow.numWidth, alignment: .trailing)
             Text("Размер")
                 .frame(width: BookRow.sizeWidth, alignment: .trailing)
-            Text("Дата")
-                .frame(width: BookRow.dateWidth, alignment: .trailing)
+            dateColumnButton
             Text("Жанры")
                 .frame(width: BookRow.genresWidth, alignment: .leading)
         }
@@ -190,6 +219,37 @@ struct BooksTableView: View {
         .textCase(.uppercase)
         .kerning(0.6)
         .foregroundStyle(.secondary)
+    }
+
+    /// Заголовок колонки «Дата» — кнопка, открывающая поповер фильтра.
+    /// Занимает ровно `BookRow.dateWidth` и ровно тем же `Text`, что и
+    /// остальные заголовки: любой значок внутри этой ширины сдвинул бы
+    /// подпись относительно значений в строках. Кликабельность показывается
+    /// подсветкой при наведении, а активный фильтр — цветом.
+    private var dateColumnButton: some View {
+        Button {
+            showDateFilter = true
+        } label: {
+            // Правый край колонки держит шеврон, а подпись стоит левее — как
+            // индикатор сортировки в Finder. Требовать, чтобы слово «Дата»
+            // само упиралось в край, незачем.
+            HStack(spacing: 3) {
+                Text("Дата")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+            }
+            .frame(width: BookRow.dateWidth, alignment: .trailing)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(state.dateFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+        .disabled(context == nil)
+        .popover(isPresented: $showDateFilter, arrowEdge: .bottom) {
+            DateFilterPopover(current: state.dateFilter) { next in
+                state.applyDateFilter(next)
+                showDateFilter = false
+            }
+        }
     }
 
     // MARK: - Series group header

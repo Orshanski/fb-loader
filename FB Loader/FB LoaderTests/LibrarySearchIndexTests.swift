@@ -19,7 +19,7 @@ struct LibrarySearchIndexTests {
             books: [
                 Book(libid: 100, title: "Элантрис", authorIDs: [1],
                      seriesID: 1, seriesNum: 1, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
 
@@ -50,7 +50,7 @@ struct LibrarySearchIndexTests {
             books: [
                 Book(libid: 100, title: "Sample", authorIDs: [Author.unknownID],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
         #expect(lib.searchSeriesIdx[0] == -1)
@@ -67,7 +67,7 @@ struct LibrarySearchIndexTests {
             books: [
                 Book(libid: 100, title: "Orphan", authorIDs: [999],   // ID нет в authors
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
         #expect(lib.searchAuthorIdx[0] == -1)

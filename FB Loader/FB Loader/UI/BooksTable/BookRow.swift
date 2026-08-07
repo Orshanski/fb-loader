@@ -49,7 +49,7 @@ struct BookRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: BookRow.sizeWidth, alignment: .trailing)
 
-            Text(date(book.dateAdded))
+            Text(book.dateAdded.map(DateFormat.dayMonthYear.string(from:)) ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: BookRow.dateWidth, alignment: .trailing)
@@ -73,12 +73,6 @@ struct BookRow: View {
 
     private func byteCount(_ n: Int32) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
-    }
-
-    private func date(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
-        return f.string(from: d)
     }
 
     private var genresString: String {

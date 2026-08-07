@@ -169,18 +169,6 @@ nonisolated enum INPXImporter {
                     }
                 }
 
-                // Date → days since Book.dateEpoch.
-                // `days = 0` is the sentinel for missing/unparseable dates; it
-                // collides with a literal 2000-01-01 entry, but real INPX dumps
-                // are post-2008 so the conflation is harmless.
-                let days: Int32
-                if let d = rec.dateAdded {
-                    let interval = Int(d.timeIntervalSince(Book.dateEpoch) / 86400)
-                    days = Int32(interval)
-                } else {
-                    days = 0
-                }
-
                 books.append(Book(
                     libid: rec.libid,
                     title: rec.title,
@@ -191,7 +179,7 @@ nonisolated enum INPXImporter {
                     language: rec.language,
                     archiveIndex: archIdx,
                     size: rec.size,
-                    dateAddedDays: days
+                    dateAdded: rec.dateAdded
                 ))
                 if books.count % Self.progressEveryNBooks == 0 {
                     onProgress?(books.count)

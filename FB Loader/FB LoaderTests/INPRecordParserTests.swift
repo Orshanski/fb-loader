@@ -31,7 +31,17 @@ struct INPRecordParserTests {
         #expect(r.language == "ru")
         #expect(r.seriesName == "Великие романы")
         #expect(r.seriesNum == 1)
-        #expect(r.dateAdded?.description.starts(with: "2010-05-15") ?? false)
+        // Дата — полночь своего дня в календаре пользователя, поэтому
+        // сверяем компонентами, а не `.description` (тот печатает UTC и в
+        // зоне со смещением показал бы соседний день).
+        let comps = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: try #require(r.dateAdded))
+        #expect(comps.year == 2010)
+        #expect(comps.month == 5)
+        #expect(comps.day == 15)
+        #expect(comps.hour == 0)
+        #expect(comps.minute == 0)
         #expect(r.authorField == "Толстой,Лев,Николаевич")
         #expect(r.genreField == "prose_classic")
     }

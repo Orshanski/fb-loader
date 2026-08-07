@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import FB_Loader
 
@@ -197,6 +198,84 @@ struct AppStateTests {
         #expect(s.selectedBookLibid == nil)
         #expect(s.checkedBookLibids.isEmpty)
         #expect(s.sidebarFilter == "x")
+    }
+
+    private var someFilter: DateRangeFilter {
+        let cal = Calendar.current
+        return DateRangeFilter(
+            from: cal.date(from: DateComponents(year: 2013, month: 3, day: 1))!,
+            to: cal.date(from: DateComponents(year: 2015, month: 6, day: 30))!)
+    }
+
+    @Test("applyDateFilter гасит галочки и превью")
+    func applyDateFilterClearsSelection() {
+        let s = AppState()
+        s.selectedBookLibid = 7
+        s.checkedBookLibids = [1, 2]
+
+        s.applyDateFilter(someFilter)
+
+        #expect(s.dateFilter == someFilter)
+        #expect(s.selectedBookLibid == nil)
+        #expect(s.checkedBookLibids.isEmpty)
+    }
+
+    @Test("applyDateFilter тем же значением — no-op")
+    func applyDateFilterSameValueNoop() {
+        let s = AppState()
+        s.applyDateFilter(someFilter)
+        s.selectedBookLibid = 7
+        s.checkedBookLibids = [1]
+
+        s.applyDateFilter(someFilter)
+
+        #expect(s.selectedBookLibid == 7)
+        #expect(s.checkedBookLibids == [1])
+    }
+
+    @Test("клик по другому автору снимает фильтр")
+    func selectAuthorClearsDateFilter() {
+        let s = AppState()
+        s.selectSection(.authors(10))
+        s.applyDateFilter(someFilter)
+
+        s.selectAuthor(42)
+
+        #expect(s.dateFilter == nil)
+    }
+
+    @Test("клик по тому же автору фильтр сохраняет")
+    func selectSameAuthorKeepsDateFilter() {
+        let s = AppState()
+        s.selectSection(.authors(10))
+        s.applyDateFilter(someFilter)
+
+        s.selectAuthor(10)
+
+        #expect(s.dateFilter == someFilter)
+    }
+
+    @Test("deep-link снимает фильтр, но превью книги сохраняет")
+    func deepLinkClearsFilterKeepsPreview() {
+        let s = AppState()
+        s.selectSection(.authors(10))
+        s.applyDateFilter(someFilter)
+        s.selectedBookLibid = 7
+
+        s.selectAuthor(42, deepLinkName: "Иванов")
+
+        #expect(s.dateFilter == nil)
+        #expect(s.selectedBookLibid == 7)
+    }
+
+    @Test("смена языка фильтр дат не трогает")
+    func languageChangeKeepsDateFilter() {
+        let s = AppState()
+        s.applyDateFilter(someFilter)
+
+        s.languageFilter = "en"
+
+        #expect(s.dateFilter == someFilter)
     }
 
     @Test("reset — sidebar=.authors(nil), все per-tab и language к дефолтам")

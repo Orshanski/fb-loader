@@ -61,6 +61,9 @@ struct MainWindowView: View {
                 .help(sidebarVisible ? "Скрыть боковую панель" : "Показать боковую панель")
             }
         }
+        // Таблица книг — ScrollView, а её содержимое macOS пускает под панель
+        // окна: без непрозрачного фона строки просвечивают в полосе заголовка.
+        .toolbarBackground(.visible, for: .windowToolbar)
         .onChange(of: state.shouldStartExport) { _, newValue in
             guard newValue else { return }
             state.shouldStartExport = false

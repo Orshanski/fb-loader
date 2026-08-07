@@ -16,23 +16,8 @@ nonisolated struct Book: Identifiable, Hashable, Sendable {
     let archiveIndex: Int16
     /// Size in bytes (from INPX).
     let size: Int32
-    /// Date added to the Flibusta library, not to the user's machine.
-    /// Encoded as days since 2000-01-01 (4 bytes vs 8 of Date).
-    let dateAddedDays: Int32
-}
-
-nonisolated extension Book {
-    static let dateEpoch: Date = {
-        var c = DateComponents()
-        c.year = 2000; c.month = 1; c.day = 1
-        c.timeZone = TimeZone(identifier: "UTC")
-        return Calendar(identifier: .gregorian).date(from: c)!
-    }()
-
-    var dateAdded: Date {
-        // Force-unwrap is safe: INPXImporter (Phase 3) sources dateAddedDays from
-        // a parsed YYYY-MM-DD field that always falls within Calendar's representable range.
-        // The Calendar's timezone does not affect whole-day arithmetic on `dateEpoch` (UTC).
-        Calendar(identifier: .gregorian).date(byAdding: .day, value: Int(dateAddedDays), to: Book.dateEpoch)!
-    }
+    /// Дата добавления в библиотеку Флибусты — не на машину пользователя.
+    /// Полночь того дня, что записан в INPX строкой `YYYY-MM-DD`.
+    /// `nil` — даты в записи не было.
+    let dateAdded: Date?
 }

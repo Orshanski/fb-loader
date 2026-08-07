@@ -20,10 +20,7 @@ nonisolated final class Library: Sendable {
     let bookByLibid: [Int32: Book]      // O(1) book lookup — was a hot 700k-scan
     let booksByAuthor: [Int32: [Int]]   // authorID → indices into `books`
     let booksBySeries: [Int32: [Int]]
-    let bookCountByAuthor: [Int32: Int] // for the "(N)" counters
-    let bookCountBySeries: [Int32: Int]
     let booksByGenre: [Int16: [Int]]
-    let bookCountByGenre: [Int16: Int]
     let bookCountByGenreByLang: [Int16: [String: Int]]
     let rootGenres: [Genre]
     let childGenresByParent: [Int16: [Genre]]
@@ -130,9 +127,6 @@ nonisolated final class Library: Sendable {
         self.booksByAuthor = byAuthor
         self.booksBySeries = bySeries
         self.booksByGenre = byGenre
-        self.bookCountByAuthor = byAuthor.mapValues(\.count)
-        self.bookCountBySeries = bySeries.mapValues(\.count)
-        self.bookCountByGenre = byGenre.mapValues(\.count)
         self.bookCountByAuthorByLang = byAuthorLang
         self.bookCountBySeriesByLang = bySeriesLang
         self.bookCountByGenreByLang = byGenreLang

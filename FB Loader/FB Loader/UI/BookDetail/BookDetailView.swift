@@ -94,7 +94,9 @@ struct BookDetailView: View {
         let genres = book.genreIDs.compactMap { library.genreByID[$0]?.name }
         if !genres.isEmpty { parts.append(genres.joined(separator: " · ")) }
         parts.append(byteCount(book.size))
-        parts.append(dateString(book.dateAdded))
+        if let added = book.dateAdded {
+            parts.append(DateFormat.dayMonthYear.string(from: added))
+        }
         if let written = info?.dateWritten, !written.isEmpty {
             parts.append("написано \(written)")
         }
@@ -230,12 +232,6 @@ struct BookDetailView: View {
 
     private func byteCount(_ n: Int32) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
-    }
-
-    private func dateString(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
-        return f.string(from: d)
     }
 
     // MARK: - Loader

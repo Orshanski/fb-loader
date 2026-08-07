@@ -19,7 +19,7 @@ struct LibraryBinaryCodecTests {
             books: [
                 Book(libid: 100001, title: "Война и мир", authorIDs: [1],
                      seriesID: 1, seriesNum: 1, genreIDs: [1],
-                     language: "ru", archiveIndex: 0, size: 987654, dateAddedDays: 4000),
+                     language: "ru", archiveIndex: 0, size: 987654, dateAdded: Date(timeIntervalSinceReferenceDate: 400_000_000)),
             ]
         )
         let data = try LibraryBinaryCodec.encode(original)
@@ -85,7 +85,7 @@ struct LibraryBinaryCodecTests {
             books: [
                 Book(libid: 1, title: "t", authorIDs: [Author.unknownID],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
         let decoded = try LibraryBinaryCodec.decode(LibraryBinaryCodec.encode(lib))
@@ -117,7 +117,7 @@ struct LibraryBinaryCodecTests {
             books: [
                 Book(libid: 1, title: "t", authorIDs: [Author.unknownID],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 1, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 1, size: 0, dateAdded: nil),
             ]
         )
         let data = try LibraryBinaryCodec.encode(lib)

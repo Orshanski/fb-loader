@@ -23,16 +23,16 @@ struct SearchEngineTests {
             books: [
                 Book(libid: 100, title: "Элантрис", authorIDs: [1],
                      seriesID: 1, seriesNum: 1, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 101, title: "Надежда Элантриса", authorIDs: [1],
                      seriesID: 1, seriesNum: 2, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 200, title: "Война и мир", authorIDs: [2],
                      seriesID: 2, seriesNum: 1, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 300, title: "Понедельник начинается в субботу", authorIDs: [3],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
     }
@@ -103,10 +103,10 @@ struct SearchEngineTests {
             books: [
                 Book(libid: 1, title: "War and peace", authorIDs: [1],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "en", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "en", archiveIndex: 0, size: 0, dateAdded: nil),
                 Book(libid: 2, title: "Война и мир", authorIDs: [1],
                      seriesID: nil, seriesNum: nil, genreIDs: [],
-                     language: "ru", archiveIndex: 0, size: 0, dateAddedDays: 0),
+                     language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
         let r = SearchEngine.run(query: "война мир", language: "ru", in: lib)

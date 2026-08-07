@@ -18,7 +18,7 @@ import Foundation
 ///       language len(uint8) + utf8
 ///       archiveIndex int16
 ///       size int32
-///       dateAddedDays int32
+///       dateAdded float64 — timeIntervalSinceReferenceDate, NaN = нет даты
 nonisolated enum LibraryBinaryCodec {
     enum DecodeError: Error {
         case badMagic
@@ -40,9 +40,12 @@ nonisolated enum LibraryBinaryCodec {
     private static let magic: [UInt8] = Array("FBLC".utf8)
     /// Bumped from 1 → 2 to invalidate caches built before the CRLF parser
     /// fix (262e3bf), which silently produced 1-book-per-.inp catalogs.
-    /// Old caches decode → `unsupportedVersion(1)` → `LibraryCacheStore`
+    /// Bumped 2 → 3, когда дата книги перестала быть числом дней от
+    /// 2000-01-01 и стала настоящим `Date`: изменились и размер поля, и
+    /// смысл, старый кэш нечитаем.
+    /// Old caches decode → `unsupportedVersion` → `LibraryCacheStore`
     /// falls through to reparse on the next launch.
-    private static let formatVersion: UInt16 = 2
+    private static let formatVersion: UInt16 = 3
 
     static func encode(_ lib: Library) throws -> Data {
         var w = BinaryWriter()
@@ -86,7 +89,7 @@ nonisolated enum LibraryBinaryCodec {
             try w.string8(b.language, field: "book.language")
             w.int16(b.archiveIndex)
             w.int32(b.size)
-            w.int32(b.dateAddedDays)
+            w.double(b.dateAdded?.timeIntervalSinceReferenceDate ?? .nan)
         }
         return w.data
     }
@@ -142,7 +145,7 @@ nonisolated enum LibraryBinaryCodec {
             let lang = try r.string8()
             let archIdx = try r.int16()
             let size = try r.int32()
-            let days = try r.int32()
+            let dateSeconds = try r.double()
             guard archIdx >= 0 && Int(archIdx) < archives.count else {
                 throw DecodeError.invalidArchiveIndex(
                     libid: libid,
@@ -154,7 +157,10 @@ nonisolated enum LibraryBinaryCodec {
                 seriesID: s == -1 ? nil : s,
                 seriesNum: sn == Int16.min ? nil : sn,
                 genreIDs: gIDs, language: lang, archiveIndex: archIdx,
-                size: size, dateAddedDays: days
+                size: size,
+                dateAdded: dateSeconds.isNaN
+                    ? nil
+                    : Date(timeIntervalSinceReferenceDate: dateSeconds)
             ))
         }
         return Library(
@@ -177,6 +183,8 @@ private nonisolated struct BinaryWriter {
     mutating func uint32(_ v: UInt32) { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
     mutating func int16(_ v: Int16)   { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
     mutating func int32(_ v: Int32)   { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
+    mutating func double(_ v: Double) { uint64(v.bitPattern) }
+    mutating func uint64(_ v: UInt64) { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
     mutating func string16(_ s: String, field: String) throws {
         let utf = Array(s.utf8)
         guard utf.count <= Int(UInt16.max) else {
@@ -217,6 +225,13 @@ private nonisolated struct BinaryReader {
     }
     mutating func int16() throws -> Int16 { Int16(bitPattern: try uint16()) }
     mutating func int32() throws -> Int32 { Int32(bitPattern: try uint32()) }
+    mutating func uint64() throws -> UInt64 {
+        let b = try bytes(8)
+        var v: UInt64 = 0
+        for i in (0..<8).reversed() { v = (v << 8) | UInt64(b[i]) }
+        return v
+    }
+    mutating func double() throws -> Double { Double(bitPattern: try uint64()) }
     mutating func string16() throws -> String {
         let n = try uint16()
         let b = try bytes(Int(n))
