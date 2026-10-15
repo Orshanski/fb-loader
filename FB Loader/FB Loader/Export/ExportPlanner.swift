@@ -9,8 +9,9 @@ nonisolated struct ExportItem {
 nonisolated enum ExportPlanner {
     /// Forbidden in HFS+/APFS filenames or commonly problematic across tools.
     private static let forbidden: Set<Character> = [":", "/", "\\", "?", "*", "<", ">", "|", "\""]
-    /// macOS filename limit (NAME_MAX) is 255; we cap a bit lower for safety.
-    private static let nameMax = 220
+    /// APFS NAME_MAX — 255 байт UTF-8; запас под « (NN)» и «.fb2».
+    static let nameByteLimit = 240
+    private static let fileExtension = ".fb2"
 
     static func plan(libids: Set<Int32>,
                      rootFolder: URL,
@@ -24,12 +25,26 @@ nonisolated enum ExportPlanner {
         // folders are always per-author. See "Как именуются файлы при
         // экспорте" in README.
         _ = selectedSeriesID
-        return libids.compactMap { library.book(libid: $0) }.map { book in
+        let books = libids.compactMap { library.book(libid: $0) }
+            .sorted { ($0.archiveIndex, $0.libid) < ($1.archiveIndex, $1.libid) }
+        var used: Set<String> = []
+        return books.map { book in
             let folderName = folderName(for: book,
                                         selectedAuthorID: selectedAuthorID,
                                         library: library)
-            let folder = rootFolder.appendingPathComponent(sanitized(folderName), isDirectory: true)
-            let dest = folder.appendingPathComponent(sanitized(book.title) + ".fb2")
+            let folder = rootFolder.appendingPathComponent(
+                sanitized(folderName, fallback: Author.unknown.displayName), isDirectory: true)
+            let title = sanitized(book.title)
+            var dest = folder.appendingPathComponent(title + fileExtension)
+            var n = 2
+            // APFS по умолчанию не различает регистр и форму нормализации.
+            while !used.insert(dest.path.decomposedStringWithCanonicalMapping
+                .folding(options: [.caseInsensitive], locale: nil)).inserted {
+                let suffix = " (\(n))"
+                let base = truncated(title, toBytes: nameByteLimit - byteCount(suffix))
+                dest = folder.appendingPathComponent(base + suffix + fileExtension)
+                n += 1
+            }
             return ExportItem(book: book, archiveURL: nil, destination: dest)
         }
     }
@@ -49,11 +64,43 @@ nonisolated enum ExportPlanner {
         return Author.unknown.displayName
     }
 
-    static func sanitized(_ name: String) -> String {
-        var s = String(name.map { forbidden.contains($0) ? "_" : $0 })
-        if s.utf8.count > nameMax {
-            s = String(s.prefix(nameMax))
+    /// Невидимые и управляющие символы в имени файла — путаница в Finder (U+202E разворачивает текст).
+    private static let replacedCategories: Set<Unicode.GeneralCategory> =
+        [.control, .format, .lineSeparator, .paragraphSeparator]
+
+    static func sanitized(_ name: String, fallback: String = "_") -> String {
+        let replaced = String(name.map { ch in
+            forbidden.contains(ch)
+                || ch.unicodeScalars.contains { replacedCategories.contains($0.properties.generalCategory) }
+                ? "_" : ch
+        })
+        var s = Substring(replaced.trimmingCharacters(in: .whitespacesAndNewlines))
+        let dots = s.prefix { $0 == "." }.count
+        s = String(repeating: "_", count: dots) + s.dropFirst(dots)
+        let result = truncated(String(s), toBytes: nameByteLimit)
+        return result.isEmpty ? fallback : result
+    }
+
+    private static func byteCount(_ s: String) -> Int {
+        s.reduce(0) { $0 + byteCount($1) }
+    }
+
+    /// Foundation отдаёт имя в HFS+-декомпозиции ≈ NFD («й» — 4 байта), но синглтоны
+    /// вроде U+212A она не раскладывает, поэтому берём максимум из форм.
+    private static func byteCount(_ ch: Character) -> Int {
+        let s = String(ch)
+        return max(s.utf8.count,
+                   s.precomposedStringWithCanonicalMapping.utf8.count,
+                   s.decomposedStringWithCanonicalMapping.utf8.count)
+    }
+
+    private static func truncated(_ s: String, toBytes limit: Int) -> String {
+        guard byteCount(s) > limit else { return s }
+        var bytes = 0
+        let kept = s.prefix { ch in
+            bytes += byteCount(ch)
+            return bytes <= limit
         }
-        return s.trimmingCharacters(in: .whitespaces)
+        return String(kept).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

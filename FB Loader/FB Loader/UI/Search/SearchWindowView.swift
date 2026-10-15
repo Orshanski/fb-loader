@@ -174,7 +174,7 @@ struct SearchWindowView: View {
         let progress = ExportProgress()
         exportProgress = progress
         Task {
-            await ExportRunner.run(items: items, archivesRoot: archives,
+            await ExportRunner.run(items: items, exportRoot: folder, archivesRoot: archives,
                                    library: library, progress: progress)
             // Финальный пересчёт (см. MainWindowView.runExport).
             coord.checkedBookLibids = progress.removingSucceeded(

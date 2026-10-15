@@ -120,7 +120,7 @@ struct MainWindowView: View {
         let progress = ExportProgress()
         state.exportProgress = progress
         Task {
-            await ExportRunner.run(items: items, archivesRoot: archives,
+            await ExportRunner.run(items: items, exportRoot: folder, archivesRoot: archives,
                                    library: library, progress: progress)
             // Финальный пересчёт — страховка от любого пути, при котором
             // последний `.onChange` не был доставлен или потерял

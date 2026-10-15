@@ -2,11 +2,6 @@ import Testing
 import Foundation
 @testable import FB_Loader
 
-/// Покрывает чистую функцию `removingSucceeded(from:)`. Контракт
-/// `ExportRunner.run` (запись libid в `succeeded` ровно в else-ветке успеха
-/// и обязательно до `done += 1`) тестами не покрыт — потребовалась бы zip-фикстура
-/// с реальным FB2 внутри, а zip-writer'а в проекте нет. Покрывается код-ревью
-/// и ручным сценарием.
 @Suite("ExportProgress.removingSucceeded")
 @MainActor
 struct ExportProgressTests {
