@@ -6,6 +6,9 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var state
     @State private var sidebarVisible = true
     @State private var showSearch = false
+    /// Окно показывается, когда разделитель сайдбара уже стоит на сохранённом
+    /// месте: иначе зоны на глазах прыгают из положения по умолчанию.
+    @State private var layoutReady = false
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -14,7 +17,9 @@ struct MainWindowView: View {
         HSplitView {
             if sidebarVisible {
                 LeftSidebarView(library: library, onOpenSearch: { showSearch = true })
-                    .modifier(RestoredPaneSize(axis: .horizontal, dimension: .sidebarWidth))
+                    .modifier(RestoredPaneSize(axis: .horizontal, dimension: .sidebarWidth) {
+                        revealLayout()
+                    })
             }
             VSplitView {
                 BooksTableView(library: library)
@@ -47,6 +52,11 @@ struct MainWindowView: View {
             .frame(minWidth: BookTableColumns.minimumPaneWidth, maxWidth: .infinity)
             // Без приоритета прирост ширины окна уходит сайдбару, а не таблице.
             .layoutPriority(1)
+        }
+        .opacity(layoutReady ? 1 : 0)
+        .task {
+            try? await Task.sleep(for: RestoredPaneSize.revealTimeout)
+            revealLayout()
         }
         .frame(minWidth: 1000, minHeight: 640)
         .sheet(isPresented: $showSearch) {
@@ -103,6 +113,11 @@ struct MainWindowView: View {
             state.checkedBookLibids = progress.removingSucceeded(
                 from: state.checkedBookLibids)
         }
+    }
+
+    private func revealLayout() {
+        guard !layoutReady else { return }
+        withAnimation(.easeOut(duration: 0.12)) { layoutReady = true }
     }
 
     private func searchSheetSize() -> CGSize {
@@ -178,14 +193,22 @@ private extension NSOpenPanel {
 /// Свой `@State` у модификатора: замеры на каждом кадре перетаскивания
 /// перерисовывают только его, а не всё главное окно.
 private struct RestoredPaneSize: ViewModifier {
+    /// Предохранитель: если разделитель так и не поставлен, зона всё равно
+    /// показывается.
+    static let revealTimeout: Duration = .milliseconds(500)
+
     let axis: Axis
     let dimension: PaneDimension
+    /// Вызывается, когда разделитель стоит на месте.
+    var onPlaced: () -> Void = {}
     @State private var size: CGFloat
     @State private var placed = false
+    @State private var revealed = false
 
-    init(axis: Axis, dimension: PaneDimension) {
+    init(axis: Axis, dimension: PaneDimension, onPlaced: @escaping () -> Void = {}) {
         self.axis = axis
         self.dimension = dimension
+        self.onPlaced = onPlaced
         _size = State(initialValue: dimension.restore(from: .standard))
     }
 
@@ -194,7 +217,18 @@ private struct RestoredPaneSize: ViewModifier {
             .frame(minWidth: axis == .horizontal ? dimension.min : nil,
                    maxWidth: axis == .horizontal ? dimension.max : nil,
                    minHeight: axis == .vertical ? dimension.min : nil)
-            .background(SplitDividerPlacer(axis: axis, size: size) { placed = true })
+            // Скрыта до установки разделителя — и при первом показе окна,
+            // и когда сайдбар снова показывают после скрытия.
+            .opacity(revealed ? 1 : 0)
+            .background(SplitDividerPlacer(axis: axis, size: size) {
+                placed = true
+                // Следующий проход: split view уже разложен по новой позиции.
+                Task { @MainActor in reveal() }
+            })
+            .task {
+                try? await Task.sleep(for: Self.revealTimeout)
+                reveal()
+            }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 axis == .horizontal ? proxy.size.width : proxy.size.height
             } action: { new in
@@ -210,6 +244,12 @@ private struct RestoredPaneSize: ViewModifier {
                 guard !Task.isCancelled else { return }
                 dimension.save(size, to: .standard)
             }
+    }
+
+    private func reveal() {
+        guard !revealed else { return }
+        withAnimation(.easeOut(duration: 0.12)) { revealed = true }
+        onPlaced()
     }
 }
 
