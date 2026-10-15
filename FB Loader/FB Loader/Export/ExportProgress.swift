@@ -11,6 +11,7 @@ final class ExportProgress {
     var currentTitle: String = ""
     var cancelled: Bool = false
     var failed: [(title: String, error: String)] = []
+    var abortReason: String? = nil
     /// `libid` каждой книги, успешно записанной на диск. Растёт по мере
     /// выгрузки; читается родительской вьюхой через
     /// `removingSucceeded(from:)` для инкрементального снятия галочек.

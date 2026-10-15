@@ -15,6 +15,7 @@ enum ExportRunner {
         progress.currentTitle = ""
         progress.cancelled = false
         progress.failed = []
+        progress.abortReason = nil
         progress.succeeded = []
 
         for item in items {
@@ -27,30 +28,36 @@ enum ExportRunner {
             let archiveName = library.archives[Int(book.archiveIndex)] + ".zip"
 
             // Off-main: open zip, extract bytes, write to disk.
-            // Returns nil on success, or the error message on failure.
-            let errorMessage: String? = await Task.detached(priority: .utility) { () -> String? in
+            let failure: ExportFailure? = await Task.detached(priority: .utility) { () -> ExportFailure? in
                 let archiveURL = archives.appendingPathComponent(archiveName)
+                let data: Data
                 do {
-                    let data = try ZipFB2Reader.readFB2(entryName: book.archiveEntryName, archiveURL: archiveURL)
+                    data = try ZipFB2Reader.readFB2(entryName: book.archiveEntryName, archiveURL: archiveURL)
+                } catch {
+                    return ExportFailure(error, stage: .source)
+                }
+                do {
                     try FileManager.default.createDirectory(
                         at: dest.deletingLastPathComponent(),
                         withIntermediateDirectories: true)
                     try data.write(to: dest, options: .atomic)
                     return nil
                 } catch {
-                    return "\(error)"
+                    return ExportFailure(error, stage: .destination)
                 }
             }.value
 
-            // Invariant: succeeded/failed обновляются ДО `done += 1`,
+            // Invariant: succeeded/failed/abortReason обновляются ДО `done += 1`,
             // чтобы `.onChange(of: progress.done)` в родительской вьюхе
             // видел консистентное состояние при срабатывании.
-            if let msg = errorMessage {
-                progress.failed.append((book.title, msg))
+            if let failure {
+                progress.failed.append((book.title, failure.reason))
+                if failure.abortsExport { progress.abortReason = failure.reason }
             } else {
                 progress.succeeded.insert(book.libid)
             }
             progress.done += 1
+            if progress.abortReason != nil { return }
         }
     }
 }

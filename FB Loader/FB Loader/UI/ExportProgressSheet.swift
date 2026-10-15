@@ -15,6 +15,9 @@ struct ExportProgressSheet: View {
                 Text("Ошибки: \(progress.failed.count)")
                     .foregroundStyle(.red)
             }
+            if let reason = progress.abortReason {
+                Text("Выгрузка прервана: \(reason)").foregroundStyle(.red)
+            }
             HStack {
                 // «Отмена» гаснет после нажатия, чтобы не дать выставить
                 // `cancelled` повторно. «Закрыть» становится активной при
@@ -26,10 +29,11 @@ struct ExportProgressSheet: View {
                 // libid'ы, дописавшиеся в `succeeded` уже после закрытия
                 // окна, не снимутся с галочки.
                 Button("Отмена") { progress.cancelled = true }
-                    .disabled(progress.done >= progress.total || progress.cancelled)
+                    .disabled(progress.done >= progress.total || progress.cancelled || progress.abortReason != nil)
                 Spacer()
                 Button("Закрыть") { onClose() }
-                    .disabled(progress.total > 0 && progress.done < progress.total && !progress.cancelled)
+                    .disabled(progress.total > 0 && progress.done < progress.total && !progress.cancelled
+                              && progress.abortReason == nil)
                     .keyboardShortcut(.defaultAction)
             }.frame(width: 360)
         }
