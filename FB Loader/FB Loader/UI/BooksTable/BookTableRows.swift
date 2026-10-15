@@ -97,3 +97,10 @@ nonisolated func spaceRoute(lastTypeSelectKey: Date?, now: Date) -> SpaceRoute {
     guard let last = lastTypeSelectKey else { return .toggleCheck }
     return now.timeIntervalSince(last) < 1 ? .typeSelect : .toggleCheck
 }
+
+/// Смена ключа — новая выборка: перезагрузка строк, прокрутка, перерисовка шапки.
+nonisolated struct BooksTableKey: Equatable, Sendable {
+    let context: BooksByContext.Context?
+    let language: String
+    let dates: DateRangeFilter?
+}

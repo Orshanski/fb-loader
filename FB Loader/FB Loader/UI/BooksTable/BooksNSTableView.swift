@@ -217,3 +217,29 @@ final class BooksRowView: NSTableRowView {
         }
     }
 }
+
+final class BooksNSTableView: NSTableView {
+    static let bookRowHeight: CGFloat = 24
+    static let seriesHeaderHeight: CGFloat = 32
+
+    /// Поднят на время `super.keyDown`: заголовок серии, предложенный стрелкой,
+    /// перескакивается, а предложенный мышью — нет.
+    private(set) var isHandlingKeyDown = false
+    private(set) var reloadDataCount = 0
+
+    override func reloadData() {
+        reloadDataCount += 1
+        super.reloadData()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        isHandlingKeyDown = true
+        defer { isHandlingKeyDown = false }
+        super.keyDown(with: event)
+    }
+
+    override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {
+        if responder is BookCheckbox { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
+    }
+}
