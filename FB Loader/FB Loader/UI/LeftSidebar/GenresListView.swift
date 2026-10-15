@@ -7,9 +7,7 @@ struct GenresListView: View {
     @Binding var selectedGenreID: Int16?
 
     var body: some View {
-        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
-            ? ""
-            : languageFilter
+        let langKey = BooksByContext.languageKey(languageFilter)
         let counts = library.bookCountByGenreByLang
         let orphanIDs = Set(library.orphanGenres.map(\.id))
         let childrenByRoot = library.childGenresByParent

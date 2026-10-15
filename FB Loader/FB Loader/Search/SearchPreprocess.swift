@@ -64,13 +64,19 @@ nonisolated enum SearchPreprocess {
         }
     }
 
-    /// Есть ли что склеивать NFC: комбинирующие знаки или гласные/финали хангыля.
+    /// Меняет ли NFC строку: комбинирующие знаки, гласные/финали хангыля или
+    /// символы, которые NFC заменяет даже в одиночку (синглтоны и исключения
+    /// композиции) — иначе их форма зависела бы от остальной строки.
     nonisolated static func needsComposition(_ raw: String) -> Bool {
         for u in raw.unicodeScalars {
             let v = u.value
-            // До U+0300 и буквы греческого/кириллицы/армянского — знаков нет.
-            if v < 0x0300 || (v >= 0x0370 && v < 0x0483) || (v >= 0x048A && v < 0x0591) { continue }
-            if v >= 0x1160 && v <= 0x11FF { return true }
+            // Здесь NFC не меняет ничего, кроме перечисленных синглтонов.
+            if v < 0x0300 || (v >= 0x048A && v < 0x0591) { continue }
+            if v >= 0x0370 && v < 0x0483 {
+                if v == 0x0374 || v == 0x037E || v == 0x0387 { return true }
+                continue
+            }
+            if isNFCSingleton(v) { return true }
             switch u.properties.generalCategory {
             case .nonspacingMark, .spacingMark, .enclosingMark: return true
             default: continue
@@ -79,14 +85,30 @@ nonisolated enum SearchPreprocess {
         return false
     }
 
+    /// Синглтоны и исключения композиции вне знаков (по CompositionExclusions.txt
+    /// и DerivedNormalizationProps NFC_QC=No); сверено перебором всех скаляров.
+    private nonisolated static func isNFCSingleton(_ v: UInt32) -> Bool {
+        switch v {
+        case 0x0958...0x095F, 0x09DC, 0x09DD, 0x09DF, 0x0A33, 0x0A36, 0x0A59...0x0A5B, 0x0A5E,
+             0x0B5C, 0x0B5D, 0x0F43, 0x0F4D, 0x0F52, 0x0F57, 0x0F5C, 0x0F69, 0x0F73, 0x0F75, 0x0F81,
+             0x1160...0x11FF, 0x1F70...0x1FFF, 0x2000, 0x2001, 0x2126, 0x212A, 0x212B, 0x2329, 0x232A,
+             0x2ADC, 0xF900...0xFAFF, 0xFB1D...0xFB4E, 0x1D15E...0x1D164, 0x1D1BB...0x1D1C0,
+             0x2F800...0x2FA1F:
+            return true
+        default:
+            return false
+        }
+    }
+
     nonisolated static func normalized(_ scalar: UInt32) -> UInt32 {
         let c = scalar
         if c < 0x80 { return c >= 0x41 && c <= 0x5A ? c + 0x20 : c }
-        // ё (U+0451) и Ё (U+0401) → е (U+0435).
         if c == 0x0451 || c == 0x0401 { return 0x0435 }
         if c >= 0x0430 && c <= 0x045F { return c }
         if c >= 0x0410 && c <= 0x042F { return c + 0x20 }
         if c >= 0x0400 && c <= 0x040F { return c + 0x50 }
+        // Конечная ς — та же буква σ, как ё для е.
+        if c == 0x03C2 { return 0x03C3 }
         guard let u = Unicode.Scalar(c), u.properties.changesWhenLowercased else { return c }
         // Многосимвольная форма есть только у İ («i» + U+0307): берём «i», иначе
         // комбинирующая точка разорвала бы слово.

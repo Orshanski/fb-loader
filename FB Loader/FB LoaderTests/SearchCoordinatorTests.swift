@@ -22,9 +22,11 @@ struct SearchCoordinatorTests {
         await coord.runSearch(in: makeLibrary())
         #expect(coord.results?.authors.count == 1)
         coord.selectedBookLibid = 1
+        coord.checkedBookLibids = [1]
 
         coord.languageFilter = "en"
         #expect(coord.results == nil)
+        #expect(coord.checkedBookLibids.isEmpty)
         #expect(coord.lastQuery == "")
         #expect(coord.selectedBookLibid == nil)
         #expect(coord.query == "толстой", "текст запроса остаётся для повторного поиска")

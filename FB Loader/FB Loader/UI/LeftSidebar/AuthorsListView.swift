@@ -10,9 +10,7 @@ struct AuthorsListView: View {
     @Binding var selectedAuthorID: Int32?
 
     var body: some View {
-        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
-            ? ""
-            : languageFilter
+        let langKey = BooksByContext.languageKey(languageFilter)
         FilteredSidebarList(
             items: library.authors,
             lowercasedNames: library.lowercasedAuthorNames,

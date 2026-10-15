@@ -118,6 +118,22 @@ struct SearchPreprocessTests {
         #expect(decode(decomposed) == ["\u{E9}cole", "p\u{E9}rez"])
         #expect(SearchPreprocess.tokens("Йе\u{308}ж") == SearchPreprocess.tokens("Йеж"),
                 "разложенная ё тоже сворачивается в е")
+        #expect(SearchPreprocess.tokens("и\u{306}од И\u{306}ОД") == SearchPreprocess.tokens("йод ЙОД"))
+    }
+
+    @Test("NFC-синглтоны нормализуются независимо от остальной строки", arguments: [
+        ("\u{1F71}", "\u{3AC}"),   // ά oxia → ά tonos
+        ("\u{F900}", "\u{8C48}"),  // CJK compatibility ideograph
+    ])
+    func nfcSingletons(_ singleton: String, _ canonical: String) {
+        #expect(SearchPreprocess.tokens("a" + singleton) == SearchPreprocess.tokens("a" + canonical))
+        #expect(SearchPreprocess.tokens("a" + singleton + " e\u{301}")
+                == SearchPreprocess.tokens("a" + singleton + " \u{E9}"))
+    }
+
+    @Test("Греческая конечная ς сворачивается в σ")
+    func greekFinalSigma() {
+        #expect(SearchPreprocess.tokens("ΟΔΥΣΣΕΥΣ") == SearchPreprocess.tokens("Οδυσσευς"))
     }
 
     @Test("Латиница с диакритикой считается буквой")

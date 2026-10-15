@@ -219,8 +219,7 @@ nonisolated final class Library: Sendable {
             aStarts.append(UInt32(aIndices.count))
             if let sid = b.seriesID, let idx = seriesIndexByID[sid] {
                 sIdx.append(idx)
-                // Ext-ключ серии: имя + токены всех различных авторов её книг — для запросов
-                // «автор + серия» вроде «сандерсон мстители».
+                // Для запросов «автор + серия» вроде «сандерсон мстители».
                 authorIdxBySeriesIdx[Int(idx)].formUnion(aIndices[first...])
             } else {
                 sIdx.append(-1)

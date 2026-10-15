@@ -161,6 +161,14 @@ struct SearchEngineTests {
         #expect(r.series.map { lib.series[$0.seriesIndex].id } == [1])
     }
 
+    @Test("Книга соавторов скрыта из бакета книг, когда сматчился второй автор")
+    func coAuthorDedup() {
+        let lib = library(authors: [oldie, dyachenko], books: [book(1, "Дяченко", [1, 2])])
+        let r = SearchEngine.run(query: "дяченко", language: "ru", in: lib)
+        #expect(r.authors.map { lib.authors[$0.authorIndex].id } == [2])
+        #expect(r.books.isEmpty)
+    }
+
     @Test("Украинская заглавная «І» находится строчным запросом")
     func ukrainianCapitalFound() {
         let lib = library(authors: [Author(id: 1, lastName: "Франко", firstName: "Іван", middleName: "")],

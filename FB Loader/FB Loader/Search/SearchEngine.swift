@@ -23,8 +23,7 @@ nonisolated enum SearchEngine {
     nonisolated private static func run(qTokens qToks: [SearchToken],
                                         language: String, in lib: Library) -> SearchResults {
 
-        // Sentinel for "language not specified" matches main-window convention.
-        let langKey = language == BooksByContext.unspecifiedLanguageToken ? "" : language
+        let langKey = BooksByContext.languageKey(language)
 
         // 1. Authors — все matches выше cutoff, отсортированные по убыванию;
         // без книг на выбранном языке блок автора был бы пустым.
@@ -41,7 +40,6 @@ nonisolated enum SearchEngine {
             .filter { lib.bookCount(seriesID: lib.series[$0.index].id, language: langKey) > 0 }
         let series = seriesHits.map { SeriesMatch(seriesIndex: $0.index, score: $0.score) }
 
-        // 3. Books — language-filtered, combined key (title + tokens of all authors + series tokens).
         let bookHitsAll = parallelScanBooks(
             qTokens: qToks,
             language: langKey,
