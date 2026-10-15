@@ -25,7 +25,7 @@ nonisolated final class GenreDictionary {
         }
     }
 
-    /// Раздел «Прочее» в genres.json.
+    /// Раздел «Прочее»: синтетические жанры кладутся сюда, а не корневыми разделами.
     static let otherSectionID: Int16 = 11
 
     let allGenres: [Genre]

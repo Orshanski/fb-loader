@@ -76,13 +76,34 @@ struct GenreDictionaryTests {
     @Test("незнакомый код — в разделе «Прочее», а не корневым разделом")
     func syntheticUnderOther() throws {
         let g = try #require(try GenreDictionary.loadFromBundle().genre(forCode: "made_up_genre_xyz"))
-        #expect(g.parentID == 11)
+        #expect(g.parentID == GenreDictionary.otherSectionID)
     }
 
-    @Test("id словаря уникальны")
-    func uniqueIDs() throws {
-        let ids = try GenreDictionary.loadFromBundle().allGenres.map(\.id)
-        #expect(Set(ids).count == ids.count)
+    @Test("раздел «Прочее» есть в словаре и он корневой")
+    func otherSectionExists() throws {
+        let other = try GenreDictionary.loadFromBundle().allGenres
+            .first { $0.id == GenreDictionary.otherSectionID }
+        #expect(other?.name == "Прочее")
+        #expect(other?.parentID == nil)
+    }
+
+    @Test("целостность словаря: уникальные id, существующие родители")
+    func integrity() throws {
+        let all = try GenreDictionary.loadFromBundle().allGenres
+        let ids = Set(all.map(\.id))
+        #expect(ids.count == all.count)
+        #expect(all.compactMap(\.parentID).allSatisfy(ids.contains))
+    }
+
+    @Test("коды не повторяются, кроме четырёх известных дублей freeLib")
+    func keyCollisions() throws {
+        let url = try #require(Bundle.main.url(forResource: "genres", withExtension: "json"))
+        struct Raw: Decodable { let keys: String? }
+        let raw = try JSONDecoder().decode([Raw].self, from: Data(contentsOf: url))
+        var seen: [String: Int] = [:]
+        for r in raw { for k in (r.keys ?? "").split(separator: ";") { seen[String(k), default: 0] += 1 } }
+        let dups = Set(seen.filter { $0.value > 1 }.keys)
+        #expect(dups == ["adv_animal", "adv_geo", "child_adv", "drama_antique"])
     }
 
     @Test("жанры для каталога включают синтетические")
