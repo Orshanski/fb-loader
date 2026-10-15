@@ -157,6 +157,7 @@ nonisolated enum LibraryBinaryCodec {
         let bookCount = try r.uint32()
         var books: [Book] = []
         books.reserveCapacity(r.capacity(bookCount, minSize: 33))
+        var authorLists = Interner<Int32>(), genreLists = Interner<Int16>()
         for _ in 0..<bookCount {
             let libid = try r.int32()
             let title = try r.string16()
@@ -180,10 +181,10 @@ nonisolated enum LibraryBinaryCodec {
                     archivesCount: archives.count)
             }
             books.append(Book(
-                libid: libid, title: title, authorIDs: aIDs,
+                libid: libid, title: title, authorIDs: authorLists.intern(aIDs),
                 seriesID: s == -1 ? nil : s,
                 seriesNum: sn == Int16.min ? nil : sn,
-                genreIDs: gIDs, language: lang, archiveIndex: archIdx,
+                genreIDs: genreLists.intern(gIDs), language: lang, archiveIndex: archIdx,
                 size: size,
                 dateAdded: dateSeconds.isNaN
                     ? nil

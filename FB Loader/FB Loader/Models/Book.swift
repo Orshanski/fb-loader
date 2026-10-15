@@ -1,25 +1,26 @@
 import Foundation
 
 nonisolated struct Book: Identifiable, Hashable, Sendable {
-    /// LIBID from INPX — the book's unique identifier inside the catalog.
-    let libid: Int32
-    var id: Int32 { libid }
-
+    // Порядок полей — по убыванию выравнивания: иначе дыры раздувают Book
+    // со 96 до 112 байт × 594k книг.
     let title: String
-    let authorIDs: [Int32]      // first is primary
-    let seriesID: Int32?
-    let seriesNum: Int16?
-    let genreIDs: [Int16]
     let language: String        // "ru", "en", or "" for unknown
-    /// Index into `Library.archives` array (the zip filename without .zip extension).
-    let archiveIndex: Int16
-    /// Size in bytes (from INPX).
-    let size: Int32
+    let archiveFileName: String?
+    let authorIDs: [Int32]      // first is primary
+    let genreIDs: [Int16]
     /// Дата добавления в библиотеку Флибусты — не на машину пользователя.
     /// Полночь того дня, что записан в INPX строкой `YYYY-MM-DD`.
     /// `nil` — даты в записи не было.
     let dateAdded: Date?
-    let archiveFileName: String?
+    /// LIBID from INPX — the book's unique identifier inside the catalog.
+    let libid: Int32
+    var id: Int32 { libid }
+    /// Size in bytes (from INPX).
+    let size: Int32
+    let seriesID: Int32?
+    let seriesNum: Int16?
+    /// Index into `Library.archives` array (the zip filename without .zip extension).
+    let archiveIndex: Int16
 
     init(libid: Int32, title: String, authorIDs: [Int32], seriesID: Int32?,
          seriesNum: Int16?, genreIDs: [Int16], language: String, archiveIndex: Int16,
