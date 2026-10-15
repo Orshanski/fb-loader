@@ -23,7 +23,7 @@ nonisolated enum INPXImporter {
 
     /// Поднимать при любой правке разбора INPX (здесь, в парсерах, в синтетических
     /// жанрах) — иначе у пользователей останется кэш от старого кода.
-    static let logicVersion: UInt16 = 2
+    static let logicVersion: UInt16 = 3
 
     /// Длина строки в кэше — 16 бит; одна кривая запись иначе ломает запись кэша.
     static let maxStringBytes = 4096
