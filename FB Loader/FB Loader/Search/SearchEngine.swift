@@ -23,9 +23,13 @@ nonisolated enum SearchEngine {
     nonisolated private static func run(qTokens qToks: [SearchToken],
                                         language: String, in lib: Library) -> SearchResults {
 
-        // 1. Authors — все matches выше cutoff, отсортированные по убыванию.
+        let langKey = BooksByContext.languageKey(language)
+
+        // 1. Authors — все matches выше cutoff, отсортированные по убыванию;
+        // без книг на выбранном языке блок автора был бы пустым.
         let authorHits = parallelScan(qTokens: qToks, keys: lib.searchKeyAuthors,
                                       cutoff: FuzzyScorer.scoreCutoff)
+            .filter { lib.bookCount(authorID: lib.authors[$0.index].id, language: langKey) > 0 }
         let authors = authorHits.map { AuthorMatch(authorIndex: $0.index, score: $0.score) }
 
         // 2. Series — uses extended key (series name + author tokens) so
@@ -33,12 +37,12 @@ nonisolated enum SearchEngine {
         // author is Сандерсон.
         let seriesHits = parallelScan(qTokens: qToks, keys: lib.searchKeySeriesExt,
                                       cutoff: FuzzyScorer.scoreCutoff)
+            .filter { lib.bookCount(seriesID: lib.series[$0.index].id, language: langKey) > 0 }
         let series = seriesHits.map { SeriesMatch(seriesIndex: $0.index, score: $0.score) }
 
-        // 3. Books — language-filtered, combined key (title + author tokens + series tokens).
         let bookHitsAll = parallelScanBooks(
             qTokens: qToks,
-            language: language,
+            language: langKey,
             in: lib,
             cutoff: FuzzyScorer.scoreCutoff
         )
@@ -59,6 +63,11 @@ nonisolated enum SearchEngine {
 
     // MARK: - Internal helpers
 
+    /// Кусков вчетверо больше ядер: один медленный кусок (длинные ключи) не держит остальные ядра.
+    nonisolated private static var chunkCount: Int {
+        4 * max(2, ProcessInfo.processInfo.activeProcessorCount)
+    }
+
     /// Internal scoring hit — индекс в исходном массиве + скор.
     /// `Sendable`: пересекает actor boundary внутри `concurrentPerform`.
     nonisolated private struct Hit: Sendable {
@@ -74,6 +83,11 @@ nonisolated enum SearchEngine {
     /// сырых указателей внутри @Sendable-замыканий.
     nonisolated private struct SendableBuf<T>: @unchecked Sendable {
         let buf: UnsafeMutableBufferPointer<T>
+    }
+
+    /// Указатели на неизменяемые массивы `Library` — во время скана только читаются.
+    nonisolated private struct SendablePtr<T>: @unchecked Sendable {
+        let buf: UnsafeBufferPointer<T>
     }
 
     /// Слова запроса — только чтение во время скана.
@@ -92,13 +106,13 @@ nonisolated enum SearchEngine {
         let count = keys.count
         if count == 0 { return [] }
         let qTokens = SendableTokens(tokens: qTokens)
-        let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
-        let chunkSize = (count + cores - 1) / cores
-        var perChunk: [[Hit]] = Array(repeating: [], count: cores)
+        let chunks = chunkCount
+        let chunkSize = (count + chunks - 1) / chunks
+        var perChunk: [[Hit]] = Array(repeating: [], count: chunks)
         keys.withView { view in
             perChunk.withUnsafeMutableBufferPointer { rawBuf in
                 let wrapped = SendableBuf(buf: rawBuf)
-                DispatchQueue.concurrentPerform(iterations: cores) { c in
+                DispatchQueue.concurrentPerform(iterations: chunks) { c in
                     let lo = c * chunkSize
                     let hi = min(lo + chunkSize, count)
                     if lo >= hi { return }
@@ -137,38 +151,42 @@ nonisolated enum SearchEngine {
     ) -> [Hit] {
         let n = lib.books.count
         if n == 0 { return [] }
-        // Sentinel for "language not specified" matches main-window convention.
-        let langKey = language == BooksByContext.unspecifiedLanguageToken ? "" : language
         let qTokens = SendableTokens(tokens: qTokens)
-        let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
-        let chunkSize = (n + cores - 1) / cores
-        var perChunk: [[Hit]] = Array(repeating: [], count: cores)
-        lib.searchKeyTitle.withView { titles in
-            lib.searchKeyAuthors.withView { authors in
-                lib.searchKeySeries.withView { series in
-                    perChunk.withUnsafeMutableBufferPointer { rawBuf in
-                        let wrapped = SendableBuf(buf: rawBuf)
-                        DispatchQueue.concurrentPerform(iterations: cores) { c in
-                            let lo = c * chunkSize
-                            let hi = min(lo + chunkSize, n)
-                            if lo >= hi { return }
-                            var local: [Hit] = []
-                            local.reserveCapacity(128)
-                            var combined: [SearchToken] = []
-                            combined.reserveCapacity(16)
-                            for i in lo..<hi {
-                                if lib.books[i].language != langKey { continue }
-                                combined.removeAll(keepingCapacity: true)
-                                titles.appendTokens(of: i, to: &combined)
-                                let aIdx = Int(lib.searchAuthorIdx[i])
-                                if aIdx >= 0 { authors.appendTokens(of: aIdx, to: &combined) }
-                                let sIdx = Int(lib.searchSeriesIdx[i])
-                                if sIdx >= 0 { series.appendTokens(of: sIdx, to: &combined) }
-                                let s = FuzzyScorer.tokenMinRatioCut(
-                                    qTokens: qTokens.tokens, cTokens: combined, cutoff: cutoff)
-                                if s >= cutoff { local.append(Hit(index: i, score: s)) }
+        let chunks = chunkCount
+        let chunkSize = (n + chunks - 1) / chunks
+        var perChunk: [[Hit]] = Array(repeating: [], count: chunks)
+        lib.bookAuthorStarts.withUnsafeBufferPointer { startsBuf in
+            lib.bookAuthorIndices.withUnsafeBufferPointer { indicesBuf in
+                let aStarts = SendablePtr(buf: startsBuf), aIndices = SendablePtr(buf: indicesBuf)
+                lib.searchKeyTitle.withView { titles in
+                    lib.searchKeyAuthors.withView { authors in
+                        lib.searchKeySeries.withView { series in
+                            perChunk.withUnsafeMutableBufferPointer { rawBuf in
+                                let wrapped = SendableBuf(buf: rawBuf)
+                                DispatchQueue.concurrentPerform(iterations: chunks) { c in
+                                    let lo = c * chunkSize
+                                    let hi = min(lo + chunkSize, n)
+                                    if lo >= hi { return }
+                                    var local: [Hit] = []
+                                    local.reserveCapacity(128)
+                                    var combined: [SearchToken] = []
+                                    combined.reserveCapacity(16)
+                                    for i in lo..<hi {
+                                        if lib.books[i].language != language { continue }
+                                        combined.removeAll(keepingCapacity: true)
+                                        titles.appendTokens(of: i, to: &combined)
+                                        for a in Int(aStarts.buf[i])..<Int(aStarts.buf[i + 1]) {
+                                            authors.appendTokens(of: Int(aIndices.buf[a]), to: &combined)
+                                        }
+                                        let sIdx = Int(lib.searchSeriesIdx[i])
+                                        if sIdx >= 0 { series.appendTokens(of: sIdx, to: &combined) }
+                                        let s = FuzzyScorer.tokenMinRatioCut(
+                                            qTokens: qTokens.tokens, cTokens: combined, cutoff: cutoff)
+                                        if s >= cutoff { local.append(Hit(index: i, score: s)) }
+                                    }
+                                    wrapped.buf[c] = local
+                                }
                             }
-                            wrapped.buf[c] = local
                         }
                     }
                 }

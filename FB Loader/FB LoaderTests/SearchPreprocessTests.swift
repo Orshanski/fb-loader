@@ -94,20 +94,46 @@ struct SearchPreprocessTests {
         #expect(decode(toks) == ["a", "b"])
     }
 
-    @Test("Украинская кириллица (і, ї, є, ґ) считается буквой")
+    @Test("Украинская кириллица (і, ї, є, ґ) считается буквой и приводится к нижнему регистру")
     func ukrainianCyrillic() {
-        // Сначала проверяем, что украинско-специфичные буквы вообще
-        // распознаются как алфавитные (не разрывают токен).
         let cont = SearchPreprocess.tokens("Україна")
         #expect(cont.count == 1, "слово 'Україна' должно остаться одним токеном, не порезаться на 'кра' + 'на'")
 
-        // Залочка асимметрии: lowercase-блок сворачивает только А..Я
-        // (U+0410..U+042F), поэтому заглавная Ї (U+0407) остаётся в
-        // верхнем регистре, а Ж/А/К — лоуэркейсятся.
         let toks = SearchPreprocess.tokens("ЇЖАК")
         #expect(toks.count == 1)
-        #expect(decode(toks[0]) == "Їжак",
-                "Ї остаётся в верхнем регистре — преобразуем только А..Я")
+        #expect(decode(toks[0]) == "їжак")
+        #expect(SearchPreprocess.tokens("Іван") == SearchPreprocess.tokens("іван"))
+    }
+
+    @Test("Нижний регистр для любой письменности", arguments: [
+        ("ŁÓDŹ", "łódź"), ("ÉCOLE", "école"), ("ΑΘΗΝΑ", "αθηνα"), ("ЎСЁ", "ўсе"), ("Ђорђе", "ђорђе")])
+    func lowercaseAnyScript(_ raw: String, _ expected: String) {
+        #expect(decode(SearchPreprocess.tokens(raw)) == [expected])
+    }
+
+    @Test("Разложенная «e + U+0301» совпадает с составной «é»")
+    func decomposedEqualsPrecomposed() {
+        let decomposed = SearchPreprocess.tokens("e\u{301}cole Pe\u{301}rez")
+        #expect(decomposed == SearchPreprocess.tokens("\u{E9}cole P\u{E9}rez"))
+        #expect(decode(decomposed) == ["\u{E9}cole", "p\u{E9}rez"])
+        #expect(SearchPreprocess.tokens("Йе\u{308}ж") == SearchPreprocess.tokens("Йеж"),
+                "разложенная ё тоже сворачивается в е")
+        #expect(SearchPreprocess.tokens("и\u{306}од И\u{306}ОД") == SearchPreprocess.tokens("йод ЙОД"))
+    }
+
+    @Test("NFC-синглтоны нормализуются независимо от остальной строки", arguments: [
+        ("\u{1F71}", "\u{3AC}"),   // ά oxia → ά tonos
+        ("\u{F900}", "\u{8C48}"),  // CJK compatibility ideograph
+    ])
+    func nfcSingletons(_ singleton: String, _ canonical: String) {
+        #expect(SearchPreprocess.tokens("a" + singleton) == SearchPreprocess.tokens("a" + canonical))
+        #expect(SearchPreprocess.tokens("a" + singleton + " e\u{301}")
+                == SearchPreprocess.tokens("a" + singleton + " \u{E9}"))
+    }
+
+    @Test("Греческая конечная ς сворачивается в σ")
+    func greekFinalSigma() {
+        #expect(SearchPreprocess.tokens("ΟΔΥΣΣΕΥΣ") == SearchPreprocess.tokens("Οδυσσευς"))
     }
 
     @Test("Латиница с диакритикой считается буквой")

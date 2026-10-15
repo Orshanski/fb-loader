@@ -49,7 +49,8 @@ nonisolated final class Library: Sendable {
     // tokens from `SearchPreprocess.tokens` packed into `TokenStore`, built once at init.
     // Light variant: per-book keeps only title tokens; for
     // book scoring the engine dispatches author/series tokens via
-    // `searchAuthorIdx` / `searchSeriesIdx` lookups.
+    // `bookAuthorStarts`/`bookAuthorIndices` / `searchSeriesIdx` lookups.
+    // Псевдо-автор «(Без автора)» в поиске не участвует: пустой ключ, в ключи книг и серий не входит.
     let searchKeyAuthors: TokenStore  // parallel to authors
     let searchKeySeries:  TokenStore  // parallel to series — base key, used by parallelScanBooks combined key
     /// Extended series key: base series tokens + tokens of all distinct
@@ -59,7 +60,10 @@ nonisolated final class Library: Sendable {
     /// author is Сандерсон.
     let searchKeySeriesExt: TokenStore
     let searchKeyTitle:   TokenStore  // parallel to books
-    let searchAuthorIdx:  [Int32]       // per book: index into searchKeyAuthors, -1 if missing
+    /// Авторы книги `i` — `bookAuthorIndices[bookAuthorStarts[i]..<bookAuthorStarts[i+1]]`,
+    /// номера в `authors`; плоско, а не массив на книгу — 594k мелких массивов дороже.
+    let bookAuthorStarts: [UInt32]
+    let bookAuthorIndices: [Int32]
     let searchSeriesIdx:  [Int32]       // per book: index into searchKeySeries, -1 if no series
 
     init(
@@ -185,7 +189,7 @@ nonisolated final class Library: Sendable {
 
         var sAuthors = TokenStore()
         for a in authors {
-            sAuthors.appendTokenized(a.displayName)
+            sAuthors.appendTokenized(a.id == Author.unknownID ? "" : a.displayName)
         }
         sAuthors.shrink()
         self.searchKeyAuthors = sAuthors
@@ -198,42 +202,35 @@ nonisolated final class Library: Sendable {
         self.searchKeySeries = sSeries
 
         var sTitles = TokenStore()
-        var aIdx: [Int32] = []
-        aIdx.reserveCapacity(books.count)
+        var aStarts: [UInt32] = [0]
+        aStarts.reserveCapacity(books.count + 1)
+        var aIndices: [Int32] = []
+        aIndices.reserveCapacity(books.count)
         var sIdx: [Int32] = []
         sIdx.reserveCapacity(books.count)
+        var authorIdxBySeriesIdx: [Set<Int32>] = Array(repeating: [], count: series.count)
         for b in books {
             sTitles.appendTokenized(b.title)
-            // Primary author: first authorID; -1 if missing.
-            if let firstAID = b.authorIDs.first,
-               let idx = authorIndexByID[firstAID] {
-                aIdx.append(idx)
-            } else {
-                aIdx.append(-1)
+            let first = aIndices.count
+            for aid in b.authorIDs where aid != Author.unknownID {
+                guard let idx = authorIndexByID[aid], !aIndices[first...].contains(idx) else { continue }
+                aIndices.append(idx)
             }
+            aStarts.append(UInt32(aIndices.count))
             if let sid = b.seriesID, let idx = seriesIndexByID[sid] {
                 sIdx.append(idx)
+                // Для запросов «автор + серия» вроде «сандерсон мстители».
+                authorIdxBySeriesIdx[Int(idx)].formUnion(aIndices[first...])
             } else {
                 sIdx.append(-1)
             }
         }
         sTitles.shrink()
         self.searchKeyTitle = sTitles
-        self.searchAuthorIdx = aIdx
+        self.bookAuthorStarts = aStarts
+        self.bookAuthorIndices = aIndices.withUnsafeBufferPointer(Array.init)
         self.searchSeriesIdx = sIdx
 
-        // Series-bucket extended key: for each series, append the tokens of
-        // every distinct author with at least one book in that series. Cost
-        // ~10 МБ on the full catalog. Lets cross-token queries («сандерсон
-        // мстители») match a series by combining its name with its authors.
-        var authorIdxBySeriesIdx: [Set<Int32>] = Array(repeating: [], count: series.count)
-        for k in 0..<books.count {
-            let sIdxK = sIdx[k]
-            if sIdxK < 0 { continue }
-            let aIdxK = aIdx[k]
-            if aIdxK < 0 { continue }
-            authorIdxBySeriesIdx[Int(sIdxK)].insert(aIdxK)
-        }
         var sSeriesExt = TokenStore()
         sSeries.withView { seriesView in
             sAuthors.withView { authorsView in

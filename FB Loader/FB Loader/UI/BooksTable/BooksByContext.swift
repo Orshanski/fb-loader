@@ -53,7 +53,7 @@ nonisolated enum BooksByContext {
 
     /// Sentinel «Не указан» → пустая строка, под которой язык лежит и в
     /// `Book.language`, и в счётчиках `Library` по языкам.
-    private static func languageKey(_ language: String) -> String {
+    static func languageKey(_ language: String) -> String {
         language == unspecifiedLanguageToken ? "" : language
     }
 }

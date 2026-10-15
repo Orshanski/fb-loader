@@ -38,7 +38,7 @@ struct TokenStoreTests {
     @Test("токенизация прямо в хранилище совпадает с SearchPreprocess.tokens", arguments: [
         "Толстой, Лев Николаевич", "Ёлкин-Палкин", "  ", "", "Київ ŁÓDŹ école 2024",
         "Война и мир!!!", "Gödel, Escher, Bach", "а", "Сандерсон: Мстители (т. 3)",
-        "a😀b", "𐐀𐐁 x", "раз,— два…три"])
+        "a😀b", "𐐀𐐁 x", "раз,— два…три", "E\u{301}COLE Йе\u{308}ж", "ЇЖАК İstanbul"])
     func tokenizeParity(_ raw: String) {
         var s = TokenStore()
         s.appendTokenized(raw)

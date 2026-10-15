@@ -19,7 +19,17 @@ final class SearchCoordinator {
 
     /// Local language filter; initialised from the main window's
     /// `AppState.languageFilter` at sheet-open time, then independent.
-    var languageFilter: String
+    /// Смена сбрасывает выдачу, отметки и превью: иначе блоки авторов/серий
+    /// перефильтровались бы по новому языку, а найденный список остался бы от старого.
+    var languageFilter: String {
+        didSet {
+            guard languageFilter != oldValue else { return }
+            results = nil
+            lastQuery = ""
+            selectedBookLibid = nil
+            checkedBookLibids.removeAll()
+        }
+    }
 
     // MARK: - Output / status
 

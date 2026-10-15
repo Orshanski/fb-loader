@@ -7,9 +7,7 @@ struct SeriesListView: View {
     @Binding var selectedSeriesID: Int32?
 
     var body: some View {
-        let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
-            ? ""
-            : languageFilter
+        let langKey = BooksByContext.languageKey(languageFilter)
         FilteredSidebarList(
             items: library.series,
             lowercasedNames: library.lowercasedSeriesNames,

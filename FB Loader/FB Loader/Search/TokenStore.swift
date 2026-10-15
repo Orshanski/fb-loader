@@ -39,8 +39,7 @@ nonisolated struct TokenStore: Sendable {
     /// Как `append(SearchPreprocess.tokens(raw))`, но без временного массива на слово.
     mutating func appendTokenized(_ raw: String) {
         var inToken = false
-        for u in raw.unicodeScalars {
-            let c = SearchPreprocess.normalized(u.value)
+        SearchPreprocess.forEachNormalizedScalar(raw) { c in
             if SearchPreprocess.isWordScalar(c) {
                 scalars.append(Self.char(c))
                 inToken = true
