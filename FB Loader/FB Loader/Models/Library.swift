@@ -239,7 +239,7 @@ nonisolated final class Library: Sendable {
         var sSeriesExt = TokenStore()
         sSeries.withView { seriesView in
             sAuthors.withView { authorsView in
-                var ext: [UnsafeBufferPointer<UInt32>] = []
+                var ext: [SearchToken] = []
                 for i in 0..<series.count {
                     ext.removeAll(keepingCapacity: true)
                     seriesView.appendTokens(of: i, to: &ext)
