@@ -79,6 +79,28 @@ struct LibraryLanguageCountTests {
         #expect(lib.bookCount(seriesID: 9, language: "en") == 0)
     }
 
+    @Test("автор без книг между авторами с книгами, у соседа три языка")
+    func gapsAndManyLanguages() {
+        let lib = Library(
+            inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+            authors: [Author(id: 1, lastName: "А", firstName: "", middleName: ""),
+                      Author(id: 2, lastName: "Б", firstName: "", middleName: ""),
+                      Author(id: 3, lastName: "В", firstName: "", middleName: ""),
+                      Author(id: 4, lastName: "Г", firstName: "", middleName: "")],
+            series: [], genres: [],
+            books: [Self.book(1, authors: [1], series: nil, lang: "ru"),
+                    Self.book(2, authors: [3], series: nil, lang: "ru"),
+                    Self.book(3, authors: [3], series: nil, lang: "en"),
+                    Self.book(4, authors: [3], series: nil, lang: "de"),
+                    Self.book(5, authors: [3], series: nil, lang: "de")])
+        #expect(lib.bookCount(authorID: 1, language: "ru") == 1)
+        #expect(lib.bookCount(authorID: 2, language: "ru") == 0)
+        #expect(lib.bookCount(authorID: 3, language: "ru") == 1)
+        #expect(lib.bookCount(authorID: 3, language: "en") == 1)
+        #expect(lib.bookCount(authorID: 3, language: "de") == 2)
+        #expect(lib.bookCount(authorID: 4, language: "ru") == 0)
+    }
+
     @Test("незнакомые id и язык — ноль")
     func unknown() {
         #expect(lib.bookCount(authorID: 99, language: "ru") == 0)

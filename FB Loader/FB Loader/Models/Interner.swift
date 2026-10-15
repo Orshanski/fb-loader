@@ -4,8 +4,6 @@ nonisolated struct Interner<Element: Hashable> {
     private var seen: Set<[Element]> = []
 
     mutating func intern(_ array: [Element]) -> [Element] {
-        if let existing = seen.firstIndex(of: array) { return seen[existing] }
-        seen.insert(array)
-        return array
+        seen.insert(array).memberAfterInsert
     }
 }

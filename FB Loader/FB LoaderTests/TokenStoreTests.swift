@@ -46,6 +46,15 @@ struct TokenStoreTests {
         #expect(s[0] == expected)
     }
 
+    @Test("символы вне BMP сводятся к U+FFFD и в поиске не различаются")
+    func nonBMP() {
+        var s = TokenStore()
+        s.appendTokenized("𐐀𐐁 x")
+        #expect(s[0] == [[0xFFFD, 0xFFFD], [0x78]])
+        let score = FuzzyScorer.tokenMinRatioCut(qTokens: [[0x10400]], cTokens: [[0x10428]], cutoff: 0)
+        #expect(score == 100)
+    }
+
     @Test("пустое хранилище")
     func empty() {
         let s = TokenStore()

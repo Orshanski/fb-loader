@@ -106,7 +106,8 @@ nonisolated final class Library: Sendable {
         onStatus?("[Library.init] *ByID dicts built")
 
         let languages = Array(Set(books.map(\.language))).sorted()
-        let languageIndex = Dictionary(uniqueKeysWithValues: languages.enumerated().map { ($1, UInt16($0)) })
+        // Сверх 65 535 языков (мусор в INPX) делят последний номер — счётчики, но не падение.
+        let languageIndex = Dictionary(uniqueKeysWithValues: languages.enumerated().map { ($1, UInt16(clamping: $0)) })
         var byAuthor: [Int32: [Int]] = [:]
         var bySeries: [Int32: [Int]] = [:]
         var byGenre: [Int16: [Int]] = [:]
