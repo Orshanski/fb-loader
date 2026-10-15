@@ -10,15 +10,12 @@ import Foundation
 /// «по умолчанию топ-10 + Показать всех»; cap живёт в UI, не в engine).
 nonisolated enum SearchEngine {
     nonisolated static func run(query: String, language: String, in lib: Library) -> SearchResults {
-        let qToks = SearchPreprocess.tokens(query)
-        guard !qToks.isEmpty else {
-            return SearchResults(authors: [], series: [], books: [])
-        }
         var qStore = TokenStore()
-        qStore.append(qToks)
+        qStore.appendTokenized(query)
         return qStore.withView { qView in
             var q: [UnsafeBufferPointer<UInt32>] = []
             qView.appendTokens(of: 0, to: &q)
+            if q.isEmpty { return SearchResults(authors: [], series: [], books: []) }
             return run(qTokens: q, language: language, in: lib)
         }
     }

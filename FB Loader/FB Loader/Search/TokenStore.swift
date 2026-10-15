@@ -1,8 +1,7 @@
 import Foundation
 
-/// Поисковые ключи одним буфером. Раньше каждое слово было отдельным
-/// `[UInt32]` — 4,1 млн массивов на полном каталоге, и их заголовки с запасом
-/// ёмкости занимали в разы больше самих символов.
+/// Один буфер вместо массива на слово: заголовки и запас ёмкости миллионов
+/// мелких массивов занимали в разы больше самих символов.
 nonisolated struct TokenStore: Sendable {
     private var scalars: [UInt32] = []
     /// Конец каждого слова в `scalars`.
@@ -20,9 +19,7 @@ nonisolated struct TokenStore: Sendable {
         entryEnds.append(UInt32(tokenEnds.count))
     }
 
-    /// Как `append(SearchPreprocess.tokens(raw))`, но без массива на каждое
-    /// слово: миллионы временных массивов при построении оставались за
-    /// процессом и после освобождения.
+    /// Как `append(SearchPreprocess.tokens(raw))`, но без временного массива на слово.
     mutating func appendTokenized(_ raw: String) {
         var inToken = false
         for u in raw.unicodeScalars {
@@ -73,6 +70,8 @@ nonisolated struct TokenStore: Sendable {
         let entryEnds: UnsafeBufferPointer<UInt32>
 
         func appendTokens(of i: Int, to out: inout [UnsafeBufferPointer<UInt32>]) {
+            // В Release индексы UnsafeBufferPointer не проверяются — ошибка дала бы чтение мусора.
+            precondition(i >= 0 && i < entryEnds.count)
             let first = i == 0 ? 0 : Int(entryEnds[i - 1])
             for t in first..<Int(entryEnds[i]) {
                 let start = t == 0 ? 0 : Int(tokenEnds[t - 1])

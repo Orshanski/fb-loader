@@ -48,9 +48,8 @@ nonisolated final class Library: Sendable {
     // MARK: - Search index (transient, built in init, NOT persisted)
     //
     // Token-level fuzzy-search keys, parallel to authors / series / books,
-    // tokens from `SearchPreprocess.tokens` packed into `TokenStore`. Built once at init,
-    // ~2 s on full Flibusta-scale catalog (581k books / 167k authors /
-    // 69k series). Light variant: per-book keeps only title tokens; for
+    // tokens from `SearchPreprocess.tokens` packed into `TokenStore`, built once at init.
+    // Light variant: per-book keeps only title tokens; for
     // book scoring the engine dispatches author/series tokens via
     // `searchAuthorIdx` / `searchSeriesIdx` lookups.
     let searchKeyAuthors: TokenStore  // parallel to authors

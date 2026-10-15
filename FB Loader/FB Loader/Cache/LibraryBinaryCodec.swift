@@ -278,8 +278,7 @@ private nonisolated struct BinaryReader {
         let at = data.startIndex + (try advance(n))
         return Array(data[at..<at + n])
     }
-    /// Числа и строки читаются прямо из `data`: через `bytes(n)` каждое значение
-    /// создавало временный массив — миллионы на загрузку.
+    /// Без временного массива на значение — их миллионы на загрузку.
     private mutating func advance(_ n: Int) throws -> Int {
         guard offset + n <= data.count else { throw LibraryBinaryCodec.DecodeError.truncated }
         defer { offset += n }
