@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Содержимое поповера, который открывается кликом по заголовку колонки
-/// «Дата». Правка полей ни на что не влияет до нажатия «Найти».
+/// «Дата». Правка полей ни на что не влияет до нажатия «Найти»; сама
+/// «Найти» активна, только когда поля разошлись с тем, что стояло в них
+/// при открытии.
 ///
 /// Календарь разворачивается внутри этого же окна, а не отдельным поповером
 /// поверх него: вложенный поповер на macOS рисуется над родительским и
@@ -13,15 +15,16 @@ struct DateFilterPopover: View {
 
     private enum Bound { case from, to }
 
-    @State private var from: Date
-    @State private var to: Date
+    /// В `@State`, а не `let`: `init` повторяется на каждой перерисовке
+    /// таблицы, а исходное состояние должно остаться тем, что при открытии.
+    @State private var draft: DateFilterDraft
     @State private var editing: Bound?
 
     init(current: DateRangeFilter?, onApply: @escaping (DateRangeFilter?) -> Void) {
         self.current = current
         self.onApply = onApply
-        _from = State(initialValue: current?.from ?? Self.defaultFrom)
-        _to = State(initialValue: current?.to ?? Date())
+        _draft = State(initialValue: DateFilterDraft(from: current?.from ?? Self.defaultFrom,
+                                                     to: current?.to ?? Date()))
     }
 
     private static let defaultFrom: Date = {
@@ -32,8 +35,8 @@ struct DateFilterPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            field("с", date: from, bound: .from)
-            field("по", date: to, bound: .to)
+            field("с", date: draft.from, bound: .from)
+            field("по", date: draft.to, bound: .to)
 
             if let editing {
                 Divider()
@@ -44,8 +47,9 @@ struct DateFilterPopover: View {
             HStack {
                 Button("Сбросить") { onApply(nil) }
                 Spacer()
-                Button("Найти") { onApply(applied()) }
+                Button("Найти") { onApply(draft.applied) }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(!draft.canApply)
             }
         }
         .padding(12)
@@ -91,18 +95,10 @@ struct DateFilterPopover: View {
     private func calendar(for bound: Bound) -> some View {
         HStack {
             Spacer(minLength: 0)
-            MonthCalendar(selection: bound == .from ? $from : $to) {
+            MonthCalendar(selection: bound == .from ? $draft.from : $draft.to) {
                 editing = nil
             }
             Spacer(minLength: 0)
         }
-    }
-
-    /// Часы обнуляются так же, как у книг при импорте, — дальше сравниваются
-    /// две полуночи.
-    private func applied() -> DateRangeFilter {
-        let cal = Calendar.current
-        return DateRangeFilter(from: cal.startOfDay(for: from),
-                               to: cal.startOfDay(for: to))
     }
 }

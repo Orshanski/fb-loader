@@ -53,6 +53,22 @@ struct DateFilterDraftTests {
         #expect(d.canApply)
     }
 
+    @Test("изменены обе границы")
+    func bothChanged() {
+        var d = draft()
+        d.from = at(2013, 3, 1)
+        d.to = at(2015, 6, 30)
+        #expect(d.canApply)
+    }
+
+    @Test("открыт с применённым фильтром — сравнение с ним, а не с умолчаниями")
+    func openedWithAppliedFilter() {
+        var d = draft(from: at(2013, 3, 1), to: at(2015, 6, 30))
+        #expect(!d.canApply)
+        d.to = at(2015, 7, 1)
+        #expect(d.canApply)
+    }
+
     @Test("изменено и возвращено — снова неактивна")
     func changedAndReverted() {
         var d = draft()
