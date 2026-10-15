@@ -9,6 +9,8 @@
 .DS_Store
 
 # Xcode
+# xcode-build-server для SourceKit-LSP: абсолютные пути к DerivedData
+buildServer.json
 build/
 DerivedData/
 xcuserdata/
