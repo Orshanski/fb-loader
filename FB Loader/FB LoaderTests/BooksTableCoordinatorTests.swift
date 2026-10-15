@@ -375,3 +375,69 @@ struct BooksTableKeyboardTests {
         #expect(h.table.hoveredRow == -1)
     }
 }
+
+@Suite("BooksTable header")
+@MainActor
+struct BooksTableHeaderTests {
+    private let dates = DateRangeFilter(from: Date(timeIntervalSinceReferenceDate: 0),
+                                        to: Date(timeIntervalSinceReferenceDate: 86_400))
+
+    @Test("шапка 33pt, без cornerView, у каждой колонки своя ячейка шапки")
+    func headerSetup() {
+        let h = BooksTableHarness()
+        #expect(h.table.headerView is BooksHeaderView)
+        #expect(h.table.headerView?.frame.height == 33)
+        #expect(h.table.cornerView == nil)
+        for column in h.table.tableColumns {
+            #expect((column.headerCell as? BooksHeaderCell)?.column.identifier == column.identifier)
+        }
+    }
+
+    @Test("состояние «Даты»: без контекста — неактивна, без фильтра — обычная, с фильтром — акцент")
+    func dateState() {
+        let h = BooksTableHarness(context: nil)
+        let header = h.table.headerView as? BooksHeaderView
+        #expect(header?.dateState == .disabled)
+        h.apply(books: BooksTableFixture.books, context: .author(1))
+        #expect(header?.dateState == .normal)
+        h.apply(books: BooksTableFixture.books, context: .author(1), dates: dates)
+        #expect(header?.dateState == .active)
+    }
+
+    @Test("нажатие на «Дату»: без контекста — игнор, с контекстом — открыть")
+    func datePressByContext() {
+        #expect(BooksTableHarness(context: nil).coordinator.datePress(at: 1) == .ignore)
+        #expect(BooksTableHarness().coordinator.datePress(at: 1) == .open)
+    }
+
+    @Test("клик, закрывший transient-поповер, поповер заново не открывает")
+    func pressThatClosedPopover() {
+        let c = BooksTableHarness().coordinator
+        c.notePopoverClosed(at: 42)
+        #expect(c.datePress(at: 42) == .close)
+        #expect(c.datePress(at: 43) == .open)
+    }
+
+    @Test("нажатие на «Дату» без контекста поповер не открывает")
+    func noPopoverWithoutContext() {
+        let h = BooksTableHarness(context: nil)
+        let dateColumn = h.table.tableColumn(withIdentifier: BookTableColumnID.date.identifier)!
+        h.coordinator.tableView(h.table, didClick: dateColumn)
+        h.coordinator.perform(.open)
+        #expect(!h.coordinator.isDatePopoverShown)
+    }
+
+    @Test("области подписей: Название с 54pt, Дата 100pt после промежутка, шеврон в 16pt от края последней колонки")
+    func contentRects() {
+        let frame = NSRect(x: 0, y: 0, width: 500, height: 33)
+        #expect(BooksHeaderCell.contentRect(for: .title, in: frame).minX == 54)
+        let date = NSRect(x: 600, y: 0, width: 126, height: 33)
+        let dateContent = BooksHeaderCell.contentRect(for: .date, in: date)
+        #expect(dateContent.minX == 610)
+        #expect(dateContent.width == 100)
+        #expect(date.maxX - dateContent.maxX == 16)
+        let genres = BooksHeaderCell.contentRect(for: .genres, in: NSRect(x: 800, y: 0, width: 246, height: 33))
+        #expect(genres.minX == 810)
+        #expect(genres.width == 220)
+    }
+}

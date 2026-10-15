@@ -310,3 +310,124 @@ final class BooksNSTableView: NSTableView {
         return super.validateProposedFirstResponder(responder, for: event)
     }
 }
+
+enum DateHeaderState: Equatable { case normal, active, disabled }
+enum DatePress: Equatable { case open, close, ignore }
+
+final class BooksHeaderCell: NSTableHeaderCell {
+    let column: BookTableColumnID
+    /// Верх подписи от верха шапки: 40pt строки заголовка + 2 = 42pt от верха панели, как в SwiftUI-шапке.
+    static let labelTop: CGFloat = 2
+
+    init(column: BookTableColumnID) {
+        self.column = column
+        super.init(textCell: column.headerTitle)
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    static func contentRect(for column: BookTableColumnID, in frame: NSRect) -> NSRect {
+        let s = BookTableColumns.spacing
+        func fixed(_ width: CGFloat) -> NSRect {
+            NSRect(x: frame.minX + s, y: frame.minY, width: width, height: frame.height)
+        }
+        switch column {
+        case .title:
+            let x = frame.minX + BookTableColumns.rowInset + BookTableColumns.checkboxWidth + s
+            return NSRect(x: x, y: frame.minY, width: frame.maxX - x, height: frame.height)
+        case .num: return fixed(BookTableColumns.numWidth)
+        case .size: return fixed(BookTableColumns.sizeWidth)
+        case .date: return fixed(BookTableColumns.dateWidth)
+        case .genres:
+            return NSRect(x: frame.minX + s, y: frame.minY,
+                          width: frame.width - s - BookTableColumns.rowInset, height: frame.height)
+        }
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        let header = controlView as? BooksHeaderView
+        var color = NSColor.secondaryLabelColor
+        if column == .date {
+            switch header?.dateState ?? .normal {
+            case .normal: break
+            case .active: color = .controlAccentColor
+            case .disabled: color = .tertiaryLabelColor
+            }
+        }
+        let text = NSAttributedString(
+            string: column.headerTitle.uppercased(),
+            attributes: [.font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+                         .kern: 0.6, .foregroundColor: color])
+        let size = text.size()
+        let content = Self.contentRect(for: column, in: cellFrame)
+        let top = cellFrame.minY + Self.labelTop
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        if column == .date, header?.isDatePressed == true {
+            NSGraphicsContext.current?.cgContext.setAlpha(0.5)
+        }
+        switch column {
+        case .title, .genres:
+            text.draw(at: NSPoint(x: content.minX, y: top))
+        case .num, .size:
+            text.draw(at: NSPoint(x: content.maxX - size.width, y: top))
+        case .date:
+            let chevron = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 7, weight: .bold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [color])))
+            let cs = chevron?.size ?? .zero
+            let chevronX = content.maxX - cs.width
+            text.draw(at: NSPoint(x: chevronX - 3 - size.width, y: top))
+            chevron?.draw(in: NSRect(x: chevronX, y: top + (size.height - cs.height) / 2,
+                                     width: cs.width, height: cs.height),
+                          from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
+    }
+}
+
+final class BooksHeaderView: NSTableHeaderView {
+    static let height: CGFloat = 33
+    var dateState: DateHeaderState = .disabled
+    private(set) var isDatePressed = false
+    var datePressAction: ((TimeInterval) -> DatePress)?
+    var performDatePress: ((DatePress) -> Void)?
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        if let tableView {
+            for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
+                column.headerCell.draw(withFrame: headerRect(ofColumn: index), in: self)
+            }
+        }
+        NSColor.separatorColor.setFill()
+        NSRect(x: bounds.minX, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
+    }
+
+    /// Без `super`: у колонок нет сортировки и выбора, кликабельна только «Дата».
+    override func mouseDown(with event: NSEvent) {
+        guard let tableView else { return }
+        let index = column(at: convert(event.locationInWindow, from: nil))
+        guard index >= 0,
+              tableView.tableColumns[index].identifier == BookTableColumnID.date.identifier,
+              let action = datePressAction?(event.timestamp), action != .ignore
+        else { return }
+        let rect = headerRect(ofColumn: index)
+        var inside = true
+        setDatePressed(true)
+        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            inside = rect.contains(convert(next.locationInWindow, from: nil))
+            setDatePressed(inside)
+            if next.type == .leftMouseUp { break }
+        }
+        setDatePressed(false)
+        if inside { performDatePress?(action) }
+    }
+
+    private func setDatePressed(_ pressed: Bool) {
+        guard pressed != isDatePressed else { return }
+        isDatePressed = pressed
+        needsDisplay = true
+    }
+}

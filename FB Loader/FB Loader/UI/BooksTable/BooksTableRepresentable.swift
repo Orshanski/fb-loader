@@ -59,12 +59,19 @@ struct BooksTableRepresentable: NSViewRepresentable {
         for id in BookTableColumnID.allCases {
             let column = NSTableColumn(identifier: id.identifier)
             column.title = id.headerTitle
+            column.headerCell = BooksHeaderCell(column: id)
             column.resizingMask = []
             column.minWidth = 0
             column.maxWidth = .greatestFiniteMagnitude
             column.isEditable = false
             table.addTableColumn(column)
         }
+
+        let header = BooksHeaderView(frame: NSRect(x: 0, y: 0, width: 0, height: BooksHeaderView.height))
+        header.datePressAction = { [weak coordinator] timestamp in coordinator?.datePress(at: timestamp) ?? .ignore }
+        header.performDatePress = { [weak coordinator] action in coordinator?.perform(action) }
+        table.headerView = header
+        table.cornerView = nil
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -81,7 +88,7 @@ struct BooksTableRepresentable: NSViewRepresentable {
         return scrollView
     }
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSPopoverDelegate {
         var model: any BooksTableModel
         var library: Library
         var exportAction: ExportAction
@@ -92,6 +99,8 @@ struct BooksTableRepresentable: NSViewRepresentable {
         private var checked: Set<Int32> = []
         /// Выделение меняет код, а не пользователь — в модель не пишем.
         private var isUpdatingSelection = false
+        private var datePopover: NSPopover?
+        private var lastPopoverCloseTimestamp: TimeInterval?
 
         init(model: any BooksTableModel, library: Library, exportAction: ExportAction) {
             self.model = model
@@ -150,6 +159,7 @@ struct BooksTableRepresentable: NSViewRepresentable {
                 withoutWritingSelection { tableView.reloadData() }
                 syncSelection(of: tableView, to: newSelected)
                 scroll(tableView, to: newRows.scrollTarget(selectedLibid: newSelected))
+                if let header = tableView.headerView as? BooksHeaderView { header.dateState = dateHeaderState }
                 tableView.headerView?.needsDisplay = true
                 tableView.updateHoverFromMouse()
             } else {
@@ -243,6 +253,64 @@ struct BooksTableRepresentable: NSViewRepresentable {
 
         func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
             (rowView as? BooksRowView)?.isHovered = row == (tableView as? BooksNSTableView)?.hoveredRow
+        }
+
+        var dateHeaderState: DateHeaderState {
+            guard let key, key.context != nil else { return .disabled }
+            return key.dates == nil ? .normal : .active
+        }
+
+        var isDatePopoverShown: Bool { datePopover?.isShown == true }
+
+        func datePress(at timestamp: TimeInterval) -> DatePress {
+            if isDatePopoverShown || lastPopoverCloseTimestamp == timestamp { return .close }
+            return dateHeaderState == .disabled ? .ignore : .open
+        }
+
+        func perform(_ action: DatePress) {
+            switch action {
+            case .ignore: break
+            case .close: datePopover?.performClose(nil)
+            case .open: showDatePopover()
+            }
+        }
+
+        func notePopoverClosed(at timestamp: TimeInterval?) {
+            lastPopoverCloseTimestamp = timestamp
+        }
+
+        private func showDatePopover() {
+            guard dateHeaderState != .disabled, !isDatePopoverShown,
+                  let tableView, let header = tableView.headerView,
+                  let column = tableView.tableColumns.firstIndex(where: {
+                      $0.identifier == BookTableColumnID.date.identifier })
+            else { return }
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.delegate = self
+            let host = NSHostingController(rootView: DateFilterPopover(current: model.dateFilter) { [weak self] next in
+                self?.model.applyDateFilter(next)
+                self?.datePopover?.performClose(nil)
+            })
+            host.sizingOptions = [.preferredContentSize]
+            popover.contentViewController = host
+            datePopover = popover
+            // Шапка flipped: .maxY — её нижний край, поповер под заголовком.
+            popover.show(relativeTo: header.headerRect(ofColumn: column), of: header, preferredEdge: .maxY)
+        }
+
+        func popoverWillClose(_: Notification) {
+            notePopoverClosed(at: NSApp.currentEvent?.timestamp)
+        }
+
+        func popoverDidClose(_: Notification) {
+            datePopover = nil
+        }
+
+        /// Мышь сюда не доходит (шапка не зовёт super.mouseDown) — только нажатие VoiceOver.
+        func tableView(_: NSTableView, didClick tableColumn: NSTableColumn) {
+            guard tableColumn.identifier == BookTableColumnID.date.identifier else { return }
+            perform(datePress(at: NSApp.currentEvent?.timestamp ?? -1))
         }
 
         // MARK: Data source / delegate
