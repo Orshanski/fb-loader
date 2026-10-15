@@ -14,8 +14,9 @@ nonisolated final class Library: Sendable {
     let books: [Book]
 
     // Secondary indices (built once, after load):
-    let authorByID: [Int32: Author]     // O(1) lookup, used by BookDetail and table rows
-    let seriesByID: [Int32: Series]     // O(1) lookup
+    // Номера в `authors`/`series`, а не копии: копия 171k `Author` стоила ~24 МБ.
+    private let authorIndexByID: [Int32: Int32]
+    private let seriesIndexByID: [Int32: Int32]
     let genreByID: [Int16: Genre]       // O(1) lookup
     /// Номер в `books`, а не копия книги: вторая копия 594k `Book` стоила десятки МБ.
     private let bookIndexByLibid: [Int32: Int32]
@@ -29,12 +30,9 @@ nonisolated final class Library: Sendable {
     let sidebarGenres: [Genre]
     let languages: [String]             // distinct languages found, sorted
 
-    /// Per-language book counts. `bookCountByAuthorByLang[authorID]?[lang]`
-    /// gives N books that author has in that language. Used by the sidebar
-    /// to hide authors whose entire output is in some other language than
-    /// the current filter, and to render language-aware "(N)" counters.
-    let bookCountByAuthorByLang: [Int32: [String: Int]]
-    let bookCountBySeriesByLang: [Int32: [String: Int]]
+    private let languageIndex: [String: UInt16]
+    private let authorLanguageCounts: LanguageCounts
+    private let seriesLanguageCounts: LanguageCounts
 
     // Lowercased names parallel to `authors` / `series`, computed once at
     // `init` time. Used by sidebar filter (AuthorsListView / SeriesListView)
@@ -89,8 +87,14 @@ nonisolated final class Library: Sendable {
         let startStatus = "[Library.init] start: \(books.count) books, \(authors.count) authors, \(series.count) series, \(genres.count) genres"
         print(startStatus)
         onStatus?(startStatus)
-        self.authorByID = Dictionary(uniqueKeysWithValues: authors.map { ($0.id, $0) })
-        self.seriesByID = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
+        var authorIndexByID: [Int32: Int32] = [:]
+        authorIndexByID.reserveCapacity(authors.count)
+        for (i, a) in authors.enumerated() { authorIndexByID[a.id] = Int32(i) }
+        self.authorIndexByID = authorIndexByID
+        var seriesIndexByID: [Int32: Int32] = [:]
+        seriesIndexByID.reserveCapacity(series.count)
+        for (i, s) in series.enumerated() { seriesIndexByID[s.id] = Int32(i) }
+        self.seriesIndexByID = seriesIndexByID
         self.genreByID = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0) })
         // `Dictionary(uniqueKeysWithValues:)` would crash on duplicate libids;
         // freeLib emits unique LIBIDs but we tolerate dup-keep-first defensively.
@@ -101,35 +105,36 @@ nonisolated final class Library: Sendable {
         print("[Library.init] *ByID dicts built")
         onStatus?("[Library.init] *ByID dicts built")
 
+        let languages = Array(Set(books.map(\.language))).sorted()
+        let languageIndex = Dictionary(uniqueKeysWithValues: languages.enumerated().map { ($1, UInt16($0)) })
         var byAuthor: [Int32: [Int]] = [:]
         var bySeries: [Int32: [Int]] = [:]
         var byGenre: [Int16: [Int]] = [:]
-        var langSet = Set<String>()
-        var byAuthorLang: [Int32: [String: Int]] = [:]
-        var bySeriesLang: [Int32: [String: Int]] = [:]
+        var authorLangKeys: [UInt64] = [], seriesLangKeys: [UInt64] = []
         var byGenreLang: [Int16: [String: Int]] = [:]
         for (i, b) in books.enumerated() {
+            let lang = UInt64(languageIndex[b.language]!)
             for aid in b.authorIDs {
                 byAuthor[aid, default: []].append(i)
-                byAuthorLang[aid, default: [:]][b.language, default: 0] += 1
+                if let a = authorIndexByID[aid] { authorLangKeys.append(UInt64(a) << 16 | lang) }
             }
             if let sid = b.seriesID {
                 bySeries[sid, default: []].append(i)
-                bySeriesLang[sid, default: [:]][b.language, default: 0] += 1
+                if let s = seriesIndexByID[sid] { seriesLangKeys.append(UInt64(s) << 16 | lang) }
             }
             for gid in b.genreIDs {
                 byGenre[gid, default: []].append(i)
                 byGenreLang[gid, default: [:]][b.language, default: 0] += 1
             }
-            langSet.insert(b.language)
         }
         self.booksByAuthor = byAuthor
         self.booksBySeries = bySeries
         self.booksByGenre = byGenre
-        self.bookCountByAuthorByLang = byAuthorLang
-        self.bookCountBySeriesByLang = bySeriesLang
+        self.authorLanguageCounts = LanguageCounts(entityCount: authors.count, keys: authorLangKeys)
+        self.seriesLanguageCounts = LanguageCounts(entityCount: series.count, keys: seriesLangKeys)
         self.bookCountByGenreByLang = byGenreLang
-        self.languages = Array(langSet).sorted()
+        self.languages = languages
+        self.languageIndex = languageIndex
         self.lowercasedAuthorNames = authors.map { $0.displayName.lowercased() }
         self.lowercasedSeriesNames = series.map { $0.name.lowercased() }
         self.lowercasedGenreNames = Dictionary(uniqueKeysWithValues: genres.map { ($0.id, $0.name.lowercased()) })
@@ -167,8 +172,8 @@ nonisolated final class Library: Sendable {
         } + orphans
         self.sidebarGenres = sidebarGenres
         self.lowercasedSidebarGenreNames = sidebarGenres.map { $0.name.lowercased() }
-        print("[Library.init] secondary indices built; \(langSet.count) distinct languages")
-        onStatus?("[Library.init] secondary indices built; \(langSet.count) distinct languages")
+        print("[Library.init] secondary indices built; \(languages.count) distinct languages")
+        onStatus?("[Library.init] secondary indices built; \(languages.count) distinct languages")
 
         // Search-ключи строятся синхронно — пользователь видит «Считаем
         // индексы поиска…» как часть нормальной загрузки каталога. Стоимость
@@ -196,25 +201,17 @@ nonisolated final class Library: Sendable {
         aIdx.reserveCapacity(books.count)
         var sIdx: [Int32] = []
         sIdx.reserveCapacity(books.count)
-        // Lookup tables: id → index (мы уже строили *byID Dictionary, но
-        // нам нужен индекс в массивах authors/series, не сам объект).
-        var authorIndexByID: [Int32: Int] = [:]
-        authorIndexByID.reserveCapacity(authors.count)
-        for (i, a) in authors.enumerated() { authorIndexByID[a.id] = i }
-        var seriesIndexByID: [Int32: Int] = [:]
-        seriesIndexByID.reserveCapacity(series.count)
-        for (i, s) in series.enumerated() { seriesIndexByID[s.id] = i }
         for b in books {
             sTitles.appendTokenized(b.title)
             // Primary author: first authorID; -1 if missing.
             if let firstAID = b.authorIDs.first,
                let idx = authorIndexByID[firstAID] {
-                aIdx.append(Int32(idx))
+                aIdx.append(idx)
             } else {
                 aIdx.append(-1)
             }
             if let sid = b.seriesID, let idx = seriesIndexByID[sid] {
-                sIdx.append(Int32(idx))
+                sIdx.append(idx)
             } else {
                 sIdx.append(-1)
             }
@@ -259,5 +256,23 @@ nonisolated final class Library: Sendable {
 
     func book(libid: Int32) -> Book? {
         bookIndexByLibid[libid].map { books[Int($0)] }
+    }
+
+    func author(id: Int32) -> Author? {
+        authorIndexByID[id].map { authors[Int($0)] }
+    }
+
+    func series(id: Int32) -> Series? {
+        seriesIndexByID[id].map { series[Int($0)] }
+    }
+
+    func bookCount(authorID: Int32, language: String) -> Int {
+        guard let a = authorIndexByID[authorID], let l = languageIndex[language] else { return 0 }
+        return authorLanguageCounts.count(entity: Int(a), language: l)
+    }
+
+    func bookCount(seriesID: Int32, language: String) -> Int {
+        guard let s = seriesIndexByID[seriesID], let l = languageIndex[language] else { return 0 }
+        return seriesLanguageCounts.count(entity: Int(s), language: l)
     }
 }

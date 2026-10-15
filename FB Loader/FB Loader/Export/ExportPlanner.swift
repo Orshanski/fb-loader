@@ -27,7 +27,7 @@ nonisolated enum ExportPlanner {
         return libids.compactMap { library.book(libid: $0) }.map { book in
             let folderName = folderName(for: book,
                                         selectedAuthorID: selectedAuthorID,
-                                        authorsByID: library.authorByID)
+                                        library: library)
             let folder = rootFolder.appendingPathComponent(sanitized(folderName), isDirectory: true)
             let dest = folder.appendingPathComponent(sanitized(book.title) + ".fb2")
             return ExportItem(book: book, archiveURL: nil, destination: dest)
@@ -36,14 +36,14 @@ nonisolated enum ExportPlanner {
 
     private static func folderName(for book: Book,
                                    selectedAuthorID: Int32?,
-                                   authorsByID: [Int32: Author]) -> String {
+                                   library: Library) -> String {
         // 1. If user has selected an author in the sidebar — use that author's name,
         //    even if they are not the first author of the book.
-        if let aid = selectedAuthorID, let a = authorsByID[aid] {
+        if let aid = selectedAuthorID, let a = library.author(id: aid) {
             return a.displayName
         }
         // 2. Else use the first author of the book.
-        if let firstID = book.authorIDs.first, let a = authorsByID[firstID] {
+        if let firstID = book.authorIDs.first, let a = library.author(id: firstID) {
             return a.displayName
         }
         return Author.unknown.displayName

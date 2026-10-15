@@ -108,7 +108,7 @@ struct BookDetailView: View {
             label("Авторы")
             FlowLayout(spacing: 4, lineSpacing: 4) {
                 ForEach(book.authorIDs, id: \.self) { aid in
-                    if let author = library.authorByID[aid] {
+                    if let author = library.author(id: aid) {
                         Chip(title: author.displayName) {
                             onSelectAuthor(aid)
                         }
@@ -120,7 +120,7 @@ struct BookDetailView: View {
 
     @ViewBuilder
     private var seriesBlock: some View {
-        if let sid = book.seriesID, let s = library.seriesByID[sid] {
+        if let sid = book.seriesID, let s = library.series(id: sid) {
             VStack(alignment: .leading, spacing: 4) {
                 label("Серия")
                 Chip(title: seriesChipTitle(s)) {

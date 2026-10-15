@@ -137,7 +137,7 @@ struct INPXImporterTests {
         #expect(book.libid == 42)
         #expect(book.title == "Пикник на обочине")
         #expect(book.archiveEntryName == "picnic.fb2")
-        #expect(lib.authorByID[book.authorIDs[0]]?.lastName == "Стругацкий")
+        #expect(lib.author(id: book.authorIDs[0])?.lastName == "Стругацкий")
     }
 
     @Test("сверхдлинное имя файла — запись отбрасывается: обрезанное в архиве не найдётся")

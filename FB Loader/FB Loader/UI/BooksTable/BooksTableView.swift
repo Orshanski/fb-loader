@@ -45,10 +45,10 @@ struct BooksTableView: View {
         }
         // O(1) series name lookup via the secondary index from Library.init.
         for (sectionOffset, entry) in bySeries.sorted(by: {
-            (library.seriesByID[$0.key]?.name ?? "") < (library.seriesByID[$1.key]?.name ?? "")
+            (library.series(id: $0.key)?.name ?? "") < (library.series(id: $1.key)?.name ?? "")
         }).enumerated() {
             let (sid, items) = entry
-            let s = library.seriesByID[sid] ?? Series(id: sid, name: "?")
+            let s = library.series(id: sid) ?? Series(id: sid, name: "?")
             let sorted = items.sorted { ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max) }
             let entries = sorted.enumerated().map { offset, book in
                 GroupedRow.BookEntry(id: "sb-\(sid)-\(book.libid)-\(offset)", book: book)
@@ -178,10 +178,10 @@ struct BooksTableView: View {
     private var titleLabel: (prefix: String, name: String)? {
         switch state.sidebar {
         case .authors(let id?):
-            guard let author = library.authorByID[id] else { return nil }
+            guard let author = library.author(id: id) else { return nil }
             return ("Книги автора", author.displayName)
         case .series(let id?):
-            guard let series = library.seriesByID[id] else { return nil }
+            guard let series = library.series(id: id) else { return nil }
             return ("Серия", series.name)
         case .genres(let id?):
             guard let genre = library.genreByID[id] else { return nil }

@@ -108,9 +108,9 @@ struct SearchAuthorBlock: View {
             else { loose.append(b) }
         }
         let groups: [SeriesGroup] = bySeries
-            .sorted { (library.seriesByID[$0.key]?.name ?? "") < (library.seriesByID[$1.key]?.name ?? "") }
+            .sorted { (library.series(id: $0.key)?.name ?? "") < (library.series(id: $1.key)?.name ?? "") }
             .map { (sid, items) in
-                let s = library.seriesByID[sid]
+                let s = library.series(id: sid)
                 return SeriesGroup(
                     seriesID: sid,
                     seriesName: s?.name ?? "?",
