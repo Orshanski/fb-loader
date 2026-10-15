@@ -1,9 +1,8 @@
 import Foundation
 import CoreGraphics
 
-/// Размер зоны главного окна, запоминаемый между запусками. У `HSplitView`/
-/// `VSplitView` нет autosave: размер замеряется и при следующем запуске
-/// подаётся зоне как ideal.
+/// Размер зоны главного окна, запоминаемый между запусками: пределы, ключ
+/// в defaults и прижатие сохранённого значения к пределам.
 nonisolated struct PaneDimension: Sendable {
     let key: String
     let min: CGFloat

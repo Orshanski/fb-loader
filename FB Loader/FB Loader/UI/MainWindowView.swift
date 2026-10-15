@@ -6,8 +6,6 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var state
     @State private var sidebarVisible = true
     @State private var showSearch = false
-    @State private var sidebarWidth = PaneDimension.sidebarWidth.restore(from: .standard)
-    @State private var bookDetailHeight = PaneDimension.bookDetailHeight.restore(from: .standard)
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -16,8 +14,7 @@ struct MainWindowView: View {
         HSplitView {
             if sidebarVisible {
                 LeftSidebarView(library: library, onOpenSearch: { showSearch = true })
-                    .modifier(RestoredPaneSize(
-                        axis: .horizontal, dimension: .sidebarWidth, size: $sidebarWidth))
+                    .modifier(RestoredPaneSize(axis: .horizontal, dimension: .sidebarWidth))
             }
             VSplitView {
                 BooksTableView(library: library)
@@ -40,8 +37,7 @@ struct MainWindowView: View {
                         }
                     )
                         .frame(maxWidth: .infinity)
-                        .modifier(RestoredPaneSize(
-                            axis: .vertical, dimension: .bookDetailHeight, size: $bookDetailHeight))
+                        .modifier(RestoredPaneSize(axis: .vertical, dimension: .bookDetailHeight))
                 } else {
                     Text("Выберите книгу")
                         .foregroundStyle(.secondary)
@@ -53,14 +49,6 @@ struct MainWindowView: View {
             .layoutPriority(1)
         }
         .frame(minWidth: 1000, minHeight: 640)
-        // Пишем в defaults после паузы, а не на каждый пиксель перетаскивания:
-        // `task(id:)` отменяет прежнее ожидание при каждом новом замере.
-        .task(id: sidebarWidth) {
-            await persist(sidebarWidth, as: .sidebarWidth)
-        }
-        .task(id: bookDetailHeight) {
-            await persist(bookDetailHeight, as: .bookDetailHeight)
-        }
         .sheet(isPresented: $showSearch) {
             SearchWindowView(
                 library: library,
@@ -116,14 +104,6 @@ struct MainWindowView: View {
         }
     }
 
-    private func persist(_ value: CGFloat, as dimension: PaneDimension) async {
-        try? await Task.sleep(for: .milliseconds(500))
-        guard !Task.isCancelled else { return }
-        dimension.save(value, to: .standard)
-    }
-
-    /// 80% главного окна — по 10% полей с каждой стороны. Читается в момент
-    /// открытия sheet'а.
     private func searchSheetSize() -> CGSize {
         if let main = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && !$0.isSheet }) {
             let parent = main.frame.size
@@ -194,22 +174,40 @@ private extension NSOpenPanel {
     }
 }
 
-/// Размер зоны split view, запоминаемый между запусками.
+/// Свой `@State` у модификатора: замеры на каждом кадре перетаскивания
+/// перерисовывают только его, а не всё главное окно.
 private struct RestoredPaneSize: ViewModifier {
     let axis: Axis
     let dimension: PaneDimension
-    @Binding var size: CGFloat
+    @State private var size: CGFloat
+    @State private var placed = false
+
+    init(axis: Axis, dimension: PaneDimension) {
+        self.axis = axis
+        self.dimension = dimension
+        _size = State(initialValue: dimension.restore(from: .standard))
+    }
 
     func body(content: Content) -> some View {
         content
             .frame(minWidth: axis == .horizontal ? dimension.min : nil,
                    maxWidth: axis == .horizontal ? dimension.max : nil,
                    minHeight: axis == .vertical ? dimension.min : nil)
-            .background(SplitDividerPlacer(axis: axis, size: size))
+            .background(SplitDividerPlacer(axis: axis, size: size) { placed = true })
             .onGeometryChange(for: CGFloat.self) { proxy in
                 axis == .horizontal ? proxy.size.width : proxy.size.height
             } action: { new in
-                size = new
+                // До установки разделителя split view показывает свой размер,
+                // а не восстановленный — такой замер затёр бы сохранённый.
+                if placed { size = new }
+            }
+            // Пишем в defaults после паузы, а не на каждый пиксель перетаскивания:
+            // `task(id:)` отменяет прежнее ожидание при каждом новом замере.
+            .task(id: placed ? size : -1) {
+                guard placed else { return }
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                dimension.save(size, to: .standard)
             }
     }
 }
@@ -222,18 +220,25 @@ private struct RestoredPaneSize: ViewModifier {
 private struct SplitDividerPlacer: NSViewRepresentable {
     let axis: Axis
     let size: CGFloat
+    let onPlaced: () -> Void
 
-    func makeNSView(context: Context) -> PlacerView { PlacerView(axis: axis, size: size) }
+    func makeNSView(context: Context) -> PlacerView {
+        PlacerView(axis: axis, size: size, onPlaced: onPlaced)
+    }
     func updateNSView(_: PlacerView, context: Context) {}
 
     final class PlacerView: NSView {
         private let axis: Axis
         private let size: CGFloat
-        private var placed = false
+        private let onPlaced: () -> Void
+        private var scheduled = false
+        /// 20 × 50 мс: окно успевает показаться в восстановленной рамке.
+        private let maxAttempts = 20
 
-        init(axis: Axis, size: CGFloat) {
+        init(axis: Axis, size: CGFloat, onPlaced: @escaping () -> Void) {
             self.axis = axis
             self.size = size
+            self.onPlaced = onPlaced
             super.init(frame: .zero)
         }
 
@@ -241,28 +246,43 @@ private struct SplitDividerPlacer: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            guard window != nil, !placed else { return }
-            placed = true
-            // Split view раскладывает зоны после вставки — ставим разделитель следом.
-            DispatchQueue.main.async { [weak self] in self?.placeDivider() }
+            guard window != nil, !scheduled else { return }
+            scheduled = true
+            DispatchQueue.main.async { [weak self] in self?.placeDivider(attempt: 1) }
         }
 
-        private func placeDivider() {
+        private func placeDivider(attempt: Int) {
+            guard let split = enclosingSplitView() else {
+                assertionFailure("SplitDividerPlacer: NSSplitView не найден среди предков")
+                return
+            }
+            let extent = axis == .horizontal ? split.bounds.width : split.bounds.height
+            let fits = extent > size + split.dividerThickness
+            if (window?.isVisible != true || !fits), attempt < maxAttempts {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.placeDivider(attempt: attempt + 1)
+                }
+                return
+            }
+            onPlaced()
+            // В обоих split view одна пара зон, разделитель всегда первый.
+            // Карточка — нижняя зона, поэтому позиция отсчитывается снизу.
+            if axis == .horizontal {
+                split.setPosition(size, ofDividerAt: 0)
+            } else {
+                split.setPosition(extent - size - split.dividerThickness, ofDividerAt: 0)
+            }
+        }
+
+        private func enclosingSplitView() -> NSSplitView? {
             var view = superview
             while let current = view {
-                // Ближайший предок нужной ориентации; в обоих split view одна
-                // пара зон, разделитель всегда первый. Карточка — нижняя зона.
                 if let split = current as? NSSplitView, split.isVertical == (axis == .horizontal) {
-                    if axis == .horizontal {
-                        split.setPosition(size, ofDividerAt: 0)
-                    } else {
-                        split.setPosition(split.bounds.height - size - split.dividerThickness,
-                                          ofDividerAt: 0)
-                    }
-                    return
+                    return split
                 }
                 view = current.superview
             }
+            return nil
         }
     }
 }
