@@ -50,3 +50,53 @@ nonisolated struct BookTableColumns: Equatable, Sendable {
         return BookTableColumns(showsSize: showsSize, showsGenres: false, genresWidth: 0)
     }
 }
+
+nonisolated enum BookTableColumnID: String, CaseIterable, Sendable {
+    case title, num, size, date, genres
+
+    var headerTitle: String {
+        switch self {
+        case .title: "Название"
+        case .num: "№"
+        case .size: "Размер"
+        case .date: "Дата"
+        case .genres: "Жанры"
+        }
+    }
+}
+
+nonisolated struct BookTableColumnLayout: Equatable, Sendable {
+    let title: CGFloat
+    let num: CGFloat
+    let size: CGFloat?
+    let date: CGFloat
+    let genres: CGFloat?
+
+    func width(of column: BookTableColumnID) -> CGFloat? {
+        switch column {
+        case .title: title
+        case .num: num
+        case .size: size
+        case .date: date
+        case .genres: genres
+        }
+    }
+
+    var totalWidth: CGFloat { title + num + (size ?? 0) + date + (genres ?? 0) }
+}
+
+nonisolated extension BookTableColumns {
+    static let rowInset: CGFloat = 16
+
+    /// Ширины колонок NSTableView при `intercellSpacing = 0`: промежуток 10
+    /// входит в колонку слева, отступ строки 16 — в первую и последнюю.
+    static func columnLayout(forWidth width: CGFloat) -> BookTableColumnLayout {
+        let v = visibleColumns(forWidth: width)
+        let num = spacing + numWidth
+        let size: CGFloat? = v.showsSize ? spacing + sizeWidth : nil
+        let genres: CGFloat? = v.showsGenres ? spacing + v.genresWidth + rowInset : nil
+        let date = spacing + dateWidth + (genres == nil ? rowInset : 0)
+        let title = width - num - (size ?? 0) - date - (genres ?? 0)
+        return BookTableColumnLayout(title: title, num: num, size: size, date: date, genres: genres)
+    }
+}

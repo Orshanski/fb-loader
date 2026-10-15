@@ -9,7 +9,7 @@ import Foundation
 /// ловит warning «main actor-isolated property … referenced from a
 /// nonisolated context».
 nonisolated enum BooksByContext {
-    enum Context { case author(Int32), series(Int32), genre(Int16) }
+    enum Context: Equatable { case author(Int32), series(Int32), genre(Int16) }
     /// Sentinel token used in the language filter to mean "language not set in INPX".
     static let unspecifiedLanguageToken = "__none__"
 

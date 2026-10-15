@@ -9,16 +9,9 @@ final class ExportAction {
 struct BooksTableView: View {
     let library: Library
     let exportAction: ExportAction
-    @State private var columns: BookTableColumns = .standard
 
     var body: some View {
-        // Ширина замеряется снаружи таблицы и доходит до шапки и строк через
-        // окружение: иначе каждый шаг ресайза пересчитывал бы выборку книг.
         BooksTableContent(library: library, exportAction: exportAction)
-            .environment(\.bookTableColumns, columns)
-            .onGeometryChange(for: BookTableColumns.self) { proxy in
-                BookTableColumns.visibleColumns(forWidth: proxy.size.width)
-            } action: { columns = $0 }
     }
 }
 
@@ -26,18 +19,6 @@ private struct BooksTableContent: View {
     let library: Library
     let exportAction: ExportAction
     @Environment(AppState.self) private var state
-    @State private var showDateFilter = false
-
-    private struct GroupedRow: Identifiable {
-        struct BookEntry: Identifiable {
-            let id: String
-            let book: Book
-        }
-
-        enum Kind { case loose(Book); case seriesHeader(Series, [BookEntry]) }
-        let id: String
-        let kind: Kind
-    }
 
     private var context: BooksByContext.Context? {
         switch state.sidebar {
@@ -56,109 +37,28 @@ private struct BooksTableContent: View {
                                              in: library)
     }
 
-    private func groups(from books: [Book]) -> [GroupedRow] {
-        var loose: [Book] = []
-        var bySeries: [Int32: [Book]] = [:]
-        for b in books {
-            if let sid = b.seriesID { bySeries[sid, default: []].append(b) }
-            else { loose.append(b) }
-        }
-        var rows: [GroupedRow] = loose.enumerated().map { offset, book in
-            GroupedRow(id: "b-\(book.libid)-\(offset)", kind: .loose(book))
-        }
-        // O(1) series name lookup via the secondary index from Library.init.
-        for (sectionOffset, entry) in bySeries.sorted(by: {
-            (library.series(id: $0.key)?.name ?? "") < (library.series(id: $1.key)?.name ?? "")
-        }).enumerated() {
-            let (sid, items) = entry
-            let s = library.series(id: sid) ?? Series(id: sid, name: "?")
-            let sorted = items.sorted { ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max) }
-            let entries = sorted.enumerated().map { offset, book in
-                GroupedRow.BookEntry(id: "sb-\(sid)-\(book.libid)-\(offset)", book: book)
-            }
-            rows.append(GroupedRow(id: "s-\(sid)-\(sectionOffset)", kind: .seriesHeader(s, entries)))
-        }
-        return rows
-    }
-
     var body: some View {
-        @Bindable var s = state
-        // Считается один раз за проход body: и счётчик в шапке, и список
-        // берут отсюда — раньше тот же фильтр выполнялся дважды.
+        // Выборка и строки — только здесь и только при смене контекста, языка,
+        // фильтра дат: выбор и галочки body не читает, их читает updateNSView.
         let result = visibleBooks
-        // Шапка живёт ВНУТРИ ScrollView закреплённой секцией. Снаружи она
-        // была шире строк ровно на ширину полосы прокрутки, и подписи
-        // колонок стояли правее своих значений.
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(groups(from: result.books)) { row in
-                        switch row.kind {
-                        case .loose(let b):
-                            bookRow(for: b, indented: false, state: s)
-                        case .seriesHeader(let series, let items):
-                            seriesGroupHeader(series, count: items.count)
-                            ForEach(items) { item in
-                                bookRow(for: item.book, indented: true, state: s)
-                            }
-                        }
-                    }
-                } header: {
-                    VStack(spacing: 0) {
-                        header(count: result.books.count, total: result.total)
-                        Divider()
-                    }
-                    .background(Color(nsColor: .windowBackgroundColor))
-                }
-            }
-            .padding(.bottom, 4)
+        let rows = BookTableRows.build(books: result.books, library: library)
+        let key = BooksTableKey(context: context, language: state.languageFilter, dates: state.dateFilter)
+        VStack(spacing: 0) {
+            titleRow(count: result.books.count, total: result.total)
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: 40, alignment: .top)
+                .background(Color(nsColor: .windowBackgroundColor))
+            BooksTableRepresentable(state: state, library: library, rows: rows, key: key,
+                                    exportAction: exportAction)
         }
-    }
-
-    @ViewBuilder
-    private func bookRow(for b: Book, indented: Bool, state s: AppState) -> some View {
-        BookRow(
-            book: b,
-            library: library,
-            indented: indented,
-            isChecked: Binding(
-                get: { s.checkedBookLibids.contains(b.libid) },
-                set: { isOn in
-                    if isOn { s.checkedBookLibids.insert(b.libid) }
-                    else    { s.checkedBookLibids.remove(b.libid) }
-                }
-            ),
-            isSelected: Binding(
-                get: { s.selectedBookLibid == b.libid },
-                set: { newValue in if newValue { s.selectedBookLibid = b.libid } }
-            ),
-            contextMenuBuilder: {
-                AnyView(
-                    Button("Выгрузить отмеченные (\(s.checkedBookLibids.count))") {
-                        exportAction.perform()
-                    }
-                    .disabled(s.checkedBookLibids.isEmpty)
-                )
-            }
-        )
-    }
-
-    // MARK: - Header
-
-    private func header(count: Int, total: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            titleRow(count: count, total: total)
-            ColumnsHeaderRow(dateButton: dateColumnButton)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 72)
     }
 
     @ViewBuilder
     private func titleRow(count: Int, total: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            // Шапка фиксированной высоты 72pt: вторая строка названия обрезала
-            // бы подписи колонок, поэтому длинное имя усекается.
+            // Строка заголовка фиксированной высоты: длинное имя усекается, а не переносится.
             if let label = titleLabel {
                 Text(label.prefix).foregroundStyle(.secondary)
                     .fixedSize()
@@ -228,78 +128,6 @@ private struct BooksTableContent: View {
         else if mod10 >= 2 && mod10 <= 4 { word = "книги" }
         else { word = "книг" }
         return "\(n) \(word)"
-    }
-
-    /// Заголовок колонки «Дата» — кнопка, открывающая поповер фильтра.
-    /// Занимает ровно `BookTableColumns.dateWidth` и ровно тем же `Text`, что и
-    /// остальные заголовки: любой значок внутри этой ширины сдвинул бы
-    /// подпись относительно значений в строках. Кликабельность показывается
-    /// подсветкой при наведении, а активный фильтр — цветом.
-    private var dateColumnButton: some View {
-        Button {
-            showDateFilter = true
-        } label: {
-            // Правый край колонки держит шеврон, а подпись стоит левее — как
-            // индикатор сортировки в Finder. Требовать, чтобы слово «Дата»
-            // само упиралось в край, незачем.
-            HStack(spacing: 3) {
-                Text("Дата")
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .bold))
-            }
-            .frame(width: BookTableColumns.dateWidth, alignment: .trailing)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(state.dateFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
-        .disabled(context == nil)
-        .popover(isPresented: $showDateFilter, arrowEdge: .bottom) {
-            DateFilterPopover(current: state.dateFilter) { next in
-                state.applyDateFilter(next)
-                showDateFilter = false
-            }
-        }
-    }
-
-    // MARK: - Series group header
-
-    private func seriesGroupHeader(_ s: Series, count: Int) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(s.name).font(.system(size: 13, weight: .semibold))
-            Text("(\(count))").font(.system(size: 12)).foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-    }
-}
-
-private struct ColumnsHeaderRow<DateButton: View>: View {
-    let dateButton: DateButton
-    @Environment(\.bookTableColumns) private var columns
-
-    var body: some View {
-        HStack(spacing: BookTableColumns.spacing) {
-            Spacer().frame(width: BookTableColumns.checkboxWidth)
-            Text("Название")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("№")
-                .frame(width: BookTableColumns.numWidth, alignment: .trailing)
-            if columns.showsSize {
-                Text("Размер")
-                    .frame(width: BookTableColumns.sizeWidth, alignment: .trailing)
-            }
-            dateButton
-            if columns.showsGenres {
-                Text("Жанры")
-                    .frame(width: columns.genresWidth, alignment: .leading)
-            }
-        }
-        .font(.system(size: 10, weight: .semibold))
-        .textCase(.uppercase)
-        .kerning(0.6)
-        .foregroundStyle(.secondary)
     }
 }
 

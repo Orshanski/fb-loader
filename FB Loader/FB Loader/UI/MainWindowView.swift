@@ -95,8 +95,8 @@ struct MainWindowView: View {
             sidebarVisible: sidebarVisible,
             toggleSidebar: { sidebarVisible.toggle() },
             openSearch: { showSearch = true }))
-        // Таблица книг — ScrollView, а её содержимое macOS пускает под панель
-        // окна: без непрозрачного фона строки просвечивают в полосе заголовка.
+        // Непрозрачная панель окна: под прозрачной просвечивает прокручиваемое
+        // содержимое, которое macOS пускает под неё.
         .toolbarBackground(.visible, for: .windowToolbar)
         .sheet(item: Binding(
             get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },

@@ -98,4 +98,30 @@ struct BookTableColumnsTests {
         #expect(C.standard.showsGenres)
         #expect(C.standard.genresWidth == C.genresIdealWidth)
     }
+
+    @Test("columnLayout: сумма ширин = ширине, Дата видна, последняя колонка содержит 16 справа",
+          arguments: [CGFloat(1400), 640, 639, 510, 509, BookTableColumns.minimumPaneWidth])
+    func columnLayoutSums(width: CGFloat) {
+        let l = C.columnLayout(forWidth: width)
+        let v = C.visibleColumns(forWidth: width)
+        #expect(l.totalWidth == width)
+        #expect(l.num == C.spacing + C.numWidth)
+        #expect((l.size != nil) == v.showsSize)
+        #expect((l.genres != nil) == v.showsGenres)
+        if let genres = l.genres {
+            #expect(genres == C.spacing + v.genresWidth + C.rowInset)
+            #expect(l.date == C.spacing + C.dateWidth)
+        } else {
+            #expect(l.date == C.spacing + C.dateWidth + C.rowInset)
+        }
+        #expect(l.title >= C.rowInset + C.checkboxWidth + C.spacing + C.titleMinWidth)
+        #expect(l.width(of: .date) == l.date)
+        #expect(l.width(of: .size) == l.size)
+        #expect(l.width(of: .genres) == l.genres)
+    }
+
+    @Test("заголовки колонок")
+    func headerTitles() {
+        #expect(BookTableColumnID.allCases.map(\.headerTitle) == ["Название", "№", "Размер", "Дата", "Жанры"])
+    }
 }
