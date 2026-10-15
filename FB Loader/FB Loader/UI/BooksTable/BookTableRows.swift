@@ -61,3 +61,39 @@ nonisolated struct BookTableRows: Sendable {
         return BookTableRows(rows: result)
     }
 }
+
+nonisolated extension BookTableRows {
+    /// Заголовок серии не выбирается: клавиатура перескакивает его по
+    /// направлению движения, мышь оставляет прежний выбор.
+    func resolveSelection(proposed: Int?, current: Int?, byKeyboard: Bool) -> Int? {
+        guard let p = proposed, rows.indices.contains(p) else { return current }
+        if isBook(p) { return p }
+        guard byKeyboard else { return current }
+        let downward = current.map { p > $0 } ?? true
+        if downward {
+            return (p + 1 ..< rows.count).first(where: isBook) ?? current
+        }
+        return (0 ..< p).reversed().first(where: isBook) ?? current
+    }
+
+    enum ScrollTarget: Equatable, Sendable {
+        case top
+        case row(Int, header: Int?)
+    }
+
+    func scrollTarget(selectedLibid: Int32?) -> ScrollTarget {
+        guard let libid = selectedLibid, let r = row(ofLibid: libid) else { return .top }
+        let header = r > 0 && !isBook(r - 1) ? r - 1 : nil
+        return .row(r, header: header)
+    }
+}
+
+nonisolated enum SpaceRoute: Equatable, Sendable {
+    case toggleCheck, typeSelect
+}
+
+/// Пробел внутри набора type-select («Война и мир») — часть поиска, а не галочка.
+nonisolated func spaceRoute(lastTypeSelectKey: Date?, now: Date) -> SpaceRoute {
+    guard let last = lastTypeSelectKey else { return .toggleCheck }
+    return now.timeIntervalSince(last) < 1 ? .typeSelect : .toggleCheck
+}

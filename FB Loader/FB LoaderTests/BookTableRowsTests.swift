@@ -93,4 +93,58 @@ struct BookTableRowsTests {
         #expect(r.count == 0)
         #expect(BookTableRows.empty.count == 0)
     }
+
+    /// 0: книга 1, 1: [S], 2: книга 2, 3: книга 3, 4: [T], 5: книга 4.
+    private var rowsA: BookTableRows {
+        BookTableRows(rows: [
+            .book(book(1), inSeries: false),
+            .seriesHeader(Series(id: 1, name: "S"), count: 2),
+            .book(book(2, series: 1), inSeries: true),
+            .book(book(3, series: 1), inSeries: true),
+            .seriesHeader(Series(id: 2, name: "T"), count: 1),
+            .book(book(4, series: 2), inSeries: true),
+        ])
+    }
+
+    /// 0: [S], 1: книга 1, 2: книга 2.
+    private var rowsB: BookTableRows {
+        BookTableRows(rows: [
+            .seriesHeader(Series(id: 1, name: "S"), count: 2),
+            .book(book(1, series: 1), inSeries: true),
+            .book(book(2, series: 1), inSeries: true),
+        ])
+    }
+
+    @Test("клавиатура: заголовок ниже текущей — следующая книга, выше — предыдущая")
+    func keyboardSkipsHeader() {
+        #expect(rowsA.resolveSelection(proposed: 4, current: 3, byKeyboard: true) == 5)
+        #expect(rowsA.resolveSelection(proposed: 4, current: 5, byKeyboard: true) == 3)
+    }
+
+    @Test("клавиатура: заголовок в строке 0 без текущей — строка 1; ↑ на первой книге — текущая")
+    func keyboardEdges() {
+        #expect(rowsB.resolveSelection(proposed: 0, current: nil, byKeyboard: true) == 1)
+        #expect(rowsB.resolveSelection(proposed: 0, current: 1, byKeyboard: true) == 1)
+    }
+
+    @Test("мышь на заголовке — текущая; пустое — текущая; книга — книга")
+    func mouseAndEmpty() {
+        #expect(rowsA.resolveSelection(proposed: 1, current: 3, byKeyboard: false) == 3)
+        #expect(rowsA.resolveSelection(proposed: 1, current: nil, byKeyboard: false) == nil)
+        #expect(rowsA.resolveSelection(proposed: nil, current: 2, byKeyboard: false) == 2)
+        #expect(rowsA.resolveSelection(proposed: nil, current: 2, byKeyboard: true) == 2)
+        #expect(rowsA.resolveSelection(proposed: 5, current: 0, byKeyboard: false) == 5)
+        #expect(rowsA.resolveSelection(proposed: 5, current: 0, byKeyboard: true) == 5)
+        #expect(rowsA.resolveSelection(proposed: 99, current: 0, byKeyboard: true) == 0)
+    }
+
+    @Test("scrollTarget: нет выбранной или нет в строках — к началу; книга — строка и заголовок серии")
+    func scrollTargets() {
+        #expect(rowsA.scrollTarget(selectedLibid: nil) == .top)
+        #expect(rowsA.scrollTarget(selectedLibid: 99) == .top)
+        #expect(rowsA.scrollTarget(selectedLibid: 1) == .row(0, header: nil))
+        #expect(rowsA.scrollTarget(selectedLibid: 2) == .row(2, header: 1))
+        #expect(rowsA.scrollTarget(selectedLibid: 3) == .row(3, header: nil))
+        #expect(rowsB.scrollTarget(selectedLibid: 1) == .row(1, header: 0))
+    }
 }
