@@ -45,8 +45,6 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
 
         tableView.dataSource = context.coordinator
         tableView.delegate = context.coordinator
-        tableView.target = context.coordinator
-        tableView.action = #selector(Coordinator.handleClick(_:))
 
         scrollView.documentView = tableView
         return scrollView
@@ -74,24 +72,18 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.itemCount = newCount
         coordinator.firstID = firstID
         coordinator.lastID = lastID
-        if dataChanged {
-            tableView.reloadData()
-        } else {
-            let visibleRows = tableView.rows(in: tableView.visibleRect)
-            if visibleRows.length > 0 {
-                tableView.reloadData(forRowIndexes: IndexSet(integersIn: visibleRows.location..<visibleRows.location + visibleRows.length),
-                                     columnIndexes: IndexSet(integer: 0))
+        coordinator.withoutWritingSelection {
+            if dataChanged {
+                tableView.reloadData()
+            } else {
+                let visibleRows = tableView.rows(in: tableView.visibleRect)
+                if visibleRows.length > 0 {
+                    tableView.reloadData(forRowIndexes: IndexSet(integersIn: visibleRows.location..<visibleRows.location + visibleRows.length),
+                                         columnIndexes: IndexSet(integer: 0))
+                }
             }
         }
-
-        // Sync selection from the SwiftUI binding into the NSTableView.
-        if let id = selectedID, let row = items.firstIndex(where: { $0.id == id }) {
-            if tableView.selectedRow != row {
-                tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            }
-        } else if tableView.selectedRow != -1 {
-            tableView.deselectAll(nil)
-        }
+        coordinator.syncSelection(of: tableView, to: selectedID)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -111,6 +103,10 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         var trailingLabelFor: ((Item) -> String)?
         var rowStyleFor: (Item) -> SidebarRowStyle
         var binding: Binding<Item.ID?>
+        /// Выделение меняет сам код (перезагрузка строк, синхронизация с моделью),
+        /// а не пользователь — в модель не пишем. Иначе выбранный автор, скрытый
+        /// фильтром сайдбара, сбрасывался бы в `nil` вместе с превью и галочками.
+        private var isUpdatingSelection = false
 
         init(items: [Item], labelFor: @escaping (Item) -> String,
              trailingLabelFor: ((Item) -> String)?,
@@ -163,13 +159,30 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             return cell
         }
 
-        @objc func handleClick(_ sender: NSTableView) {
-            let row = sender.selectedRow
-            if row >= 0 && row < items.count {
-                binding.wrappedValue = items[row].id
-            } else {
-                binding.wrappedValue = nil
+        func withoutWritingSelection(_ body: () -> Void) {
+            isUpdatingSelection = true
+            defer { isUpdatingSelection = false }
+            body()
+        }
+
+        func syncSelection(of tableView: NSTableView, to selectedID: Item.ID?) {
+            withoutWritingSelection {
+                if let id = selectedID, let row = items.firstIndex(where: { $0.id == id }) {
+                    if tableView.selectedRow != row {
+                        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    }
+                } else if tableView.selectedRow != -1 {
+                    tableView.deselectAll(nil)
+                }
             }
+        }
+
+        /// Клик и стрелки приходят сюда одинаково.
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard !isUpdatingSelection,
+                  let tableView = notification.object as? NSTableView else { return }
+            let row = tableView.selectedRow
+            binding.wrappedValue = row >= 0 && row < items.count ? items[row].id : nil
         }
     }
 
