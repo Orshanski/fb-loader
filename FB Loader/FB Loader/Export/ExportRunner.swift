@@ -7,6 +7,7 @@ enum ExportRunner {
     /// to match freeLib's behaviour (exportthread.cpp processes books one by one).
     @MainActor
     static func run(items: [ExportItem],
+                    exportRoot: URL,
                     archivesRoot: URL,
                     library: Library,
                     progress: ExportProgress) async {
@@ -17,6 +18,14 @@ enum ExportRunner {
         progress.failed = []
         progress.abortReason = nil
         progress.succeeded = []
+
+        // Отключённый том даёт EACCES от /Volumes, а не ENOENT — проверяем корень заранее.
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: exportRoot.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            progress.abortReason = "Диск недоступен"
+            return
+        }
 
         for item in items {
             if progress.cancelled { return }

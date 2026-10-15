@@ -41,11 +41,12 @@ final class ExportRunnerTests {
                        authors: authors, series: [], genres: [], books: list)
     }
 
-    private func run(_ lib: Library, items: [ExportItem]? = nil) async -> ExportProgress {
+    private func run(_ lib: Library, items: [ExportItem]? = nil, root: URL? = nil) async -> ExportProgress {
         let plan = items ?? ExportPlanner.plan(libids: Set(lib.books.map(\.libid)), rootFolder: out,
                                                selectedAuthorID: nil, selectedSeriesID: nil, in: lib)
         let progress = ExportProgress()
-        await ExportRunner.run(items: plan, archivesRoot: archives, library: lib, progress: progress)
+        await ExportRunner.run(items: plan, exportRoot: root ?? out, archivesRoot: archives,
+                               library: lib, progress: progress)
         return progress
     }
 
@@ -80,12 +81,13 @@ final class ExportRunnerTests {
                      ExportItem(book: lib.books[1], archiveURL: nil, destination: out.appendingPathComponent("b.fb2"))]
         let progress = await run(lib, items: items)
         #expect(progress.abortReason == nil)
-        #expect(progress.failed.count == 1)
+        #expect(progress.failed.map { $0.error } == ["Слишком длинное имя файла"])
         #expect(progress.succeeded == [2])
         #expect(progress.done == 2)
     }
 
-    @Test("ошибка папки назначения прерывает выгрузку, остальные книги не трогаются")
+    @Test("ошибка папки назначения прерывает выгрузку, остальные книги не трогаются",
+          .enabled(if: getuid() != 0, "root пишет в папку только для чтения"))
     func destinationErrorAborts() async throws {
         let lib = try library([(1, "a", 0), (2, "b", 0), (3, "c", 0)])
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: out.path)
@@ -97,6 +99,19 @@ final class ExportRunnerTests {
         #expect(progress.succeeded.isEmpty)
         #expect(progress.done == 1)
         #expect(progress.total == 3)
+    }
+
+    @Test("недоступный корень выгрузки прерывает её до первой книги")
+    func missingRootAborts() async throws {
+        let lib = try library([(1, "a", 0)])
+        let gone = dir.appendingPathComponent("gone", isDirectory: true)
+        let items = ExportPlanner.plan(libids: [1], rootFolder: gone, selectedAuthorID: nil,
+                                       selectedSeriesID: nil, in: lib)
+        let progress = await run(lib, items: items, root: gone)
+        #expect(progress.abortReason == "Диск недоступен")
+        #expect(progress.succeeded.isEmpty)
+        #expect(progress.done == 0)
+        #expect(!FileManager.default.fileExists(atPath: gone.path))
     }
 }
 

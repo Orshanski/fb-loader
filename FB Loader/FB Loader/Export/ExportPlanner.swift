@@ -38,7 +38,8 @@ nonisolated enum ExportPlanner {
             var dest = folder.appendingPathComponent(title + fileExtension)
             var n = 2
             // APFS по умолчанию не различает регистр и форму нормализации.
-            while !used.insert(dest.path.decomposedStringWithCanonicalMapping.lowercased()).inserted {
+            while !used.insert(dest.path.decomposedStringWithCanonicalMapping
+                .folding(options: [.caseInsensitive], locale: nil)).inserted {
                 let suffix = " (\(n))"
                 let base = truncated(title, toBytes: nameByteLimit - byteCount(suffix))
                 dest = folder.appendingPathComponent(base + suffix + fileExtension)
@@ -63,9 +64,14 @@ nonisolated enum ExportPlanner {
         return Author.unknown.displayName
     }
 
+    /// Невидимые и управляющие символы в имени файла — путаница в Finder (U+202E разворачивает текст).
+    private static let replacedCategories: Set<Unicode.GeneralCategory> =
+        [.control, .format, .lineSeparator, .paragraphSeparator]
+
     static func sanitized(_ name: String, fallback: String = "_") -> String {
         let replaced = String(name.map { ch in
-            forbidden.contains(ch) || ch.unicodeScalars.contains { $0.properties.generalCategory == .control }
+            forbidden.contains(ch)
+                || ch.unicodeScalars.contains { replacedCategories.contains($0.properties.generalCategory) }
                 ? "_" : ch
         })
         var s = Substring(replaced.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -75,16 +81,24 @@ nonisolated enum ExportPlanner {
         return result.isEmpty ? fallback : result
     }
 
-    /// Foundation отдаёт имя в файловую систему в NFD: «й» там занимает 4 байта, а не 2.
     private static func byteCount(_ s: String) -> Int {
-        s.decomposedStringWithCanonicalMapping.utf8.count
+        s.reduce(0) { $0 + byteCount($1) }
+    }
+
+    /// Foundation отдаёт имя в HFS+-декомпозиции ≈ NFD («й» — 4 байта), но синглтоны
+    /// вроде U+212A она не раскладывает, поэтому берём максимум из форм.
+    private static func byteCount(_ ch: Character) -> Int {
+        let s = String(ch)
+        return max(s.utf8.count,
+                   s.precomposedStringWithCanonicalMapping.utf8.count,
+                   s.decomposedStringWithCanonicalMapping.utf8.count)
     }
 
     private static func truncated(_ s: String, toBytes limit: Int) -> String {
         guard byteCount(s) > limit else { return s }
         var bytes = 0
         let kept = s.prefix { ch in
-            bytes += byteCount(String(ch))
+            bytes += byteCount(ch)
             return bytes <= limit
         }
         return String(kept).trimmingCharacters(in: .whitespacesAndNewlines)

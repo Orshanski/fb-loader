@@ -94,13 +94,14 @@ struct ExportPlannerTests {
         let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, "Т", 0)], authorName: String(repeating: "Щ", count: 300)))
         let folder = plan[0].destination.deletingLastPathComponent().lastPathComponent
-        #expect(folder.utf8.count <= 255)
+        #expect(folder.decomposedStringWithCanonicalMapping.utf8.count <= 255)
         #expect(folder.hasPrefix("ЩЩЩ"))
     }
 
     @Test("ведущая точка, пустое имя и «..» не дают скрытых и выходящих за корень имён",
           arguments: [(".hidden", "_hidden.fb2"), ("", "_.fb2"), ("..", "__.fb2"),
-                      ("  .  ", "_.fb2"), ("../etc", "___etc.fb2"), ("a\u{0}b\nc", "a_b_c.fb2")])
+                      ("  .  ", "_.fb2"), ("../etc", "___etc.fb2"), ("a\u{0}b\nc", "a_b_c.fb2"),
+                      ("a\u{202E}b\u{200B}c\u{2028}d", "a_b_c_d.fb2")])
     func hiddenAndEscapingTitles(title: String, expected: String) {
         let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil,
                                       selectedSeriesID: nil, in: library(titles: [(1, title, 0)]))
@@ -127,6 +128,21 @@ struct ExportPlannerTests {
             #expect(plan.map(\.book.libid) == [20, 30, 40, 10])
             #expect(names(plan) == ["война и мир.fb2", "Война и мир (2).fb2", "Анна.fb2", "ВОЙНА И МИР (3).fb2"])
         }
+    }
+
+    @Test("суффикс не совпадает с натуральным именем другой книги")
+    func suffixDoesNotOverwriteNaturalName() {
+        let plan = ExportPlanner.plan(libids: [1, 2, 3], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+                                      in: library(titles: [(1, "А", 0), (2, "А", 0), (3, "А (2)", 0)]))
+        #expect(Set(plan.map(\.destination)).count == 3)
+        #expect(names(plan) == ["А.fb2", "А (2).fb2", "А (2) (2).fb2"])
+    }
+
+    @Test("синглтоны вне NFD (U+212A) считаются по фактическим байтам")
+    func singletonByteCount() {
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+                                      in: library(titles: [(1, String(repeating: "\u{212A}", count: 100), 0)]))
+        #expect(plan[0].destination.lastPathComponent.utf8.count <= 255)
     }
 
     @Test("суффикс коллизии не выводит имя за лимит байт")
