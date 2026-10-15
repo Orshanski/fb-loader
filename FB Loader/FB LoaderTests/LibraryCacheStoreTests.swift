@@ -89,14 +89,6 @@ final class LibraryCacheStoreTests {
         #expect(result.0.books.count == 2)
     }
 
-    @Test("invalidate удаляет кэш")
-    func invalidate() throws {
-        _ = try load()
-        #expect(FileManager.default.fileExists(atPath: cachePath.path))
-        store.invalidate()
-        #expect(!FileManager.default.fileExists(atPath: cachePath.path))
-    }
-
     @Test("ключ источника: 32 байта и стабилен")
     func sourceKey() throws {
         let k1 = LibraryCacheStore.sourceKey(genres: dict)

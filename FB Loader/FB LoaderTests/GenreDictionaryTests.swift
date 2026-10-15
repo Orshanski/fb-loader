@@ -64,9 +64,8 @@ struct GenreDictionaryTests {
     @Test("синтетические id кончились — nil, а не падение")
     func syntheticIDsExhausted() throws {
         let dict = try GenreDictionary.loadFromBundle()
-        for i in 0..<32_768 {
-            #expect(dict.genre(forCode: "u\(i)") != nil)
-        }
+        let made = (0..<32_768).filter { dict.genre(forCode: "u\($0)") != nil }.count
+        #expect(made == 32_768)
         #expect(dict.genre(forCode: "one_too_many") == nil)
         #expect(dict.genre(forCode: "u0") != nil)
     }

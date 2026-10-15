@@ -27,8 +27,6 @@ nonisolated enum LibraryBinaryCodec {
         case unsupportedVersion(UInt16)
         case truncated
         case invalidArchiveIndex(libid: Int32, archiveIndex: Int16, archivesCount: Int)
-        /// Повтор id или ссылка на несуществующего автора, серию, жанр.
-        /// `Library.init` на таком падает, поэтому кэш отвергается раньше.
         case inconsistent(String)
     }
     enum EncodeError: Error {
@@ -36,16 +34,12 @@ nonisolated enum LibraryBinaryCodec {
         /// if a single book's title (or other length-prefixed string) exceeds
         /// the on-disk format's length encoding capacity.
         case stringTooLong(field: String, length: Int, max: Int)
-        /// То же для счётчиков в 16 битах.
         case tooManyItems(field: String, count: Int, max: Int)
-        /// `inpxHash` and `sourceKey` must always be 32 bytes (SHA-256). A
-        /// different size would silently corrupt every field after it on
-        /// decode (the decoder reads exactly 32 bytes regardless), so we
-        /// throw at encode time instead.
         case invalidHashSize(Int)
     }
 
-    /// Заголовок кэша — читается без разбора каталога.
+    static let headerSize = 70
+
     struct Header: Equatable {
         let inpxHash: Data
         let sourceKey: Data
@@ -128,11 +122,11 @@ nonisolated enum LibraryBinaryCodec {
         let inpxVersion = try r.string16()
         let archCount = try r.uint32()
         var archives: [String] = []
-        archives.reserveCapacity(Int(archCount))
+        archives.reserveCapacity(r.capacity(archCount, minSize: 2))
         for _ in 0..<archCount { archives.append(try r.string16()) }
         let authCount = try r.uint32()
         var authors: [Author] = []
-        authors.reserveCapacity(Int(authCount))
+        authors.reserveCapacity(r.capacity(authCount, minSize: 10))
         for _ in 0..<authCount {
             let id = try r.int32()
             let ln = try r.string16(); let fn = try r.string16(); let mn = try r.string16()
@@ -140,13 +134,13 @@ nonisolated enum LibraryBinaryCodec {
         }
         let serCount = try r.uint32()
         var series: [Series] = []
-        series.reserveCapacity(Int(serCount))
+        series.reserveCapacity(r.capacity(serCount, minSize: 6))
         for _ in 0..<serCount {
             series.append(Series(id: try r.int32(), name: try r.string16()))
         }
         let genCount = try r.uint32()
         var genres: [Genre] = []
-        genres.reserveCapacity(Int(genCount))
+        genres.reserveCapacity(r.capacity(genCount, minSize: 10))
         for _ in 0..<genCount {
             let id = try r.int16(); let code = try r.string16(); let name = try r.string16()
             let p = try r.int32()
@@ -162,17 +156,17 @@ nonisolated enum LibraryBinaryCodec {
         }
         let bookCount = try r.uint32()
         var books: [Book] = []
-        books.reserveCapacity(Int(bookCount))
+        books.reserveCapacity(r.capacity(bookCount, minSize: 33))
         for _ in 0..<bookCount {
             let libid = try r.int32()
             let title = try r.string16()
             let aCount = try r.uint16()
-            var aIDs: [Int32] = []; aIDs.reserveCapacity(Int(aCount))
+            var aIDs: [Int32] = []; aIDs.reserveCapacity(r.capacity(UInt32(aCount), minSize: 4))
             for _ in 0..<aCount { aIDs.append(try r.int32()) }
             let s = try r.int32()
             let sn = try r.int16()
             let gCount = try r.uint16()
-            var gIDs: [Int16] = []; gIDs.reserveCapacity(Int(gCount))
+            var gIDs: [Int16] = []; gIDs.reserveCapacity(r.capacity(UInt32(gCount), minSize: 2))
             for _ in 0..<gCount { gIDs.append(try r.int16()) }
             let lang = try r.string8()
             let archIdx = try r.int16()
@@ -210,10 +204,6 @@ nonisolated enum LibraryBinaryCodec {
         )
     }
 
-    /// Инварианты, на которых держится `Library.init`: уникальные id и
-    /// ссылки книг только на существующих авторов, серии и жанры. Битый кэш
-    /// (bit rot, баг будущей версии) иначе ронял бы приложение на каждом
-    /// запуске; ошибка здесь отправляет `LibraryCacheStore` на пересборку.
     static func validate(authors: [Author], series: [Series], genres: [Genre], books: [Book]) throws {
         var authorIDs = Set<Int32>()
         for a in authors where !authorIDs.insert(a.id).inserted {
@@ -281,6 +271,9 @@ private nonisolated struct BinaryReader {
     let data: Data
     var offset: Int = 0
     init(data: Data) { self.data = data }
+    func capacity(_ count: UInt32, minSize: Int) -> Int {
+        min(Int(count), (data.count - offset) / minSize)
+    }
     mutating func bytes(_ n: Int) throws -> [UInt8] {
         guard offset + n <= data.count else { throw LibraryBinaryCodec.DecodeError.truncated }
         defer { offset += n }

@@ -21,17 +21,13 @@ nonisolated enum INPXImporter {
     /// the first small .inp (which may have <1000 books).
     private static let progressEveryNBooks = 200
 
-    /// Версия логики импорта — часть ключа кэша. Поднимать при любом
-    /// изменении того, что импортёр кладёт в `Library` из того же INPX:
-    /// иначе у пользователей останется каталог, собранный старым кодом.
+    /// Поднимать при любой правке разбора INPX (здесь, в парсерах, в синтетических
+    /// жанрах) — иначе у пользователей останется кэш от старого кода.
     static let logicVersion: UInt16 = 1
 
-    /// Предел длины строк из INPX в байтах UTF-8. Кэш хранит длину в 16
-    /// битах; одна кривая запись с огромным названием иначе не давала бы
-    /// сохранить кэш вовсе.
+    /// Длина строки в кэше — 16 бит; одна кривая запись иначе ломает запись кэша.
     static let maxStringBytes = 4096
 
-    /// Строка, обрезанная по границе символа до `maxStringBytes`.
     private static func clamped(_ s: String) -> String {
         guard s.utf8.count > maxStringBytes else { return s }
         var out = ""
@@ -45,22 +41,16 @@ nonisolated enum INPXImporter {
         return out
     }
 
-    /// Ключ сортировки авторов и серий: регистр не важен, ё — как е.
-    /// Порядок кодовых точек кириллицы совпадает с алфавитом везде, кроме ё;
-    /// сравнение с учётом локали на 167k авторов заняло бы секунды.
+    /// Не `localizedCompare`: на 167k авторов он занимает секунды.
     private static func sortKey(_ s: String) -> String {
-        s.lowercased().replacingOccurrences(of: "ё", with: "е")
+        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
-    /// Имя .zip без расширения для записи .inp — как у freeLib
-    /// (importthread.cpp:250 меняет ".inp" на ".zip"). Берётся только
-    /// последний компонент: имя приходит из INPX, и `../` не должен уводить
-    /// за пределы папки архивов.
+    /// Как freeLib (importthread.cpp:250).
     static func archiveBaseName(forInp name: String) -> String {
         ((name as NSString).lastPathComponent as NSString).deletingPathExtension
     }
 
-    /// `inpxHash` — уже посчитанный SHA-256 файла, чтобы не хешировать дважды.
     static func parse(
         inpxURL: URL,
         inpxHash knownHash: Data? = nil,
@@ -118,9 +108,8 @@ nonisolated enum INPXImporter {
         var seriesIDs: [String: Int32] = [:]
         var series: [Series] = []
         var books: [Book] = []
-        // LIBID — идентичность книги в таблице, галочках и экспорте:
-        // повтор оставляет первую запись.
         var seenLibids = Set<Int32>()
+        var skippedDeleted = 0, skippedNotFB2 = 0, skippedDuplicate = 0, skippedFileName = 0
 
         // Reserve slot 0 for the synthetic "(Без автора)" placeholder.
         // It may be filtered out at the end if no book actually references it.
@@ -168,8 +157,12 @@ nonisolated enum INPXImporter {
                 let trimmed = String(line).trimmingCharacters(in: trimSet)
                 guard let rec = INPRecordParser.parse(line: trimmed, fieldIndex: fieldIndex)
                 else { continue }
-                if rec.deleted || !rec.isFB2 { continue }
-                guard seenLibids.insert(rec.libid).inserted else { continue }
+                if rec.deleted { skippedDeleted += 1; continue }
+                if !rec.isFB2 { skippedNotFB2 += 1; continue }
+                if let f = rec.archiveFileName, f.utf8.count > maxStringBytes {
+                    skippedFileName += 1; continue
+                }
+                guard seenLibids.insert(rec.libid).inserted else { skippedDuplicate += 1; continue }
 
                 // Genres
                 let genreCodes = rec.genreField.split(separator: ":",
@@ -232,7 +225,7 @@ nonisolated enum INPXImporter {
                     archiveIndex: archIdx,
                     size: rec.size,
                     dateAdded: rec.dateAdded,
-                    archiveFileName: rec.archiveFileName.map(clamped)
+                    archiveFileName: rec.archiveFileName
                 ))
                 if books.count % Self.progressEveryNBooks == 0 {
                     onProgress?(books.count)
@@ -245,6 +238,7 @@ nonisolated enum INPXImporter {
             onProgress?(books.count)
         }
         print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
+        print("[INPXImporter] skipped: deleted \(skippedDeleted), not FB2 \(skippedNotFB2), duplicate LIBID \(skippedDuplicate), file name too long \(skippedFileName)")
         onStatus?("all .inp files done, total books: \(books.count); building Library…")
         // Final emit so the caller's UI ends with the actual total, not the last
         // multiple of `progressEveryNBooks`.
@@ -259,7 +253,6 @@ nonisolated enum INPXImporter {
         let visibleAuthors = unknownReferenced
             ? authors
             : authors.filter { $0.id != Author.unknownID }
-        // Ключи считаются один раз, а не на каждое сравнение.
         let sortedAuthors = visibleAuthors
             .map { a in (a, sortKey(a.lastName), sortKey(a.firstName), sortKey(a.middleName)) }
             .sorted { x, y in

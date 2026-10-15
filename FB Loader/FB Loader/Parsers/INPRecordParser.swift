@@ -8,14 +8,11 @@ nonisolated struct INPRecord {
     let title: String
     let seriesName: String
     let seriesNum: Int16?
-    /// Имя файла в архиве без расширения (FILE), если не совпадает с LIBID.
     let archiveFileName: String?
     let size: Int32
     let libid: Int32
     let deleted: Bool
     let format: String
-    /// EXT пустой или fb2. Остальные форматы приложение не открывает и не
-    /// выгружает.
     var isFB2: Bool { format.isEmpty || format.lowercased() == "fb2" }
     /// Полночь дня, записанного в INPX строкой `YYYY-MM-DD`; `nil`, если
     /// поля не было или оно не разобралось.
@@ -24,9 +21,6 @@ nonisolated struct INPRecord {
 }
 
 nonisolated enum INPRecordParser {
-    /// `nil` — строка не книга: пустая, обрывок, без положительного LIBID
-    /// (или числового FILE вместо него) либо без названия. Спека §7:
-    /// битая запись INPX пропускается.
     static func parse(line: String, fieldIndex: INPXFieldIndex) -> INPRecord? {
         if line.isEmpty { return nil }
         let parts = line.split(separator: "\u{04}", omittingEmptySubsequences: false)

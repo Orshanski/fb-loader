@@ -6,7 +6,6 @@ import Foundation
 /// Project default isolation is MainActor; without this the heavy I/O+parse
 /// chain stays main-bound and freezes the UI.
 nonisolated enum LibraryLoader {
-    /// Файл кэша каталога — для «Пересобрать» и статуса в настройках.
     static func cacheURL() throws -> URL {
         LibraryCacheStore.cacheURL(in: try appSupportRoot())
     }

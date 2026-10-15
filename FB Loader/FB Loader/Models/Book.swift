@@ -19,9 +19,6 @@ nonisolated struct Book: Identifiable, Hashable, Sendable {
     /// Полночь того дня, что записан в INPX строкой `YYYY-MM-DD`.
     /// `nil` — даты в записи не было.
     let dateAdded: Date?
-    /// Имя файла в архиве без расширения, если оно не совпадает с `libid`
-    /// (поле FILE в INPX). У Флибусты совпадает всегда — `nil` экономит
-    /// строку на каждую из 581k книг.
     let archiveFileName: String?
 
     init(libid: Int32, title: String, authorIDs: [Int32], seriesID: Int32?,
@@ -40,6 +37,5 @@ nonisolated struct Book: Identifiable, Hashable, Sendable {
         self.archiveFileName = archiveFileName
     }
 
-    /// Имя записи в zip-архиве.
     var archiveEntryName: String { (archiveFileName ?? String(libid)) + ".fb2" }
 }

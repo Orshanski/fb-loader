@@ -25,19 +25,13 @@ nonisolated final class GenreDictionary {
     }
 
     let allGenres: [Genre]
-    /// SHA-256 содержимого genres.json — часть ключа кэша каталога: новый
-    /// словарь в обновлении приложения должен пересобрать каталог.
     let fingerprint: Data
     private let byCode: [String: Genre]
     /// Synthetic genres created on demand for unknown FB2 codes.
     /// Negative IDs to avoid collision with real ones.
     private var syntheticByCode: [String: Genre] = [:]
-    /// `nil` — отрицательные id кончились.
     private var nextSyntheticID: Int16? = -1
 
-    /// Жанры для `Library`: словарь плюс синтетические, созданные при
-    /// разборе. Без синтетических книга ссылалась бы на жанр, которого
-    /// нет в каталоге, и он пропадал бы из колонки, карточки и сайдбара.
     var libraryGenres: [Genre] {
         allGenres + syntheticByCode.values.sorted { $0.id > $1.id }
     }
@@ -87,9 +81,7 @@ nonisolated final class GenreDictionary {
     /// synthesizes a `Genre` whose `name` equals the code itself (per spec §7)
     /// and caches it so repeated lookups are stable. Returns `nil` for the
     /// empty string — there are no "" keys in the source dictionary, and a
-    /// synthetic genre with empty code/name is never useful. Also `nil` once
-    /// 32 768 synthetic ids are used up: столько разных незнакомых кодов —
-    /// это мусор в поле жанра, а не жанры.
+    /// synthetic genre with empty code/name is never useful.
     func genre(forCode code: String) -> Genre? {
         guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }

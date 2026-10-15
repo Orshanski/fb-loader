@@ -22,7 +22,7 @@ struct LibraryBinaryCodecIntegrityTests {
     @Test("заголовок читается без разбора каталога")
     func header() throws {
         let data = try LibraryBinaryCodec.encode(library(books: [book(1)]), sourceKey: testKey)
-        let h = try LibraryBinaryCodec.readHeader(data)
+        let h = try LibraryBinaryCodec.readHeader(data.prefix(LibraryBinaryCodec.headerSize))
         #expect(h.inpxHash == Data(repeating: 0xAB, count: 32))
         #expect(h.sourceKey == testKey)
     }

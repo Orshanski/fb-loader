@@ -106,6 +106,55 @@ struct INPXImporterTests {
         }
     }
 
+    @Test("пустой AUTHOR в начале строки — книга под «(Без автора)», поля не съезжают")
+    func emptyFirstField() throws {
+        let lib = try importLines([INPXFixture.line(author: "", libid: "1")])
+        let book = try #require(lib.books.first)
+        #expect(book.libid == 1)
+        #expect(book.title == "Война и мир")
+        #expect(book.authorIDs == [Author.unknownID])
+    }
+
+    @Test("DEL=1 не попадает в каталог")
+    func deletedSkipped() throws {
+        let lib = try importLines([INPXFixture.line(libid: "1"),
+                                   INPXFixture.line(libid: "2", deleted: "1")])
+        #expect(lib.books.map(\.libid) == [1])
+    }
+
+    @Test("переставленные поля из STRUCTURE.INFO")
+    func reorderedStructure() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let line = ["42", "Пикник на обочине", "Стругацкий,Аркадий,Натанович:",
+                    "sf_social:", "picnic", "fb2", "0", "ru"].joined(separator: "\u{04}")
+        let url = try INPXFixture.make(in: dir, lines: [line],
+                                       structure: "LIBID;TITLE;AUTHOR;GENRE;FILE;EXT;DEL;LANG")
+        let lib = try INPXImporter.parse(inpxURL: url, genres: GenreDictionary.loadFromBundle())
+        let book = try #require(lib.books.first)
+        #expect(book.libid == 42)
+        #expect(book.title == "Пикник на обочине")
+        #expect(book.archiveEntryName == "picnic.fb2")
+        #expect(lib.authorByID[book.authorIDs[0]]?.lastName == "Стругацкий")
+    }
+
+    @Test("сверхдлинное имя файла — запись отбрасывается: обрезанное в архиве не найдётся")
+    func hugeFileNameSkipped() throws {
+        let lib = try importLines([INPXFixture.line(file: String(repeating: "f", count: 5000), libid: "1"),
+                                   INPXFixture.line(libid: "2")])
+        #expect(lib.books.map(\.libid) == [2])
+    }
+
+    @Test("серии: регистр и диакритика не ломают порядок")
+    func seriesOrder() throws {
+        let lib = try importLines([INPXFixture.line(series: "Zebra", libid: "1"),
+                                   INPXFixture.line(series: "école", libid: "2"),
+                                   INPXFixture.line(series: "apple", libid: "3")])
+        #expect(lib.series.map(\.name) == ["apple", "école", "Zebra"])
+    }
+
     @Test("имя архива — только последний компонент имени .inp")
     func archiveBaseNameStripsPath() {
         #expect(INPXImporter.archiveBaseName(forInp: "fb2-000024-030559.inp") == "fb2-000024-030559")

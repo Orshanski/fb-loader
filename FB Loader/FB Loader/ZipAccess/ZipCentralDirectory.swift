@@ -20,13 +20,10 @@ nonisolated enum ZipCentralDirectory {
         case checksumMismatch(name: String)
     }
 
-    /// Предел размера одной записи. FB2 с иллюстрациями — десятки мегабайт;
-    /// всё, что больше, — битый или подсунутый архив, и буфер под заявленный
-    /// размер выделять нельзя.
+    /// FB2 с иллюстрациями — десятки МБ; больше — битый архив.
     static let maxEntrySize: UInt64 = 512 << 20
 
-    /// Предел размера центрального каталога. У архивов Флибусты он —
-    /// единицы мегабайт; больше — битое значение, а не повод читать гигабайты.
+    /// У Флибусты — единицы МБ; больше — битое значение.
     static let maxDirectorySize: UInt64 = 256 << 20
 
     struct Entry: Sendable {
@@ -37,10 +34,8 @@ nonisolated enum ZipCentralDirectory {
         let localHeaderOffset: UInt64
         /// 0 = stored (no compression), 8 = deflate.
         let compressionMethod: UInt16
-        /// Бит 0 general purpose flags.
         let isEncrypted: Bool
-        /// Из центрального каталога — он источник правды и при флаге 3
-        /// (data descriptor), когда в локальном заголовке нули.
+        /// Из центрального каталога: при флаге 3 в локальном заголовке нули.
         let crc32: UInt32
     }
 
@@ -99,8 +94,7 @@ nonisolated enum ZipCentralDirectory {
                 loc = try readExactly(handle, 20, url)
             }
             guard loc.count == 20, readU32(loc, 0) == 0x07064b50 else {
-                // Ровно 65535 записей — законный обычный zip без ZIP64:
-                // размер и смещение каталога тогда настоящие.
+                // Ровно 65535 записей без ZIP64 — законный архив.
                 guard cdOffset64 != 0xFFFF_FFFF, cdSize64 != 0xFFFF_FFFF else {
                     throw ZipError.truncated(url)
                 }
@@ -126,13 +120,9 @@ nonisolated enum ZipCentralDirectory {
                                  offset: cdOffset64, size: cdSize64, total: totalEntries64)
     }
 
-    /// Читает центральный каталог одним куском и строит индекс.
     private static func readDirectory(_ handle: FileHandle, url: URL, fileSize: UInt64,
                                       offset cdOffset64: UInt64, size cdSize64: UInt64,
                                       total totalEntries64: UInt64) throws -> Index {
-        // Размер и смещение — из файла, поэтому сначала проверка, что каталог
-        // в нём помещается: иначе `Int(...)` трапает, а огромный размер —
-        // это гигантский буфер.
         guard cdOffset64 <= fileSize, cdSize64 <= fileSize - cdOffset64,
               cdSize64 <= maxDirectorySize else {
             throw ZipError.truncated(url)
@@ -140,8 +130,6 @@ nonisolated enum ZipCentralDirectory {
         try handle.seek(toOffset: cdOffset64)
         let cd = try readExactly(handle, Int(cdSize64), url)
 
-        // Заявленному числу записей не верим: ёмкость — не больше, чем
-        // записей минимального размера влезет в каталог.
         var entries = [String: Entry](minimumCapacity: Int(min(totalEntries64, cdSize64 / 46)))
         var p = 0
         while p + 46 <= cd.count {
@@ -158,10 +146,7 @@ nonisolated enum ZipCentralDirectory {
             //  +42  local header offset     4
             //  +46  file name
             guard readU32(cd, p) == 0x02014b50 else {
-                // После всех заявленных записей допустима чужая запись
-                // (digital signature, APPNOTE 4.3.13). Посреди каталога —
-                // ошибка: молча обрезанный индекс выдал бы «книга не найдена»
-                // для всех записей после неё.
+                // В хвосте допустима digital signature (APPNOTE 4.3.13); посреди — битый каталог.
                 if UInt64(entries.count) >= totalEntries64 { break }
                 throw ZipError.truncated(url)
             }
@@ -277,8 +262,6 @@ nonisolated enum ZipCentralDirectory {
         default:
             throw ZipError.unsupportedCompression(method: entry.compressionMethod, name: entry.name)
         }
-        // Без CRC повреждённый поток или заниженный размер дают «успешно»
-        // распакованный мусор, и на экспорт уходит испорченная книга.
         guard CRC32.checksum(data) == entry.crc32 else {
             throw ZipError.checksumMismatch(name: entry.name)
         }
@@ -306,10 +289,7 @@ nonisolated enum ZipCentralDirectory {
 
     // MARK: - Binary helpers
 
-    /// Читает ровно `count` байт или бросает `truncated`. `read(upToCount:)`
-    /// при ошибке ввода-вывода (отключённый внешний диск, уснувший NAS)
-    /// бросает Swift-ошибку; устаревший `readData(ofLength:)` бросал
-    /// Objective-C-исключение, которое `catch` не ловит, и ронял приложение.
+    /// Не `readData(ofLength:)`: на отключённом диске тот бросает ObjC-исключение мимо `catch`.
     private static func readExactly(_ handle: FileHandle, _ count: Int, _ url: URL) throws -> Data {
         guard count > 0 else { return Data() }
         guard let data = try handle.read(upToCount: count), data.count == count else {
@@ -318,8 +298,6 @@ nonisolated enum ZipCentralDirectory {
         return data
     }
 
-    /// Последнее вхождение сигнатуры, после которого в данных помещается
-    /// запись `recordSize` байт целиком.
     private static func findLastSignature(in data: Data, sig: UInt32, recordSize: Int) -> Int? {
         let bytes = [UInt8(truncatingIfNeeded: sig),
                      UInt8(truncatingIfNeeded: sig >> 8),

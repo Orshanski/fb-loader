@@ -3,8 +3,7 @@ import Foundation
 /// Caches the parsed Library on disk and decides whether to reparse.
 /// Cache is invalidated when the SHA-256 of the INPX content changes
 /// (path is not a factor — same INPX moved elsewhere does not invalidate)
-/// or when the source key changes: новая версия импортёра или genres.json
-/// в обновлении приложения собирают из того же INPX другой каталог.
+/// or when the importer or genres.json change.
 nonisolated final class LibraryCacheStore {
     static let fileName = "library-cache.bin"
 
@@ -12,7 +11,6 @@ nonisolated final class LibraryCacheStore {
         applicationSupportRoot.appendingPathComponent(fileName)
     }
 
-    /// Ключ всего, кроме INPX, от чего зависит собранный каталог.
     static func sourceKey(genres: GenreDictionary) -> Data {
         var bytes = Data()
         withUnsafeBytes(of: INPXImporter.logicVersion.littleEndian) { bytes.append(contentsOf: $0) }
@@ -29,7 +27,6 @@ nonisolated final class LibraryCacheStore {
         self.cacheURL = Self.cacheURL(in: applicationSupportRoot)
     }
 
-    /// `rebuild` получает уже посчитанный хеш INPX.
     func loadOrRebuild(
         inpxURL: URL,
         sourceKey: Data,
@@ -38,23 +35,15 @@ nonisolated final class LibraryCacheStore {
     ) throws -> Library {
         let currentHash = try SHA256.hash(ofFileAt: inpxURL)
 
-        // Заголовок сверяется до полного разбора: устаревший кэш не тратит
-        // секунды на декод и построение индексов, которые тут же выбросятся.
-        if let cached = try? Data(contentsOf: cacheURL) {
+        if cachedHeader() == .init(inpxHash: currentHash, sourceKey: sourceKey) {
             do {
-                let header = try LibraryBinaryCodec.readHeader(cached)
-                if header == .init(inpxHash: currentHash, sourceKey: sourceKey) {
-                    return try LibraryBinaryCodec.decode(cached, onStatus: onStatus)
-                }
-                print("[LibraryCacheStore] cache is stale — rebuilding")
+                return try LibraryBinaryCodec.decode(Data(contentsOf: cacheURL), onStatus: onStatus)
             } catch {
                 print("[LibraryCacheStore] cache unreadable (\(error)) — rebuilding")
             }
         }
 
         let fresh = try rebuild(currentHash)
-        // Каталог собран — он нужен пользователю и без кэша. Ошибка записи
-        // (диск полон, нет доступа) стоит только скорости следующего запуска.
         do {
             try save(fresh, sourceKey: sourceKey)
         } catch {
@@ -63,8 +52,11 @@ nonisolated final class LibraryCacheStore {
         return fresh
     }
 
-    func invalidate() {
-        try? FileManager.default.removeItem(at: cacheURL)
+    private func cachedHeader() -> LibraryBinaryCodec.Header? {
+        guard let handle = try? FileHandle(forReadingFrom: cacheURL) else { return nil }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: LibraryBinaryCodec.headerSize) else { return nil }
+        return try? LibraryBinaryCodec.readHeader(head)
     }
 
     private func save(_ lib: Library, sourceKey: Data) throws {
