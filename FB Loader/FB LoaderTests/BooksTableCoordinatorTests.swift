@@ -457,13 +457,16 @@ struct BooksTableHeaderTests {
     }
 
     @Test("состояние «Даты»: без контекста — неактивна, без фильтра — обычная, с фильтром — акцент")
-    func dateState() {
+    func dateState() async {
         let h = BooksTableHarness(context: nil)
         let header = h.table.headerView as? BooksHeaderView
+        await drainMainQueue()
         #expect(header?.dateState == .disabled)
         h.apply(books: BooksTableFixture.books, context: .author(1))
+        await drainMainQueue()
         #expect(header?.dateState == .normal)
         h.apply(books: BooksTableFixture.books, context: .author(1), dates: dates)
+        await drainMainQueue()
         #expect(header?.dateState == .active)
     }
 
@@ -524,6 +527,14 @@ struct BooksTableHeaderTests {
 }
 
 
+/// Следующий проход main queue: отложенная прокрутка и шапка уже выполнены.
+@MainActor
+private func drainMainQueue() async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async { continuation.resume() }
+    }
+}
+
 @Suite("BooksTable scrolling and live rows")
 @MainActor
 struct BooksTableScrollTests {
@@ -543,21 +554,40 @@ struct BooksTableScrollTests {
         h.scrollView.reflectScrolledClipView(h.scrollView.contentView)
     }
 
-    @Test("смена ключа без выбранной книги — к началу")
-    func newKeyScrollsToTop() {
+    @Test("прокрутка и шапка откладываются на следующий проход, устаревший ключ их не выполняет")
+    func structuralWorkIsDeferred() async {
         let h = BooksTableHarness(books: manyBooks())
+        await drainMainQueue()
+        scrollToRow(h, 70)
+        let before = clipY(h)
+        h.apply(books: manyBooks(), context: .author(2))
+        #expect(clipY(h) == before)
+        h.apply(books: manyBooks(), context: .author(3))
+        h.model.selectedBookLibid = 101
+        h.apply(books: manyBooks(), context: .author(3))
+        await drainMainQueue()
+        #expect(clipY(h) == topY)
+    }
+
+    @Test("смена ключа без выбранной книги — к началу")
+    func newKeyScrollsToTop() async {
+        let h = BooksTableHarness(books: manyBooks())
+        await drainMainQueue()
         scrollToRow(h, 70)
         #expect(clipY(h) > topY)
         h.apply(books: manyBooks(), context: .author(2))
+        await drainMainQueue()
         #expect(clipY(h) == topY)
     }
 
     @Test("deep-link: новая выборка с выбранной книгой — книга и заголовок её серии видимы")
-    func deepLinkScrollsToBookWithHeader() {
+    func deepLinkScrollsToBookWithHeader() async {
         let h = BooksTableHarness(books: manyBooks())
+        await drainMainQueue()
         scrollToRow(h, 70)
         h.model.selectedBookLibid = 101
         h.apply(books: manyBooks(), context: .author(2))
+        await drainMainQueue()
         let visible = h.table.rows(in: h.table.visibleRect)
         #expect(NSLocationInRange(40, visible))
         #expect(NSLocationInRange(41, visible))

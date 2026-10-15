@@ -149,13 +149,22 @@ struct BooksTableRepresentable: NSViewRepresentable {
             if structural {
                 withoutWritingSelection { tableView.reloadData() }
                 syncSelection(of: tableView, to: newSelected)
-                scroll(tableView, to: newRows.scrollTarget(selectedLibid: newSelected))
-                if let header = tableView.headerView as? BooksHeaderView { header.dateState = dateHeaderState }
-                tableView.headerView?.needsDisplay = true
-                tableView.updateHoverFromMouse()
+                finishStructuralChange(key: newKey, target: newRows.scrollTarget(selectedLibid: newSelected))
             } else {
                 syncSelection(of: tableView, to: newSelected)
                 if cellsChanged { reloadLiveTitleCells(of: tableView) }
+            }
+        }
+
+        /// После прохода SwiftUI: прокрутка, шапка и hover внутри updateNSView (после «Найти» в поповере даты)
+        /// открывали транзакцию CA во время commit. Устаревший ключ пропускается — свой проход уже запланирован.
+        private func finishStructuralChange(key expected: BooksTableKey, target: BookTableRows.ScrollTarget) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let tableView, key == expected else { return }
+                scroll(tableView, to: target)
+                if let header = tableView.headerView as? BooksHeaderView { header.dateState = dateHeaderState }
+                tableView.headerView?.needsDisplay = true
+                tableView.updateHoverFromMouse()
             }
         }
 
@@ -282,7 +291,8 @@ struct BooksTableRepresentable: NSViewRepresentable {
             popover.delegate = self
             let host = NSHostingController(rootView: DateFilterPopover(current: model.dateFilter) { [weak self] next in
                 self?.model.applyDateFilter(next)
-                self?.datePopover?.performClose(nil)
+                // Закрытие вне действия SwiftUI: иначе оно идёт в одном проходе с обновлением таблицы.
+                DispatchQueue.main.async { self?.datePopover?.performClose(nil) }
             })
             host.sizingOptions = [.preferredContentSize]
             popover.contentViewController = host
