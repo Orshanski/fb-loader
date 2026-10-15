@@ -125,6 +125,9 @@ nonisolated enum INPXImporter {
         onStatus?("Найдено \(inpEntries.count) .inp файлов")
         var archCounter = 0
         for entry in inpEntries {
+            // Повторный запуск загрузки отменяет прежний: без проверки он
+            // дочитал бы весь INPX впустую.
+            try Task.checkCancellation()
             let name = entry.name
             archCounter += 1
             print("[INPXImporter] reading [\(archCounter)/\(inpEntries.count)] \(name)")

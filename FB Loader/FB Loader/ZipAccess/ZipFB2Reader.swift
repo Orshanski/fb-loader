@@ -47,6 +47,9 @@ nonisolated final class ZipFB2Reader {
         guard let entry = index.entries[name] else {
             throw ReaderError.bookNotFoundInArchive(zip: archiveURL, entryName: name)
         }
+        // Карточка книги бросает чтение при смене книги; экспорт идёт в
+        // неотменяемой задаче, его это не задевает.
+        try Task.checkCancellation()
         do {
             let tExtract = ContinuousClock.now
             let data = try ZipCentralDirectory.extract(entry, from: archiveURL)

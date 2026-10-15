@@ -9,6 +9,7 @@ struct MainWindowView: View {
     /// Окно показывается, когда разделитель сайдбара уже стоит на сохранённом
     /// месте: иначе зоны на глазах прыгают из положения по умолчанию.
     @State private var layoutReady = false
+    @State private var exportAction = ExportAction()
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -22,7 +23,7 @@ struct MainWindowView: View {
                     })
             }
             VSplitView {
-                BooksTableView(library: library)
+                BooksTableView(library: library, exportAction: exportAction)
                     .frame(maxWidth: .infinity,
                            minHeight: booksTableMinHeight,
                            idealHeight: booksTableIdealHeight)
@@ -54,6 +55,7 @@ struct MainWindowView: View {
             .layoutPriority(1)
         }
         .opacity(layoutReady ? 1 : 0)
+        .onAppear { exportAction.perform = { Task { await runExport() } } }
         .task {
             try? await Task.sleep(for: RestoredPaneSize.revealTimeout)
             revealLayout()
@@ -96,11 +98,6 @@ struct MainWindowView: View {
         // Таблица книг — ScrollView, а её содержимое macOS пускает под панель
         // окна: без непрозрачного фона строки просвечивают в полосе заголовка.
         .toolbarBackground(.visible, for: .windowToolbar)
-        .onChange(of: state.shouldStartExport) { _, newValue in
-            guard newValue else { return }
-            state.shouldStartExport = false
-            Task { await runExport() }
-        }
         .sheet(item: Binding(
             get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },
             set: { _ in

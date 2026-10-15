@@ -36,6 +36,18 @@ final class LibraryCacheStoreTests {
         return (lib, rebuilt)
     }
 
+    @Test("forceRebuild собирает из INPX при годном кэше")
+    func forceRebuildIgnoresCache() throws {
+        _ = try load()
+        var rebuilt = false
+        _ = try store.loadOrRebuild(inpxURL: inpx, sourceKey: key, forceRebuild: true) { hash in
+            rebuilt = true
+            return try INPXImporter.parse(inpxURL: inpx, inpxHash: hash, genres: dict)
+        }
+        #expect(rebuilt)
+        #expect(!(try load().rebuilt))
+    }
+
     @Test("первый вызов собирает из INPX, второй читает кэш")
     func reparseThenLoad() throws {
         let first = try load()

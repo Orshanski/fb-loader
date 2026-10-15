@@ -27,6 +27,7 @@ nonisolated enum LibraryLoader {
     /// for hopping to MainActor before mutating UI state.
     static func load(
         inpxURL: URL,
+        forceRebuild: Bool = false,
         onStatus: (@Sendable (String) -> Void)? = nil,
         onProgress: (@Sendable (Int) -> Void)? = nil
     ) async throws -> Library {
@@ -37,6 +38,7 @@ nonisolated enum LibraryLoader {
         return try store.loadOrRebuild(
             inpxURL: inpxURL,
             sourceKey: LibraryCacheStore.sourceKey(genres: genres),
+            forceRebuild: forceRebuild,
             onStatus: onStatus
         ) { inpxHash in
             onStatus?("Кэш не найден или устарел — пересборка из INPX")

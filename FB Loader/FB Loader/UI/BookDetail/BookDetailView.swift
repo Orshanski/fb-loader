@@ -23,6 +23,7 @@ struct BookDetailView: View {
 
     @State private var coverImage: NSImage?
     @State private var info: FB2BookInfo?
+    @State private var readError: String?
     @State private var translatorsExpanded = false
 
     /// Шире строку читать тяжело.
@@ -204,7 +205,13 @@ struct BookDetailView: View {
 
     @ViewBuilder
     private var annotationView: some View {
-        if let a = info?.annotation, !a.isEmpty {
+        if let readError {
+            Text(readError)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let a = info?.annotation, !a.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(annotationParagraphs(a), id: \.self) { p in
                     Text(p)
@@ -249,13 +256,14 @@ struct BookDetailView: View {
         // at stale annotation+cover for the duration of the new book's load.
         info = nil
         coverImage = nil
+        readError = nil
         translatorsExpanded = false
 
         let lib = library
         let root = archivesRoot
         let b = book
         let cache = try? CoverCache()
-        await Task.detached(priority: .utility) {
+        await runDetachedCancellable(priority: .utility) {
             let t0 = ContinuousClock.now
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
@@ -295,7 +303,13 @@ struct BookDetailView: View {
                 }
             } catch {
                 print("[BookDetail] ERROR in \(ContinuousClock.now - t0): \(error)")
+                if Task.isCancelled { return }
+                let message = BookReadFailure.message(for: error)
+                await MainActor.run {
+                    guard isCurrentSelection() else { return }
+                    self.readError = message
+                }
             }
-        }.value
+        }
     }
 }

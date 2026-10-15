@@ -30,20 +30,28 @@ nonisolated final class LibraryCacheStore {
     func loadOrRebuild(
         inpxURL: URL,
         sourceKey: Data,
+        forceRebuild: Bool = false,
         onStatus: (@Sendable (String) -> Void)? = nil,
         rebuild: (_ inpxHash: Data) throws -> Library
     ) throws -> Library {
         let currentHash = try SHA256.hash(ofFileAt: inpxURL)
+        try Task.checkCancellation()
 
-        if cachedHeader() == .init(inpxHash: currentHash, sourceKey: sourceKey) {
+        if !forceRebuild, cachedHeader() == .init(inpxHash: currentHash, sourceKey: sourceKey) {
             do {
-                return try LibraryBinaryCodec.decode(Data(contentsOf: cacheURL), onStatus: onStatus)
+                let cached = try LibraryBinaryCodec.decode(Data(contentsOf: cacheURL), onStatus: onStatus)
+                try Task.checkCancellation()
+                return cached
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 print("[LibraryCacheStore] cache unreadable (\(error)) — rebuilding")
             }
         }
 
         let fresh = try rebuild(currentHash)
+        // Отменённая загрузка не пишет кэш: его прочитала бы следующая.
+        try Task.checkCancellation()
         do {
             try save(fresh, sourceKey: sourceKey)
         } catch {

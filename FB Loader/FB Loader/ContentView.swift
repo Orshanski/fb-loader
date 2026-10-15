@@ -4,17 +4,18 @@ struct ContentView: View {
     @State private var state = AppState()
     @State private var settingsRebuildProgress: String?
     @State private var loadGate = LoadSessionGate()
+    @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
         Group {
             switch state.stage {
             case .starting:
                 LoaderScreen(progress: "Подготовка…")
-            case .onboarding:
-                CatalogPickerView { inpx, arch in
+            case .onboarding(let missing):
+                CatalogPickerView(missing: missing, userPaths: state.userPaths) { inpx, arch in
                     state.userPaths.inpxURL = inpx
                     state.userPaths.archivesDirectoryURL = arch
-                    Task { await loadLibrary() }
+                    startLoad()
                 }
             case .loading(let p):
                 LoaderScreen(progress: p)
@@ -50,7 +51,7 @@ struct ContentView: View {
                     Button("Указать пути заново") {
                         state.userPaths.inpxURL = nil
                         state.userPaths.archivesDirectoryURL = nil
-                        state.stage = .onboarding
+                        state.stage = .onboarding(.both)
                     }
                     .keyboardShortcut(.defaultAction)
                 }
@@ -59,44 +60,64 @@ struct ContentView: View {
             }
         }
         .task {
-            // On every launch: if both paths configured and reachable, load.
-            // Otherwise show onboarding.
-            guard let inpx = state.userPaths.inpxURL,
-                  let arch = state.userPaths.archivesDirectoryURL,
-                  FileManager.default.fileExists(atPath: inpx.path),
-                  FileManager.default.fileExists(atPath: arch.path) else {
-                state.stage = .onboarding
+            if let missing = MissingPaths.check(
+                inpx: state.userPaths.inpxURL,
+                archives: state.userPaths.archivesDirectoryURL,
+                isReachable: { FileManager.default.fileExists(atPath: $0.path) }) {
+                state.stage = .onboarding(missing)
                 return
             }
-            await loadLibrary()
+            startLoad()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+        .focusedSceneValue(\.openSettings, state.isSettingsPresented ? nil : {
             state.isSettingsPresented = true
-        }
+        })
         .sheet(isPresented: $state.isSettingsPresented) {
             SettingsView(
                 userPaths: state.userPaths,
                 rebuildProgress: settingsRebuildProgress,
+                canRebuild: state.canRebuildCatalog,
                 onClose: { state.isSettingsPresented = false },
-                onRebuild: {
-                    state.reset()
-                    settingsRebuildProgress = "Чтение каталога…"
-                    if let cache = try? LibraryLoader.cacheURL() {
-                        try? FileManager.default.removeItem(at: cache)
-                    }
-                    Task {
-                        await loadLibrary { progress in
-                            settingsRebuildProgress = progress
-                        }
-                        settingsRebuildProgress = nil
-                    }
+                onRebuild: rebuildCatalog,
+                onINPXChange: { url in
+                    state.userPaths.inpxURL = url
+                    if state.canRebuildCatalog { rebuildCatalog() }
                 }
             )
         }
     }
 
-    private func loadLibrary(onProgressText: ((String) -> Void)? = nil) async {
-        guard let inpx = state.userPaths.inpxURL else { return }
+    private func rebuildCatalog() {
+        state.reset()
+        settingsRebuildProgress = "Чтение каталога…"
+        startLoad(forceRebuild: true,
+                  onProgressText: { settingsRebuildProgress = $0 },
+                  onFinish: { settingsRebuildProgress = nil })
+    }
+
+    /// Новая загрузка ждёт конца отменённой: иначе в памяти две `Library`.
+    private func startLoad(forceRebuild: Bool = false,
+                           onProgressText: ((String) -> Void)? = nil,
+                           onFinish: (() -> Void)? = nil) {
+        guard let inpx = state.userPaths.inpxURL else {
+            onFinish?()
+            return
+        }
+        let previous = loadTask
+        previous?.cancel()
+        loadGate.cancel()
+        loadTask = Task {
+            await previous?.value
+            if !Task.isCancelled {
+                await loadLibrary(inpx: inpx, forceRebuild: forceRebuild,
+                                  onProgressText: onProgressText)
+            }
+            onFinish?()
+        }
+    }
+
+    private func loadLibrary(inpx: URL, forceRebuild: Bool,
+                             onProgressText: ((String) -> Void)?) async {
         let loadToken = loadGate.begin()
         state.stage = .loading(progress: "Чтение каталога…")
         onProgressText?("Чтение каталога…")
@@ -106,9 +127,10 @@ struct ContentView: View {
             // a state.stage write if at least 100 ms passed since the last commit.
             let progress = LoadingProgressBag()
             let lastCountUpdate = AtomicLastUpdate()
-            let lib = try await Task.detached {
+            let lib = try await runDetachedCancellable {
                 try await LibraryLoader.load(
                     inpxURL: inpx,
+                    forceRebuild: forceRebuild,
                     onStatus: { msg in
                         let formatted = progress.setStatus(msg)
                         Task { @MainActor in
@@ -130,7 +152,7 @@ struct ContentView: View {
                         }
                     }
                 )
-            }.value
+            }
             if loadGate.finish(loadToken) {
                 state.stage = .ready(lib)
             }
@@ -190,6 +212,11 @@ final class LoadSessionGate {
     func apply(_ token: Token, _ body: () -> Void) {
         guard activeToken == token else { return }
         body()
+    }
+
+    /// Колбэки и результат отменённой загрузки стадию уже не трогают.
+    func cancel() {
+        activeToken = nil
     }
 
     @discardableResult

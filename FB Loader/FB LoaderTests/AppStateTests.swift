@@ -19,11 +19,11 @@ struct AppStateTests {
     @Test("selectSection — смена case'а сбрасывает per-tab")
     func selectSectionSwitchesCase() {
         let s = AppState()
+        s.selectLanguage("en")
         s.selectSection(.series(99))
         s.selectedBookLibid = 7
         s.sidebarFilter = "abc"
         s.checkedBookLibids = [1, 2]
-        s.languageFilter = "en"
 
         s.selectSection(.authors(nil))
 
@@ -37,11 +37,11 @@ struct AppStateTests {
     @Test("selectSection — точный no-op при равном sidebar")
     func selectSectionExactNoop() {
         let s = AppState()
+        s.selectLanguage("en")
         s.selectSection(.authors(10))
         s.sidebarFilter = "x"
         s.checkedBookLibids = [1]
         s.selectedBookLibid = 7
-        s.languageFilter = "en"
 
         s.selectSection(.authors(10))
 
@@ -55,11 +55,11 @@ struct AppStateTests {
     @Test("selectSection — same-case другой ID: полный сброс")
     func selectSectionSameCaseDifferentID() {
         let s = AppState()
+        s.selectLanguage("en")
         s.selectSection(.authors(10))
         s.sidebarFilter = "x"
         s.checkedBookLibids = [1]
         s.selectedBookLibid = 7
-        s.languageFilter = "en"
 
         s.selectSection(.authors(nil))
 
@@ -105,11 +105,11 @@ struct AppStateTests {
     @Test("selectAuthor с именем — cross-section: фильтр в имя, preview сохраняется")
     func selectAuthorDeepLinkCrossSection() {
         let s = AppState()
+        s.selectLanguage("en")
         s.selectSection(.series(99))
         s.selectedBookLibid = 7
         s.sidebarFilter = "x"
         s.checkedBookLibids = [1]
-        s.languageFilter = "en"
 
         s.selectAuthor(42, deepLinkName: "Иванов")
 
@@ -273,7 +273,7 @@ struct AppStateTests {
         let s = AppState()
         s.applyDateFilter(someFilter)
 
-        s.languageFilter = "en"
+        s.selectLanguage("en")
 
         #expect(s.dateFilter == someFilter)
     }
@@ -281,11 +281,11 @@ struct AppStateTests {
     @Test("reset — sidebar=.authors(nil), все per-tab и language к дефолтам")
     func resetState() {
         let s = AppState()
+        s.selectLanguage("en")
         s.selectSection(.series(99))
         s.selectedBookLibid = 7
         s.sidebarFilter = "x"
         s.checkedBookLibids = [1]
-        s.languageFilter = "en"
 
         s.reset()
 
@@ -294,5 +294,69 @@ struct AppStateTests {
         #expect(s.sidebarFilter == "")
         #expect(s.checkedBookLibids.isEmpty)
         #expect(s.languageFilter == "ru")
+    }
+
+    @Test("reset снимает фильтр дат")
+    func resetClearsDateFilter() {
+        let s = AppState()
+        s.applyDateFilter(someFilter)
+
+        s.reset()
+
+        #expect(s.dateFilter == nil)
+    }
+
+    @Test("смена вкладки снимает фильтр дат")
+    func selectSectionClearsDateFilter() {
+        let s = AppState()
+        s.applyDateFilter(someFilter)
+
+        s.selectSection(.series(nil))
+
+        #expect(s.dateFilter == nil)
+    }
+
+    @Test("смена языка гасит галочки и превью, фильтр сайдбара и вкладку не трогает")
+    func selectLanguageClearsChecksAndPreview() {
+        let s = AppState()
+        s.selectSection(.authors(10))
+        s.sidebarFilter = "x"
+        s.selectedBookLibid = 7
+        s.checkedBookLibids = [1, 2]
+
+        s.selectLanguage("en")
+
+        #expect(s.languageFilter == "en")
+        #expect(s.selectedBookLibid == nil)
+        #expect(s.checkedBookLibids.isEmpty)
+        #expect(s.sidebar == .authors(10))
+        #expect(s.sidebarFilter == "x")
+    }
+
+    @Test("тот же язык — no-op")
+    func selectSameLanguageNoop() {
+        let s = AppState()
+        s.selectedBookLibid = 7
+        s.checkedBookLibids = [1]
+
+        s.selectLanguage("ru")
+
+        #expect(s.selectedBookLibid == 7)
+        #expect(s.checkedBookLibids == [1])
+    }
+
+    @Test("пересборка каталога доступна только при открытом каталоге")
+    func rebuildAvailableOnlyWhenReady() throws {
+        let s = AppState()
+        #expect(!s.canRebuildCatalog)
+        s.stage = .onboarding(.both)
+        #expect(!s.canRebuildCatalog)
+        s.stage = .loading(progress: "")
+        #expect(!s.canRebuildCatalog)
+        s.stage = .failed("x")
+        #expect(!s.canRebuildCatalog)
+        let url = try #require(TestBundleAnchor.bundle.url(forResource: "tiny", withExtension: "inpx"))
+        s.stage = .ready(try INPXImporter.parse(inpxURL: url, genres: GenreDictionary.loadFromBundle()))
+        #expect(s.canRebuildCatalog)
     }
 }

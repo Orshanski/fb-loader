@@ -5,43 +5,41 @@ import UniformTypeIdentifiers   // for UTType(filenameExtension:)
 struct SettingsView: View {
     let userPaths: UserPaths
     let rebuildProgress: String?
+    let canRebuild: Bool
     let onClose: () -> Void
     let onRebuild: () -> Void
-    @State private var inpx: URL?
-    @State private var arch: URL?
+    let onINPXChange: (URL) -> Void
     @State private var cacheStatus: String = ""
 
     var body: some View {
         Form {
             HStack {
                 Text("INPX:")
-                Text(inpx?.path ?? "не выбран").foregroundStyle(.secondary)
+                Text(userPaths.inpxURL?.path ?? "не выбран").foregroundStyle(.secondary)
                 Spacer()
                 Button("Изменить…") {
                     let p = NSOpenPanel(); p.canChooseFiles = true; p.canChooseDirectories = false
                     p.allowedContentTypes = [.init(filenameExtension: "inpx")!]
-                    if p.runModal() == .OK { inpx = p.url; userPaths.inpxURL = p.url }
+                    if p.runModal() == .OK, let url = p.url { onINPXChange(url) }
                 }
+                .disabled(rebuildProgress != nil)
             }
             HStack {
                 Text("Папка архивов:")
-                Text(arch?.path ?? "не выбрана").foregroundStyle(.secondary)
+                Text(userPaths.archivesDirectoryURL?.path ?? "не выбрана").foregroundStyle(.secondary)
                 Spacer()
                 Button("Изменить…") {
                     let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
-                    if p.runModal() == .OK { arch = p.url; userPaths.archivesDirectoryURL = p.url }
+                    if p.runModal() == .OK { userPaths.archivesDirectoryURL = p.url }
                 }
             }
-            Text("После смены путей перезапустите приложение.")
-                .font(.caption).foregroundStyle(.secondary)
-
             Divider()
             HStack {
                 Text("Кэш каталога:")
                 Text(cacheStatus).foregroundStyle(.secondary).font(.caption)
                 Spacer()
                 Button("Пересобрать каталог") { onRebuild() }
-                    .disabled(rebuildProgress != nil)
+                    .disabled(!canRebuild || rebuildProgress != nil)
             }
             if let rebuildProgress {
                 HStack(spacing: 8) {
@@ -52,9 +50,6 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
-            } else {
-                Text("Каталог пересобрается из INPX прямо сейчас.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Divider()
@@ -66,11 +61,7 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 600)
-        .onAppear {
-            inpx = userPaths.inpxURL
-            arch = userPaths.archivesDirectoryURL
-            updateCacheStatus()
-        }
+        .onAppear { updateCacheStatus() }
         .onChange(of: rebuildProgress) { oldValue, newValue in
             if oldValue != nil && newValue == nil {
                 updateCacheStatus()

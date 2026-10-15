@@ -1,13 +1,20 @@
 import SwiftUI
 
+/// Ссылка, а не замыкание: замыкание создаётся заново на каждом проходе body
+/// главного окна, и таблица книг пересчитывалась бы при каждом клике по книге.
+final class ExportAction {
+    var perform: () -> Void = {}
+}
+
 struct BooksTableView: View {
     let library: Library
+    let exportAction: ExportAction
     @State private var columns: BookTableColumns = .standard
 
     var body: some View {
         // Ширина замеряется снаружи таблицы и доходит до шапки и строк через
         // окружение: иначе каждый шаг ресайза пересчитывал бы выборку книг.
-        BooksTableContent(library: library)
+        BooksTableContent(library: library, exportAction: exportAction)
             .environment(\.bookTableColumns, columns)
             .onGeometryChange(for: BookTableColumns.self) { proxy in
                 BookTableColumns.visibleColumns(forWidth: proxy.size.width)
@@ -17,6 +24,7 @@ struct BooksTableView: View {
 
 private struct BooksTableContent: View {
     let library: Library
+    let exportAction: ExportAction
     @Environment(AppState.self) private var state
     @State private var showDateFilter = false
 
@@ -127,9 +135,7 @@ private struct BooksTableContent: View {
             contextMenuBuilder: {
                 AnyView(
                     Button("Выгрузить отмеченные (\(s.checkedBookLibids.count))") {
-                        // Export is kicked off by MainWindowView via the
-                        // shouldStartExport flag on AppState.
-                        s.shouldStartExport = true
+                        exportAction.perform()
                     }
                     .disabled(s.checkedBookLibids.isEmpty)
                 )
