@@ -1,7 +1,8 @@
 import Foundation
 
 /// Loads and queries the FB2 genre dictionary embedded in the app bundle.
-/// Source: extracted from freeLib.sqlite `genre` table.
+/// Source: extracted from freeLib.sqlite `genre` table, plus Flibusta genres
+/// freeLib lacks (names and sections from flibusta.is/g, 2026-10-15).
 ///
 /// **Concurrency:** not Sendable. `genre(forCode:)` mutates internal caches
 /// (`syntheticByCode`, `nextSyntheticID`) when synthesizing entries for unknown
@@ -23,6 +24,9 @@ nonisolated final class GenreDictionary {
             case parentID = "parent_id"
         }
     }
+
+    /// Раздел «Прочее» в genres.json.
+    static let otherSectionID: Int16 = 11
 
     let allGenres: [Genre]
     let fingerprint: Data
@@ -85,9 +89,11 @@ nonisolated final class GenreDictionary {
     func genre(forCode code: String) -> Genre? {
         guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }
+        // В части INPX вместо кода — название; у freeLib для них ключи вида «биографии_и_мемуары».
+        if let g = byCode[code.lowercased().replacingOccurrences(of: " ", with: "_")] { return g }
         if let g = syntheticByCode[code] { return g }
         guard let id = nextSyntheticID else { return nil }
-        let g = Genre(id: id, code: code, name: code, parentID: nil)
+        let g = Genre(id: id, code: code, name: code, parentID: Self.otherSectionID)
         nextSyntheticID = id == Int16.min ? nil : id - 1
         syntheticByCode[code] = g
         return g

@@ -53,6 +53,38 @@ struct GenreDictionaryTests {
         #expect(dict.genre(forCode: "") == nil)
     }
 
+    @Test("жанры Флибусты, которых не было у freeLib, — с русским названием и разделом",
+          arguments: [("fan_translation", "Любительский перевод", Int16(11)),
+                      ("boyar_anime", "Бояръ-аниме", Int16(1)),
+                      ("child_tale_russian_writers", "Сказки отечественных писателей", Int16(7)),
+                      ("det_lady", "Дамский детективный роман", Int16(4)),
+                      ("nonf_biography_writers", "Биографии и мемуары: писатели, поэты, драматурги", Int16(5)),
+                      ("sci_psychology_popular", "Популярная психология", Int16(3))])
+    func flibustaGenres(code: String, name: String, parent: Int16) throws {
+        let g = try #require(try GenreDictionary.loadFromBundle().genre(forCode: code))
+        #expect(g.id > 0)
+        #expect(g.name == name)
+        #expect(g.parentID == parent)
+    }
+
+    @Test("название вместо кода находит жанр словаря", arguments: [
+        ("Биографии и мемуары", Int16(500)), ("Шпионский Детектив", Int16(410))])
+    func nameInsteadOfCode(raw: String, id: Int16) throws {
+        #expect(try GenreDictionary.loadFromBundle().genre(forCode: raw)?.id == id)
+    }
+
+    @Test("незнакомый код — в разделе «Прочее», а не корневым разделом")
+    func syntheticUnderOther() throws {
+        let g = try #require(try GenreDictionary.loadFromBundle().genre(forCode: "made_up_genre_xyz"))
+        #expect(g.parentID == 11)
+    }
+
+    @Test("id словаря уникальны")
+    func uniqueIDs() throws {
+        let ids = try GenreDictionary.loadFromBundle().allGenres.map(\.id)
+        #expect(Set(ids).count == ids.count)
+    }
+
     @Test("жанры для каталога включают синтетические")
     func libraryGenresIncludeSynthetic() throws {
         let dict = try GenreDictionary.loadFromBundle()
