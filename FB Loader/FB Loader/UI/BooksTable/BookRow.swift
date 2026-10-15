@@ -18,8 +18,7 @@ struct BookRow: View {
     /// menu). If `nil`, no context menu is attached.
     var contextMenuBuilder: (() -> AnyView)? = nil
 
-    var columns: BookTableColumns = .standard
-
+    @Environment(\.bookTableColumns) private var columns
     @State private var hovered = false
 
     var body: some View {
@@ -90,5 +89,16 @@ private struct OptionalContextMenu: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct BookTableColumnsKey: EnvironmentKey {
+    static let defaultValue = BookTableColumns.standard
+}
+
+extension EnvironmentValues {
+    var bookTableColumns: BookTableColumns {
+        get { self[BookTableColumnsKey.self] }
+        set { self[BookTableColumnsKey.self] = newValue }
     }
 }

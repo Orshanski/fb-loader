@@ -23,11 +23,12 @@ nonisolated struct BookTableColumns: Equatable, Sendable {
     /// Доля гибкой ширины для «Жанров»; остальное — «Названию», у него приоритет.
     static let genresShare: CGFloat = 0.3
 
-    /// Для мест без замера ширины (окно поиска).
+    /// Для мест без замера ширины (окно поиска): «Жанры» идеальной ширины.
     static let standard = BookTableColumns(
         showsSize: true, showsGenres: true, genresWidth: genresIdealWidth)
 
-    /// Панель уже этого не вмещает постоянные колонки вложенной строки.
+    /// Самая узкая панель, в которую ещё помещаются постоянные колонки строки
+    /// внутри группы серии.
     static var minimumPaneWidth: CGFloat {
         horizontalPadding + indent + checkboxWidth + numWidth + dateWidth
             + 3 * spacing + titleMinWidth

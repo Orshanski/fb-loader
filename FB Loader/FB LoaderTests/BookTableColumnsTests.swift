@@ -48,6 +48,14 @@ struct BookTableColumnsTests {
         #expect(!c.showsGenres)
     }
 
+    @Test("пороги в пунктах: Жанры скрыты уже 640, Размер — уже 510")
+    func literalThresholds() {
+        #expect(C.visibleColumns(forWidth: 640).showsGenres)
+        #expect(!C.visibleColumns(forWidth: 639).showsGenres)
+        #expect(C.visibleColumns(forWidth: 510).showsSize)
+        #expect(!C.visibleColumns(forWidth: 509).showsSize)
+    }
+
     @Test("Жанры никогда не видны без Размера")
     func genresHiddenBeforeSize() {
         for w in stride(from: CGFloat(0), through: 2000, by: 5) {

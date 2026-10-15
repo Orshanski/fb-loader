@@ -2,9 +2,23 @@ import SwiftUI
 
 struct BooksTableView: View {
     let library: Library
+    @State private var columns: BookTableColumns = .standard
+
+    var body: some View {
+        // Ширина замеряется снаружи таблицы и доходит до шапки и строк через
+        // окружение: иначе каждый шаг ресайза пересчитывал бы выборку книг.
+        BooksTableContent(library: library)
+            .environment(\.bookTableColumns, columns)
+            .onGeometryChange(for: BookTableColumns.self) { proxy in
+                BookTableColumns.visibleColumns(forWidth: proxy.size.width)
+            } action: { columns = $0 }
+    }
+}
+
+private struct BooksTableContent: View {
+    let library: Library
     @Environment(AppState.self) private var state
     @State private var showDateFilter = false
-    @State private var columns: BookTableColumns = .standard
 
     private struct GroupedRow: Identifiable {
         struct BookEntry: Identifiable {
@@ -91,9 +105,6 @@ struct BooksTableView: View {
             }
             .padding(.bottom, 4)
         }
-        .onGeometryChange(for: BookTableColumns.self) { proxy in
-            BookTableColumns.visibleColumns(forWidth: proxy.size.width)
-        } action: { columns = $0 }
     }
 
     @ViewBuilder
@@ -122,8 +133,7 @@ struct BooksTableView: View {
                     }
                     .disabled(s.checkedBookLibids.isEmpty)
                 )
-            },
-            columns: columns
+            }
         )
     }
 
@@ -132,7 +142,7 @@ struct BooksTableView: View {
     private func header(count: Int, total: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             titleRow(count: count, total: total)
-            colsRow
+            ColumnsHeaderRow(dateButton: dateColumnButton)
         }
         .padding(.horizontal, 16)
         .frame(height: 72)
@@ -214,29 +224,6 @@ struct BooksTableView: View {
         return "\(n) \(word)"
     }
 
-    private var colsRow: some View {
-        HStack(spacing: BookTableColumns.spacing) {
-            Spacer().frame(width: BookTableColumns.checkboxWidth)
-            Text("Название")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("№")
-                .frame(width: BookTableColumns.numWidth, alignment: .trailing)
-            if columns.showsSize {
-                Text("Размер")
-                    .frame(width: BookTableColumns.sizeWidth, alignment: .trailing)
-            }
-            dateColumnButton
-            if columns.showsGenres {
-                Text("Жанры")
-                    .frame(width: columns.genresWidth, alignment: .leading)
-            }
-        }
-        .font(.system(size: 10, weight: .semibold))
-        .textCase(.uppercase)
-        .kerning(0.6)
-        .foregroundStyle(.secondary)
-    }
-
     /// Заголовок колонки «Дата» — кнопка, открывающая поповер фильтра.
     /// Занимает ровно `BookTableColumns.dateWidth` и ровно тем же `Text`, что и
     /// остальные заголовки: любой значок внутри этой ширины сдвинул бы
@@ -279,6 +266,34 @@ struct BooksTableView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
+    }
+}
+
+private struct ColumnsHeaderRow<DateButton: View>: View {
+    let dateButton: DateButton
+    @Environment(\.bookTableColumns) private var columns
+
+    var body: some View {
+        HStack(spacing: BookTableColumns.spacing) {
+            Spacer().frame(width: BookTableColumns.checkboxWidth)
+            Text("Название")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("№")
+                .frame(width: BookTableColumns.numWidth, alignment: .trailing)
+            if columns.showsSize {
+                Text("Размер")
+                    .frame(width: BookTableColumns.sizeWidth, alignment: .trailing)
+            }
+            dateButton
+            if columns.showsGenres {
+                Text("Жанры")
+                    .frame(width: columns.genresWidth, alignment: .leading)
+            }
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .textCase(.uppercase)
+        .kerning(0.6)
+        .foregroundStyle(.secondary)
     }
 }
 
