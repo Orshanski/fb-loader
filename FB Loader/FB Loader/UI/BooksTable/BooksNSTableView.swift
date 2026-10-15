@@ -1,0 +1,219 @@
+import AppKit
+
+extension BookTableColumnID {
+    var identifier: NSUserInterfaceItemIdentifier { NSUserInterfaceItemIdentifier(rawValue) }
+}
+
+private func makeLabel() -> NSTextField {
+    let f = NSTextField(labelWithString: "")
+    f.translatesAutoresizingMaskIntoConstraints = false
+    f.lineBreakMode = .byTruncatingTail
+    f.cell?.usesSingleLineMode = true
+    f.cell?.truncatesLastVisibleLine = true
+    return f
+}
+
+/// Своё `NSControl`, а не `NSButton`: вид — 14×14 из CompactCheckbox, а клик
+/// не должен ни выделять строку, ни брать фокус.
+final class BookCheckbox: NSControl {
+    var isOn = false { didSet { if isOn != oldValue { needsDisplay = true } } }
+    var isEmphasized = false { didSet { if isEmphasized != oldValue { needsDisplay = true } } }
+    var onToggle: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        refusesFirstResponder = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.checkBox)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 14) }
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onToggle?() }
+    }
+
+    override func accessibilityValue() -> Any? { NSNumber(value: isOn ? 1 : 0) }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let onToggle else { return false }
+        onToggle()
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let box = NSRect(x: (bounds.width - 14) / 2, y: (bounds.height - 14) / 2, width: 14, height: 14)
+        let fill: NSColor
+        let stroke: NSColor
+        let tick: NSColor
+        switch (isEmphasized, isOn) {
+        case (false, false): fill = .white; stroke = NSColor(white: 0.78, alpha: 1); tick = .clear
+        case (false, true): fill = .controlAccentColor; stroke = .controlAccentColor; tick = .white
+        case (true, false): fill = .clear; stroke = .white; tick = .clear
+        case (true, true): fill = .white; stroke = .white; tick = .controlAccentColor
+        }
+        let path = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: 2.5, yRadius: 2.5)
+        path.lineWidth = 1
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.stroke()
+        guard isOn,
+              let image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [tick])))
+        else { return }
+        let s = image.size
+        image.draw(in: NSRect(x: box.midX - s.width / 2, y: box.midY - s.height / 2,
+                              width: s.width, height: s.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+}
+
+/// Галочка живёт в ячейке названия: только так отступ книги серии сдвигает
+/// галочку и название вместе, а правые колонки стоят на месте.
+final class BookTitleCellView: NSTableCellView {
+    let checkbox = BookCheckbox()
+    let titleLabel = makeLabel()
+    private(set) var leadingInset: CGFloat = BookTableColumns.rowInset
+    private(set) var showsSelected = false
+    private var checkboxLeading: NSLayoutConstraint!
+    private var labelLeading: NSLayoutConstraint!
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        checkbox.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.textColor = .labelColor
+        titleLabel.font = .systemFont(ofSize: 13)
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(checkbox)
+        addSubview(titleLabel)
+        textField = titleLabel
+        checkboxLeading = checkbox.leadingAnchor.constraint(equalTo: leadingAnchor)
+        labelLeading = titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor)
+        NSLayoutConstraint.activate([
+            checkboxLeading, labelLeading,
+            checkbox.widthAnchor.constraint(equalToConstant: 14),
+            checkbox.heightAnchor.constraint(equalToConstant: 14),
+            checkbox.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        applyInset()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { checkbox.isEmphasized = backgroundStyle == .emphasized }
+    }
+
+    func configure(book: Book, inSeries: Bool, isChecked: Bool, isSelected: Bool,
+                   onToggle: @escaping () -> Void) {
+        leadingInset = BookTableColumns.rowInset + (inSeries ? BookTableColumns.indent : 0)
+        applyInset()
+        showsSelected = isSelected
+        titleLabel.stringValue = book.title
+        titleLabel.font = .systemFont(ofSize: 13, weight: isSelected ? .semibold : .regular)
+        checkbox.isOn = isChecked
+        checkbox.onToggle = onToggle
+        checkbox.setAccessibilityLabel("Отметить: \(book.title)")
+    }
+
+    private func applyInset() {
+        checkboxLeading.constant = leadingInset + (BookTableColumns.checkboxWidth - 14) / 2
+        labelLeading.constant = leadingInset + BookTableColumns.checkboxWidth + BookTableColumns.spacing
+    }
+}
+
+final class BookTextCellView: NSTableCellView {
+    let column: BookTableColumnID
+    let label = makeLabel()
+
+    init(column: BookTableColumnID) {
+        precondition(column != .title, "Название рисует BookTitleCellView")
+        self.column = column
+        super.init(frame: .zero)
+        identifier = column.identifier
+        label.textColor = .secondaryLabelColor
+        label.alignment = column == .genres ? .left : .right
+        label.font = column == .genres
+            ? .systemFont(ofSize: 13)
+            : .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(label)
+        textField = label
+        var constraints = [
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: BookTableColumns.spacing),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ]
+        switch column {
+        case .num: constraints.append(label.widthAnchor.constraint(equalToConstant: BookTableColumns.numWidth))
+        case .size: constraints.append(label.widthAnchor.constraint(equalToConstant: BookTableColumns.sizeWidth))
+        case .date: constraints.append(label.widthAnchor.constraint(equalToConstant: BookTableColumns.dateWidth))
+        case .genres: constraints.append(label.trailingAnchor.constraint(equalTo: trailingAnchor,
+                                                                         constant: -BookTableColumns.rowInset))
+        case .title: break
+        }
+        NSLayoutConstraint.activate(constraints)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func configure(text: String) { label.stringValue = text }
+}
+
+final class SeriesHeaderCellView: NSTableCellView {
+    let nameLabel = makeLabel()
+    let countLabel = makeLabel()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        nameLabel.textColor = .labelColor
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        nameLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        countLabel.font = .systemFont(ofSize: 12)
+        countLabel.textColor = .secondaryLabelColor
+        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+        addSubview(nameLabel)
+        addSubview(countLabel)
+        textField = nameLabel
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: BookTableColumns.rowInset),
+            nameLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            countLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 4),
+            countLabel.firstBaselineAnchor.constraint(equalTo: nameLabel.firstBaselineAnchor),
+            countLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
+                                                 constant: -BookTableColumns.rowInset),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func configure(series: Series, count: Int) {
+        nameLabel.stringValue = series.name
+        countLabel.stringValue = "(\(count))"
+    }
+}
+
+final class BooksRowView: NSTableRowView {
+    var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        // Групповая строка — заголовок серии: без системного фона и без hover.
+        guard !isGroupRowStyle else { return }
+        super.drawBackground(in: dirtyRect)
+        if isHovered && !isSelected {
+            NSColor.black.withAlphaComponent(0.03).setFill()
+            bounds.fill()
+        }
+    }
+}
