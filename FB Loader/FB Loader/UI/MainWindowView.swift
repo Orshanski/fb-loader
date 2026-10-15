@@ -23,7 +23,7 @@ struct MainWindowView: View {
                            minHeight: booksTableMinHeight,
                            idealHeight: booksTableIdealHeight)
                 if let libid = state.selectedBookLibid,
-                   let book = library.bookByLibid[libid],
+                   let book = library.book(libid: libid),
                    let archives = state.userPaths.archivesDirectoryURL {
                     BookDetailView(
                         library: library, archivesRoot: archives, book: book,

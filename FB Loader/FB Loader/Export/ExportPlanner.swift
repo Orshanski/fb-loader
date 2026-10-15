@@ -24,7 +24,7 @@ nonisolated enum ExportPlanner {
         // folders are always per-author. See "Как именуются файлы при
         // экспорте" in README.
         _ = selectedSeriesID
-        return libids.compactMap { library.bookByLibid[$0] }.map { book in
+        return libids.compactMap { library.book(libid: $0) }.map { book in
             let folderName = folderName(for: book,
                                         selectedAuthorID: selectedAuthorID,
                                         authorsByID: library.authorByID)

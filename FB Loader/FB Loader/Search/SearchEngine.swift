@@ -10,31 +10,29 @@ import Foundation
 /// «по умолчанию топ-10 + Показать всех»; cap живёт в UI, не в engine).
 nonisolated enum SearchEngine {
     nonisolated static func run(query: String, language: String, in lib: Library) -> SearchResults {
-        let qToks = SearchPreprocess.tokens(query)
-        guard !qToks.isEmpty else {
-            return SearchResults(authors: [], series: [], books: [])
+        var qStore = TokenStore()
+        qStore.appendTokenized(query)
+        return qStore.withView { qView in
+            var q: [UnsafeBufferPointer<UInt32>] = []
+            qView.appendTokens(of: 0, to: &q)
+            if q.isEmpty { return SearchResults(authors: [], series: [], books: []) }
+            return run(qTokens: q, language: language, in: lib)
         }
+    }
+
+    nonisolated private static func run(qTokens qToks: [UnsafeBufferPointer<UInt32>],
+                                        language: String, in lib: Library) -> SearchResults {
 
         // 1. Authors — все matches выше cutoff, отсортированные по убыванию.
-        let authorHits = parallelScan(
-            qTokens: qToks,
-            count: lib.authors.count,
-            cutoff: FuzzyScorer.scoreCutoff
-        ) { i in
-            lib.searchKeyAuthors[i]
-        }
+        let authorHits = parallelScan(qTokens: qToks, keys: lib.searchKeyAuthors,
+                                      cutoff: FuzzyScorer.scoreCutoff)
         let authors = authorHits.map { AuthorMatch(authorIndex: $0.index, score: $0.score) }
 
         // 2. Series — uses extended key (series name + author tokens) so
         // cross-token queries like «сандерсон мстители» match series whose
         // author is Сандерсон.
-        let seriesHits = parallelScan(
-            qTokens: qToks,
-            count: lib.series.count,
-            cutoff: FuzzyScorer.scoreCutoff
-        ) { i in
-            lib.searchKeySeriesExt[i]
-        }
+        let seriesHits = parallelScan(qTokens: qToks, keys: lib.searchKeySeriesExt,
+                                      cutoff: FuzzyScorer.scoreCutoff)
         let series = seriesHits.map { SeriesMatch(seriesIndex: $0.index, score: $0.score) }
 
         // 3. Books — language-filtered, combined key (title + author tokens + series tokens).
@@ -78,34 +76,44 @@ nonisolated enum SearchEngine {
         let buf: UnsafeMutableBufferPointer<T>
     }
 
+    /// Слова запроса — только чтение во время скана.
+    nonisolated private struct SendableTokens: @unchecked Sendable {
+        let tokens: [UnsafeBufferPointer<UInt32>]
+    }
+
     /// Generic параллельный скан: choice — единый массив токенов на индекс
     /// (авторы и серии). Книги используют отдельный путь
     /// `parallelScanBooks` с объединением title+author+series tokens.
     nonisolated private static func parallelScan(
-        qTokens: [[UInt32]],
-        count: Int,
-        cutoff: Double,
-        keyAt: (Int) -> [[UInt32]]
+        qTokens: [UnsafeBufferPointer<UInt32>],
+        keys: TokenStore,
+        cutoff: Double
     ) -> [Hit] {
+        let count = keys.count
         if count == 0 { return [] }
+        let qTokens = SendableTokens(tokens: qTokens)
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
         let chunkSize = (count + cores - 1) / cores
         var perChunk: [[Hit]] = Array(repeating: [], count: cores)
-        perChunk.withUnsafeMutableBufferPointer { rawBuf in
-            let wrapped = SendableBuf(buf: rawBuf)
-            DispatchQueue.concurrentPerform(iterations: cores) { c in
-                let lo = c * chunkSize
-                let hi = min(lo + chunkSize, count)
-                if lo >= hi { return }
-                var local: [Hit] = []
-                local.reserveCapacity(64)
-                for i in lo..<hi {
-                    let key = keyAt(i)
-                    let s = FuzzyScorer.tokenMinRatioCut(
-                        qTokens: qTokens, cTokens: key, cutoff: cutoff)
-                    if s >= cutoff { local.append(Hit(index: i, score: s)) }
+        keys.withView { view in
+            perChunk.withUnsafeMutableBufferPointer { rawBuf in
+                let wrapped = SendableBuf(buf: rawBuf)
+                DispatchQueue.concurrentPerform(iterations: cores) { c in
+                    let lo = c * chunkSize
+                    let hi = min(lo + chunkSize, count)
+                    if lo >= hi { return }
+                    var local: [Hit] = []
+                    local.reserveCapacity(64)
+                    var key: [UnsafeBufferPointer<UInt32>] = []
+                    for i in lo..<hi {
+                        key.removeAll(keepingCapacity: true)
+                        view.appendTokens(of: i, to: &key)
+                        let s = FuzzyScorer.tokenMinRatioCut(
+                            qTokens: qTokens.tokens, cTokens: key, cutoff: cutoff)
+                        if s >= cutoff { local.append(Hit(index: i, score: s)) }
+                    }
+                    wrapped.buf[c] = local
                 }
-                wrapped.buf[c] = local
             }
         }
         var hits = perChunk.flatMap { $0 }
@@ -122,7 +130,7 @@ nonisolated enum SearchEngine {
     /// фильтрует по языку. Дедуп с авторско-серийными бакетами делается
     /// постфактум в `run` через `filterBookHitsAgainstMatched`.
     nonisolated private static func parallelScanBooks(
-        qTokens: [[UInt32]],
+        qTokens: [UnsafeBufferPointer<UInt32>],
         language: String,
         in lib: Library,
         cutoff: Double
@@ -131,36 +139,39 @@ nonisolated enum SearchEngine {
         if n == 0 { return [] }
         // Sentinel for "language not specified" matches main-window convention.
         let langKey = language == BooksByContext.unspecifiedLanguageToken ? "" : language
+        let qTokens = SendableTokens(tokens: qTokens)
         let cores = max(2, ProcessInfo.processInfo.activeProcessorCount)
         let chunkSize = (n + cores - 1) / cores
         var perChunk: [[Hit]] = Array(repeating: [], count: cores)
-        perChunk.withUnsafeMutableBufferPointer { rawBuf in
-            let wrapped = SendableBuf(buf: rawBuf)
-            DispatchQueue.concurrentPerform(iterations: cores) { c in
-                let lo = c * chunkSize
-                let hi = min(lo + chunkSize, n)
-                if lo >= hi { return }
-                var local: [Hit] = []
-                local.reserveCapacity(128)
-                var combined: [[UInt32]] = []
-                combined.reserveCapacity(16)
-                for i in lo..<hi {
-                    if lib.books[i].language != langKey { continue }
-                    combined.removeAll(keepingCapacity: true)
-                    combined.append(contentsOf: lib.searchKeyTitle[i])
-                    let aIdx = Int(lib.searchAuthorIdx[i])
-                    if aIdx >= 0 {
-                        combined.append(contentsOf: lib.searchKeyAuthors[aIdx])
+        lib.searchKeyTitle.withView { titles in
+            lib.searchKeyAuthors.withView { authors in
+                lib.searchKeySeries.withView { series in
+                    perChunk.withUnsafeMutableBufferPointer { rawBuf in
+                        let wrapped = SendableBuf(buf: rawBuf)
+                        DispatchQueue.concurrentPerform(iterations: cores) { c in
+                            let lo = c * chunkSize
+                            let hi = min(lo + chunkSize, n)
+                            if lo >= hi { return }
+                            var local: [Hit] = []
+                            local.reserveCapacity(128)
+                            var combined: [UnsafeBufferPointer<UInt32>] = []
+                            combined.reserveCapacity(16)
+                            for i in lo..<hi {
+                                if lib.books[i].language != langKey { continue }
+                                combined.removeAll(keepingCapacity: true)
+                                titles.appendTokens(of: i, to: &combined)
+                                let aIdx = Int(lib.searchAuthorIdx[i])
+                                if aIdx >= 0 { authors.appendTokens(of: aIdx, to: &combined) }
+                                let sIdx = Int(lib.searchSeriesIdx[i])
+                                if sIdx >= 0 { series.appendTokens(of: sIdx, to: &combined) }
+                                let s = FuzzyScorer.tokenMinRatioCut(
+                                    qTokens: qTokens.tokens, cTokens: combined, cutoff: cutoff)
+                                if s >= cutoff { local.append(Hit(index: i, score: s)) }
+                            }
+                            wrapped.buf[c] = local
+                        }
                     }
-                    let sIdx = Int(lib.searchSeriesIdx[i])
-                    if sIdx >= 0 {
-                        combined.append(contentsOf: lib.searchKeySeries[sIdx])
-                    }
-                    let s = FuzzyScorer.tokenMinRatioCut(
-                        qTokens: qTokens, cTokens: combined, cutoff: cutoff)
-                    if s >= cutoff { local.append(Hit(index: i, score: s)) }
                 }
-                wrapped.buf[c] = local
             }
         }
         var hits = perChunk.flatMap { $0 }

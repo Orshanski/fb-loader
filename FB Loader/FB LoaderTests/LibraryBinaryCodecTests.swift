@@ -19,6 +19,16 @@ private func library(authors: [Author] = [Author.unknown], series: [Series] = []
 
 @Suite("LibraryBinaryCodec — целостность")
 struct LibraryBinaryCodecIntegrityTests {
+    @Test("разбор среза Data с ненулевым startIndex")
+    func dataSlice() throws {
+        let full = try LibraryBinaryCodec.encode(library(books: [book(1, archiveFileName: "f")]),
+                                                 sourceKey: testKey)
+        let slice = (Data([0xAA]) + full).dropFirst()
+        #expect(slice.startIndex == 1)
+        #expect(try LibraryBinaryCodec.readHeader(slice).sourceKey == testKey)
+        #expect(try LibraryBinaryCodec.decode(slice).books.map(\.archiveEntryName) == ["f.fb2"])
+    }
+
     @Test("заголовок читается без разбора каталога")
     func header() throws {
         let data = try LibraryBinaryCodec.encode(library(books: [book(1)]), sourceKey: testKey)

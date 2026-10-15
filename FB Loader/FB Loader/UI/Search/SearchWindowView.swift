@@ -120,7 +120,7 @@ struct SearchWindowView: View {
     @ViewBuilder
     private var detailPanel: some View {
         if let libid = coord.selectedBookLibid,
-           let book = library.bookByLibid[libid],
+           let book = library.book(libid: libid),
            let archives = archivesRoot {
             BookDetailView(
                 library: library, archivesRoot: archives, book: book,

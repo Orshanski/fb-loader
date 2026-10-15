@@ -275,36 +275,33 @@ private nonisolated struct BinaryReader {
         min(Int(count), (data.count - offset) / minSize)
     }
     mutating func bytes(_ n: Int) throws -> [UInt8] {
+        let at = data.startIndex + (try advance(n))
+        return Array(data[at..<at + n])
+    }
+    /// Без временного массива на значение — их миллионы на загрузку.
+    private mutating func advance(_ n: Int) throws -> Int {
         guard offset + n <= data.count else { throw LibraryBinaryCodec.DecodeError.truncated }
         defer { offset += n }
-        return Array(data[offset..<offset+n])
+        return offset
     }
-    mutating func uint8() throws -> UInt8 { (try bytes(1))[0] }
-    mutating func uint16() throws -> UInt16 {
-        let b = try bytes(2)
-        return UInt16(b[0]) | (UInt16(b[1]) << 8)
-    }
-    mutating func uint32() throws -> UInt32 {
-        let b = try bytes(4)
-        return UInt32(b[0]) | (UInt32(b[1]) << 8) | (UInt32(b[2]) << 16) | (UInt32(b[3]) << 24)
-    }
-    mutating func int16() throws -> Int16 { Int16(bitPattern: try uint16()) }
-    mutating func int32() throws -> Int32 { Int32(bitPattern: try uint32()) }
-    mutating func uint64() throws -> UInt64 {
-        let b = try bytes(8)
+    private func byte(_ i: Int) -> UInt64 { UInt64(data[data.startIndex + i]) }
+    private mutating func littleEndian(_ n: Int) throws -> UInt64 {
+        let at = try advance(n)
         var v: UInt64 = 0
-        for i in (0..<8).reversed() { v = (v << 8) | UInt64(b[i]) }
+        for i in (0..<n).reversed() { v = (v << 8) | byte(at + i) }
         return v
     }
+    mutating func uint8() throws -> UInt8 { UInt8(try littleEndian(1)) }
+    mutating func uint16() throws -> UInt16 { UInt16(try littleEndian(2)) }
+    mutating func uint32() throws -> UInt32 { UInt32(try littleEndian(4)) }
+    mutating func int16() throws -> Int16 { Int16(bitPattern: try uint16()) }
+    mutating func int32() throws -> Int32 { Int32(bitPattern: try uint32()) }
+    mutating func uint64() throws -> UInt64 { try littleEndian(8) }
     mutating func double() throws -> Double { Double(bitPattern: try uint64()) }
-    mutating func string16() throws -> String {
-        let n = try uint16()
-        let b = try bytes(Int(n))
-        return String(decoding: b, as: UTF8.self)
-    }
-    mutating func string8() throws -> String {
-        let n = try uint8()
-        let b = try bytes(Int(n))
-        return String(decoding: b, as: UTF8.self)
+    mutating func string16() throws -> String { try string(length: Int(try uint16())) }
+    mutating func string8() throws -> String { try string(length: Int(try uint8())) }
+    private mutating func string(length n: Int) throws -> String {
+        let at = data.startIndex + (try advance(n))
+        return String(decoding: data[at..<at + n], as: UTF8.self)
     }
 }
