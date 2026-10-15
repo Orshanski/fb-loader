@@ -79,7 +79,7 @@ struct SettingsView: View {
     }
 
     private func cacheURL() -> URL? {
-        try? LibraryLoader.appSupportRoot().appendingPathComponent("library-cache.bin")
+        try? LibraryLoader.cacheURL()
     }
 
     private func updateCacheStatus() {

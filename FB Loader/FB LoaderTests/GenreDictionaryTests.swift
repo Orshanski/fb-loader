@@ -52,4 +52,30 @@ struct GenreDictionaryTests {
         let dict = try GenreDictionary.loadFromBundle()
         #expect(dict.genre(forCode: "") == nil)
     }
+
+    @Test("жанры для каталога включают синтетические")
+    func libraryGenresIncludeSynthetic() throws {
+        let dict = try GenreDictionary.loadFromBundle()
+        let g = try #require(dict.genre(forCode: "made_up_genre_xyz"))
+        #expect(dict.libraryGenres.contains(g))
+        #expect(dict.libraryGenres.count == dict.allGenres.count + 1)
+    }
+
+    @Test("синтетические id кончились — nil, а не падение")
+    func syntheticIDsExhausted() throws {
+        let dict = try GenreDictionary.loadFromBundle()
+        for i in 0..<32_768 {
+            #expect(dict.genre(forCode: "u\(i)") != nil)
+        }
+        #expect(dict.genre(forCode: "one_too_many") == nil)
+        #expect(dict.genre(forCode: "u0") != nil)
+    }
+
+    @Test("отпечаток genres.json — 32 байта и стабилен")
+    func fingerprint() throws {
+        let a = try GenreDictionary.loadFromBundle()
+        let b = try GenreDictionary.loadFromBundle()
+        #expect(a.fingerprint.count == 32)
+        #expect(a.fingerprint == b.fingerprint)
+    }
 }

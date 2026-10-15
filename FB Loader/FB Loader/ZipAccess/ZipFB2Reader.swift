@@ -13,7 +13,7 @@ nonisolated final class ZipFB2Reader {
         /// том отключился.
         case archiveUnreadable(URL, underlying: Error)
         case archiveCorrupt(URL, underlying: Error)
-        case bookNotFoundInArchive(zip: URL, libid: Int32)
+        case bookNotFoundInArchive(zip: URL, entryName: String)
     }
 
     /// Версия файла архива на диске. Индекс хранит смещения записей, поэтому
@@ -31,7 +31,8 @@ nonisolated final class ZipFB2Reader {
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var indexCache: [URL: (stamp: FileStamp, index: ZipCentralDirectory.Index)] = [:]
 
-    static func readFB2(libid: Int32, archiveURL: URL) throws -> Data {
+    /// `entryName` — имя записи в архиве, `Book.archiveEntryName`.
+    static func readFB2(entryName name: String, archiveURL: URL) throws -> Data {
         // Атрибуты — через FileManager, а не `URL.resourceValues`: тот
         // кэширует значения на экземпляре URL и подмену бы не заметил.
         guard FileManager.default.fileExists(atPath: archiveURL.path) else {
@@ -49,9 +50,8 @@ nonisolated final class ZipFB2Reader {
         }
 
         let index = try cachedIndex(for: archiveURL, stamp: FileStamp(size: size, modified: modified))
-        let name = "\(libid).fb2"
         guard let entry = index.entries[name] else {
-            throw ReaderError.bookNotFoundInArchive(zip: archiveURL, libid: libid)
+            throw ReaderError.bookNotFoundInArchive(zip: archiveURL, entryName: name)
         }
         do {
             let tExtract = ContinuousClock.now

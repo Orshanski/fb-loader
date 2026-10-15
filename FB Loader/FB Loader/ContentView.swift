@@ -82,8 +82,7 @@ struct ContentView: View {
                 onRebuild: {
                     state.reset()
                     settingsRebuildProgress = "Чтение каталога…"
-                    if let cache = try? LibraryLoader.appSupportRoot()
-                        .appendingPathComponent("library-cache.bin") {
+                    if let cache = try? LibraryLoader.cacheURL() {
                         try? FileManager.default.removeItem(at: cache)
                     }
                     Task {

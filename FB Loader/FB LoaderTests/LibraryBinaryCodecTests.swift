@@ -2,6 +2,83 @@ import Testing
 import Foundation
 @testable import FB_Loader
 
+private let testKey = Data(repeating: 0xCD, count: 32)
+
+private func book(_ libid: Int32, authors: [Int32] = [Author.unknownID], series: Int32? = nil,
+                  genres: [Int16] = [], archiveFileName: String? = nil) -> Book {
+    Book(libid: libid, title: "t", authorIDs: authors, seriesID: series, seriesNum: nil,
+         genreIDs: genres, language: "ru", archiveIndex: 0, size: 0, dateAdded: nil,
+         archiveFileName: archiveFileName)
+}
+
+private func library(authors: [Author] = [Author.unknown], series: [Series] = [],
+                     genres: [Genre] = [], books: [Book]) -> Library {
+    Library(inpxHash: Data(repeating: 0xAB, count: 32), inpxVersion: "v", archives: ["arch"],
+            authors: authors, series: series, genres: genres, books: books)
+}
+
+@Suite("LibraryBinaryCodec — целостность")
+struct LibraryBinaryCodecIntegrityTests {
+    @Test("заголовок читается без разбора каталога")
+    func header() throws {
+        let data = try LibraryBinaryCodec.encode(library(books: [book(1)]), sourceKey: testKey)
+        let h = try LibraryBinaryCodec.readHeader(data)
+        #expect(h.inpxHash == Data(repeating: 0xAB, count: 32))
+        #expect(h.sourceKey == testKey)
+    }
+
+    @Test("имя файла в архиве и синтетический жанр переживают кэш")
+    func archiveFileNameAndSyntheticGenre() throws {
+        let lib = library(genres: [Genre(id: -1, code: "x_new", name: "x_new", parentID: nil)],
+                          books: [book(1, genres: [-1], archiveFileName: "book-1"), book(2)])
+        let decoded = try LibraryBinaryCodec.decode(LibraryBinaryCodec.encode(lib, sourceKey: testKey))
+        #expect(decoded.books.map(\.archiveEntryName) == ["book-1.fb2", "2.fb2"])
+        #expect(decoded.genreByID[-1]?.code == "x_new")
+    }
+
+    @Test("слишком много авторов у книги — ошибка записи, а не падение")
+    func tooManyAuthors() {
+        let ids = (0..<70_000).map { _ in Author.unknownID }
+        #expect(throws: LibraryBinaryCodec.EncodeError.self) {
+            try LibraryBinaryCodec.encode(library(books: [book(1, authors: ids)]), sourceKey: testKey)
+        }
+    }
+
+    @Test("ссылка на несуществующего автора — ошибка чтения, а не падение позже")
+    func danglingAuthor() throws {
+        let data = try LibraryBinaryCodec.encode(library(books: [book(1, authors: [42])]), sourceKey: testKey)
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.decode(data)
+        }
+    }
+
+    @Test("ссылки на несуществующие серию и жанр — ошибка чтения")
+    func danglingSeriesAndGenre() throws {
+        for b in [book(1, series: 7), book(1, genres: [9])] {
+            let data = try LibraryBinaryCodec.encode(library(books: [b]), sourceKey: testKey)
+            #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+                try LibraryBinaryCodec.decode(data)
+            }
+        }
+    }
+
+    @Test("повтор id — ошибка проверки, а не падение в Library.init")
+    func duplicateIDs() {
+        let a = Author(id: 5, lastName: "А", firstName: "", middleName: "")
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.validate(authors: [a, a], series: [], genres: [], books: [])
+        }
+        let s = Series(id: 3, name: "С")
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.validate(authors: [], series: [s, s], genres: [], books: [])
+        }
+        let g = Genre(id: 2, code: "g", name: "g", parentID: nil)
+        #expect(throws: LibraryBinaryCodec.DecodeError.self) {
+            try LibraryBinaryCodec.validate(authors: [], series: [], genres: [g, g], books: [])
+        }
+    }
+}
+
 @Suite("LibraryBinaryCodec")
 struct LibraryBinaryCodecTests {
     @Test("encode then decode produces the same library")
@@ -22,7 +99,7 @@ struct LibraryBinaryCodecTests {
                      language: "ru", archiveIndex: 0, size: 987654, dateAdded: Date(timeIntervalSinceReferenceDate: 400_000_000)),
             ]
         )
-        let data = try LibraryBinaryCodec.encode(original)
+        let data = try LibraryBinaryCodec.encode(original, sourceKey: testKey)
         let decoded = try LibraryBinaryCodec.decode(data)
         #expect(decoded.inpxVersion == "20260301")
         #expect(decoded.archives == ["lib-001", "lib-002"])
@@ -49,7 +126,7 @@ struct LibraryBinaryCodecTests {
             inpxVersion: "v",
             archives: [], authors: [], series: [], genres: [], books: []
         )
-        let full = try LibraryBinaryCodec.encode(lib)
+        let full = try LibraryBinaryCodec.encode(lib, sourceKey: testKey)
         // Cut at byte 10 — past magic and version, mid-hash.
         let truncated = full.prefix(10)
         #expect(throws: LibraryBinaryCodec.DecodeError.self) {
@@ -64,7 +141,7 @@ struct LibraryBinaryCodecTests {
             inpxVersion: "v",
             archives: [], authors: [], series: [], genres: [], books: []
         )
-        var data = try LibraryBinaryCodec.encode(lib)
+        var data = try LibraryBinaryCodec.encode(lib, sourceKey: testKey)
         // Bytes 4..5 are the format-version little-endian UInt16; flip to 99.
         data[4] = 99
         data[5] = 0
@@ -88,7 +165,7 @@ struct LibraryBinaryCodecTests {
                      language: "ru", archiveIndex: 0, size: 0, dateAdded: nil),
             ]
         )
-        let decoded = try LibraryBinaryCodec.decode(LibraryBinaryCodec.encode(lib))
+        let decoded = try LibraryBinaryCodec.decode(LibraryBinaryCodec.encode(lib, sourceKey: testKey))
         #expect(decoded.books[0].seriesID == nil)
         #expect(decoded.books[0].seriesNum == nil)
     }
@@ -101,7 +178,7 @@ struct LibraryBinaryCodecTests {
             archives: [], authors: [], series: [], genres: [], books: []
         )
         #expect(throws: LibraryBinaryCodec.EncodeError.self) {
-            try LibraryBinaryCodec.encode(lib)
+            try LibraryBinaryCodec.encode(lib, sourceKey: testKey)
         }
     }
 
@@ -120,7 +197,7 @@ struct LibraryBinaryCodecTests {
                      language: "ru", archiveIndex: 1, size: 0, dateAdded: nil),
             ]
         )
-        let data = try LibraryBinaryCodec.encode(lib)
+        let data = try LibraryBinaryCodec.encode(lib, sourceKey: testKey)
 
         #expect(throws: LibraryBinaryCodec.DecodeError.self) {
             try LibraryBinaryCodec.decode(data)
@@ -138,7 +215,7 @@ struct LibraryBinaryCodecTests {
             genres: [],
             books: []
         )
-        let data = try LibraryBinaryCodec.encode(original)
+        let data = try LibraryBinaryCodec.encode(original, sourceKey: testKey)
 
         // Collect status messages fired during decode → Library.init.
         let statuses = ThreadSafeBox<[String]>([])

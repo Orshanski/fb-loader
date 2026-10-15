@@ -25,13 +25,25 @@ nonisolated final class GenreDictionary {
     }
 
     let allGenres: [Genre]
+    /// SHA-256 содержимого genres.json — часть ключа кэша каталога: новый
+    /// словарь в обновлении приложения должен пересобрать каталог.
+    let fingerprint: Data
     private let byCode: [String: Genre]
     /// Synthetic genres created on demand for unknown FB2 codes.
     /// Negative IDs to avoid collision with real ones.
     private var syntheticByCode: [String: Genre] = [:]
-    private var nextSyntheticID: Int16 = -1
+    /// `nil` — отрицательные id кончились.
+    private var nextSyntheticID: Int16? = -1
 
-    private init(rawEntries: [RawEntry]) {
+    /// Жанры для `Library`: словарь плюс синтетические, созданные при
+    /// разборе. Без синтетических книга ссылалась бы на жанр, которого
+    /// нет в каталоге, и он пропадал бы из колонки, карточки и сайдбара.
+    var libraryGenres: [Genre] {
+        allGenres + syntheticByCode.values.sorted { $0.id > $1.id }
+    }
+
+    private init(rawEntries: [RawEntry], fingerprint: Data) {
+        self.fingerprint = fingerprint
         var all: [Genre] = []
         var byCode: [String: Genre] = [:]
         for r in rawEntries {
@@ -68,20 +80,23 @@ nonisolated final class GenreDictionary {
         }
         let data = try Data(contentsOf: url)
         let raw = try JSONDecoder().decode([RawEntry].self, from: data)
-        return GenreDictionary(rawEntries: raw)
+        return GenreDictionary(rawEntries: raw, fingerprint: SHA256.hash(of: data))
     }
 
     /// Returns a genre for the given FB2 code. For unknown non-empty codes,
     /// synthesizes a `Genre` whose `name` equals the code itself (per spec §7)
     /// and caches it so repeated lookups are stable. Returns `nil` for the
     /// empty string — there are no "" keys in the source dictionary, and a
-    /// synthetic genre with empty code/name is never useful.
+    /// synthetic genre with empty code/name is never useful. Also `nil` once
+    /// 32 768 synthetic ids are used up: столько разных незнакомых кодов —
+    /// это мусор в поле жанра, а не жанры.
     func genre(forCode code: String) -> Genre? {
         guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }
         if let g = syntheticByCode[code] { return g }
-        let g = Genre(id: nextSyntheticID, code: code, name: code, parentID: nil)
-        nextSyntheticID -= 1
+        guard let id = nextSyntheticID else { return nil }
+        let g = Genre(id: id, code: code, name: code, parentID: nil)
+        nextSyntheticID = id == Int16.min ? nil : id - 1
         syntheticByCode[code] = g
         return g
     }

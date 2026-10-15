@@ -66,4 +66,56 @@ struct INPRecordParserTests {
     func empty() {
         #expect(INPRecordParser.parse(line: "", fieldIndex: .defaults) == nil)
     }
+
+    @Test("строка-мусор без полей — не книга")
+    func garbageLine() {
+        #expect(INPRecordParser.parse(line: "обрывок строки", fieldIndex: .defaults) == nil)
+    }
+
+    @Test("LIBID ноль, отрицательный или не число — не книга")
+    func invalidLibid() {
+        for libid in ["0", "-5", "abc"] {
+            let line = INPXFixture.line(file: "x", libid: libid)
+            #expect(INPRecordParser.parse(line: line, fieldIndex: .defaults) == nil, "libid=\(libid)")
+        }
+    }
+
+    @Test("пустой LIBID — берётся числовой FILE, как у freeLib")
+    func libidFallsBackToFile() throws {
+        let line = INPXFixture.line(file: "777", libid: "")
+        let r = try #require(INPRecordParser.parse(line: line, fieldIndex: .defaults))
+        #expect(r.libid == 777)
+    }
+
+    @Test("пустое название — не книга")
+    func emptyTitle() {
+        let line = INPXFixture.line(title: "  ", libid: "5")
+        #expect(INPRecordParser.parse(line: line, fieldIndex: .defaults) == nil)
+    }
+
+    @Test("несуществующая дата — нет даты, а не соседний месяц")
+    func invalidDate() throws {
+        let line = INPXFixture.line(libid: "5", date: "2015-02-31")
+        let r = try #require(INPRecordParser.parse(line: line, fieldIndex: .defaults))
+        #expect(r.dateAdded == nil)
+    }
+
+    @Test("FILE, отличный от LIBID, сохраняется как имя файла в архиве")
+    func archiveFileName() throws {
+        let custom = try #require(INPRecordParser.parse(
+            line: INPXFixture.line(file: "book-5", libid: "5"), fieldIndex: .defaults))
+        #expect(custom.archiveFileName == "book-5")
+        let same = try #require(INPRecordParser.parse(
+            line: INPXFixture.line(libid: "5"), fieldIndex: .defaults))
+        #expect(same.archiveFileName == nil)
+    }
+
+    @Test("формат: fb2 или пусто — FB2, остальное — нет")
+    func isFB2() throws {
+        for (ext, expected) in [("fb2", true), ("FB2", true), ("", true), ("pdf", false), ("djvu", false)] {
+            let r = try #require(INPRecordParser.parse(
+                line: INPXFixture.line(libid: "5", ext: ext), fieldIndex: .defaults))
+            #expect(r.isFB2 == expected, "ext=\(ext)")
+        }
+    }
 }

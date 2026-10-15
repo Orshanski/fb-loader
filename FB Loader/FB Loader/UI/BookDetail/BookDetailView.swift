@@ -265,7 +265,7 @@ struct BookDetailView: View {
 
             do {
                 let tRead = ContinuousClock.now
-                let fb2 = try ZipFB2Reader.readFB2(libid: b.libid, archiveURL: url)
+                let fb2 = try ZipFB2Reader.readFB2(entryName: b.archiveEntryName, archiveURL: url)
                 print("[BookDetail] read \(fb2.count)B in \(ContinuousClock.now - tRead)")
                 if Task.isCancelled { return }
 

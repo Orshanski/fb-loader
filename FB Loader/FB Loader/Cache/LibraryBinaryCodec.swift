@@ -2,8 +2,9 @@ import Foundation
 
 /// Binary on-disk format:
 ///   "FBLC"   4B    magic
-///   version  uint16 (current = 1)
+///   version  uint16 (current = 4)
 ///   inpxHash 32B
+///   sourceKey 32B — версия импортёра и genres.json (`LibraryCacheStore.sourceKey`)
 ///   inpxVersionLen uint16, inpxVersion utf8 bytes
 ///   archivesCount uint32, then for each: len(uint16) + utf8 bytes
 ///   authorsCount uint32, then for each:
@@ -19,22 +20,35 @@ import Foundation
 ///       archiveIndex int16
 ///       size int32
 ///       dateAdded float64 — timeIntervalSinceReferenceDate, NaN = нет даты
+///       archiveFileName len(uint16) + utf8, пусто = nil
 nonisolated enum LibraryBinaryCodec {
     enum DecodeError: Error {
         case badMagic
         case unsupportedVersion(UInt16)
         case truncated
         case invalidArchiveIndex(libid: Int32, archiveIndex: Int16, archivesCount: Int)
+        /// Повтор id или ссылка на несуществующего автора, серию, жанр.
+        /// `Library.init` на таком падает, поэтому кэш отвергается раньше.
+        case inconsistent(String)
     }
     enum EncodeError: Error {
         /// Signalled instead of `precondition` to avoid crashing the whole process
         /// if a single book's title (or other length-prefixed string) exceeds
         /// the on-disk format's length encoding capacity.
         case stringTooLong(field: String, length: Int, max: Int)
-        /// `inpxHash` must always be 32 bytes (SHA-256). A different size would
-        /// silently corrupt every field after it on decode (the decoder reads
-        /// exactly 32 bytes regardless), so we throw at encode time instead.
+        /// То же для счётчиков в 16 битах.
+        case tooManyItems(field: String, count: Int, max: Int)
+        /// `inpxHash` and `sourceKey` must always be 32 bytes (SHA-256). A
+        /// different size would silently corrupt every field after it on
+        /// decode (the decoder reads exactly 32 bytes regardless), so we
+        /// throw at encode time instead.
         case invalidHashSize(Int)
+    }
+
+    /// Заголовок кэша — читается без разбора каталога.
+    struct Header: Equatable {
+        let inpxHash: Data
+        let sourceKey: Data
     }
 
     private static let magic: [UInt8] = Array("FBLC".utf8)
@@ -43,18 +57,19 @@ nonisolated enum LibraryBinaryCodec {
     /// Bumped 2 → 3, когда дата книги перестала быть числом дней от
     /// 2000-01-01 и стала настоящим `Date`: изменились и размер поля, и
     /// смысл, старый кэш нечитаем.
+    /// Bumped 3 → 4: ключ источника в заголовке и имя файла в архиве у книги.
     /// Old caches decode → `unsupportedVersion` → `LibraryCacheStore`
     /// falls through to reparse on the next launch.
-    private static let formatVersion: UInt16 = 3
+    private static let formatVersion: UInt16 = 4
 
-    static func encode(_ lib: Library) throws -> Data {
+    static func encode(_ lib: Library, sourceKey: Data) throws -> Data {
         var w = BinaryWriter()
         w.bytes(magic)
         w.uint16(formatVersion)
-        guard lib.inpxHash.count == 32 else {
-            throw EncodeError.invalidHashSize(lib.inpxHash.count)
+        for hash in [lib.inpxHash, sourceKey] {
+            guard hash.count == 32 else { throw EncodeError.invalidHashSize(hash.count) }
+            w.bytes(Array(hash))
         }
-        w.bytes(Array(lib.inpxHash))
         try w.string16(lib.inpxVersion, field: "inpxVersion")
         w.uint32(UInt32(lib.archives.count))
         for s in lib.archives { try w.string16(s, field: "archive") }
@@ -80,26 +95,36 @@ nonisolated enum LibraryBinaryCodec {
         for b in lib.books {
             w.int32(b.libid)
             try w.string16(b.title, field: "book.title")
-            w.uint16(UInt16(b.authorIDs.count))
+            try w.count16(b.authorIDs.count, field: "book.authorIDs")
             for id in b.authorIDs { w.int32(id) }
             w.int32(b.seriesID ?? -1)
             w.int16(b.seriesNum ?? Int16.min)
-            w.uint16(UInt16(b.genreIDs.count))
+            try w.count16(b.genreIDs.count, field: "book.genreIDs")
             for g in b.genreIDs { w.int16(g) }
             try w.string8(b.language, field: "book.language")
             w.int16(b.archiveIndex)
             w.int32(b.size)
             w.double(b.dateAdded?.timeIntervalSinceReferenceDate ?? .nan)
+            try w.string16(b.archiveFileName ?? "", field: "book.archiveFileName")
         }
         return w.data
     }
 
-    static func decode(_ data: Data, onStatus: (@Sendable (String) -> Void)? = nil) throws -> Library {
+    static func readHeader(_ data: Data) throws -> Header {
         var r = BinaryReader(data: data)
+        return try readHeader(&r)
+    }
+
+    private static func readHeader(_ r: inout BinaryReader) throws -> Header {
         guard try r.bytes(4) == magic else { throw DecodeError.badMagic }
         let v = try r.uint16()
         guard v == formatVersion else { throw DecodeError.unsupportedVersion(v) }
-        let inpxHash = Data(try r.bytes(32))
+        return Header(inpxHash: Data(try r.bytes(32)), sourceKey: Data(try r.bytes(32)))
+    }
+
+    static func decode(_ data: Data, onStatus: (@Sendable (String) -> Void)? = nil) throws -> Library {
+        var r = BinaryReader(data: data)
+        let inpxHash = try readHeader(&r).inpxHash
         let inpxVersion = try r.string16()
         let archCount = try r.uint32()
         var archives: [String] = []
@@ -125,8 +150,15 @@ nonisolated enum LibraryBinaryCodec {
         for _ in 0..<genCount {
             let id = try r.int16(); let code = try r.string16(); let name = try r.string16()
             let p = try r.int32()
-            genres.append(Genre(id: id, code: code, name: name,
-                                parentID: p == -1 ? nil : Int16(p)))
+            let parent: Int16?
+            if p == -1 {
+                parent = nil
+            } else if let p16 = Int16(exactly: p) {
+                parent = p16
+            } else {
+                throw DecodeError.inconsistent("genre \(id): parentID \(p)")
+            }
+            genres.append(Genre(id: id, code: code, name: name, parentID: parent))
         }
         let bookCount = try r.uint32()
         var books: [Book] = []
@@ -146,6 +178,7 @@ nonisolated enum LibraryBinaryCodec {
             let archIdx = try r.int16()
             let size = try r.int32()
             let dateSeconds = try r.double()
+            let fileName = try r.string16()
             guard archIdx >= 0 && Int(archIdx) < archives.count else {
                 throw DecodeError.invalidArchiveIndex(
                     libid: libid,
@@ -160,9 +193,11 @@ nonisolated enum LibraryBinaryCodec {
                 size: size,
                 dateAdded: dateSeconds.isNaN
                     ? nil
-                    : Date(timeIntervalSinceReferenceDate: dateSeconds)
+                    : Date(timeIntervalSinceReferenceDate: dateSeconds),
+                archiveFileName: fileName.isEmpty ? nil : fileName
             ))
         }
+        try validate(authors: authors, series: series, genres: genres, books: books)
         return Library(
             inpxHash: inpxHash,
             inpxVersion: inpxVersion,
@@ -173,6 +208,36 @@ nonisolated enum LibraryBinaryCodec {
             books: books,
             onStatus: onStatus
         )
+    }
+
+    /// Инварианты, на которых держится `Library.init`: уникальные id и
+    /// ссылки книг только на существующих авторов, серии и жанры. Битый кэш
+    /// (bit rot, баг будущей версии) иначе ронял бы приложение на каждом
+    /// запуске; ошибка здесь отправляет `LibraryCacheStore` на пересборку.
+    static func validate(authors: [Author], series: [Series], genres: [Genre], books: [Book]) throws {
+        var authorIDs = Set<Int32>()
+        for a in authors where !authorIDs.insert(a.id).inserted {
+            throw DecodeError.inconsistent("author id \(a.id) repeated")
+        }
+        var seriesIDs = Set<Int32>()
+        for s in series where !seriesIDs.insert(s.id).inserted {
+            throw DecodeError.inconsistent("series id \(s.id) repeated")
+        }
+        var genreIDs = Set<Int16>()
+        for g in genres where !genreIDs.insert(g.id).inserted {
+            throw DecodeError.inconsistent("genre id \(g.id) repeated")
+        }
+        for b in books {
+            if let a = b.authorIDs.first(where: { !authorIDs.contains($0) }) {
+                throw DecodeError.inconsistent("book \(b.libid): author \(a)")
+            }
+            if let s = b.seriesID, !seriesIDs.contains(s) {
+                throw DecodeError.inconsistent("book \(b.libid): series \(s)")
+            }
+            if let g = b.genreIDs.first(where: { !genreIDs.contains($0) }) {
+                throw DecodeError.inconsistent("book \(b.libid): genre \(g)")
+            }
+        }
     }
 }
 
@@ -185,6 +250,13 @@ private nonisolated struct BinaryWriter {
     mutating func int32(_ v: Int32)   { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
     mutating func double(_ v: Double) { uint64(v.bitPattern) }
     mutating func uint64(_ v: UInt64) { var v = v.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
+    mutating func count16(_ n: Int, field: String) throws {
+        guard let v = UInt16(exactly: n) else {
+            throw LibraryBinaryCodec.EncodeError.tooManyItems(
+                field: field, count: n, max: Int(UInt16.max))
+        }
+        uint16(v)
+    }
     mutating func string16(_ s: String, field: String) throws {
         let utf = Array(s.utf8)
         guard utf.count <= Int(UInt16.max) else {

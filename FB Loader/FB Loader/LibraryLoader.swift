@@ -6,6 +6,11 @@ import Foundation
 /// Project default isolation is MainActor; without this the heavy I/O+parse
 /// chain stays main-bound and freezes the UI.
 nonisolated enum LibraryLoader {
+    /// Файл кэша каталога — для «Пересобрать» и статуса в настройках.
+    static func cacheURL() throws -> URL {
+        LibraryCacheStore.cacheURL(in: try appSupportRoot())
+    }
+
     static func appSupportRoot() throws -> URL {
         let fm = FileManager.default
         let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
@@ -30,10 +35,15 @@ nonisolated enum LibraryLoader {
         let store = LibraryCacheStore(applicationSupportRoot: appSupport)
         let genres = try GenreDictionary.loadFromBundle()
         onStatus?("Чтение кэша каталога…")
-        return try store.loadOrRebuild(inpxURL: inpxURL, onStatus: onStatus) {
+        return try store.loadOrRebuild(
+            inpxURL: inpxURL,
+            sourceKey: LibraryCacheStore.sourceKey(genres: genres),
+            onStatus: onStatus
+        ) { inpxHash in
             onStatus?("Кэш не найден или устарел — пересборка из INPX")
             return try INPXImporter.parse(
                 inpxURL: inpxURL,
+                inpxHash: inpxHash,
                 genres: genres,
                 onStatus: onStatus,
                 onProgress: onProgress)
