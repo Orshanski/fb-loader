@@ -30,4 +30,11 @@ struct INPXImporterTests {
         #expect(rubezh.authorIDs.count == 3)
         #expect(rubezh.size == 6400838)
     }
+
+    @Test("имя архива — только последний компонент имени .inp")
+    func archiveBaseNameStripsPath() {
+        #expect(INPXImporter.archiveBaseName(forInp: "fb2-000024-030559.inp") == "fb2-000024-030559")
+        #expect(INPXImporter.archiveBaseName(forInp: "../../etc/x.inp") == "x")
+        #expect(INPXImporter.archiveBaseName(forInp: "sub/dir/y.inp") == "y")
+    }
 }

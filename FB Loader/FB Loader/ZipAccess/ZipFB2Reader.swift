@@ -13,20 +13,31 @@ nonisolated final class ZipFB2Reader {
         case bookNotFoundInArchive(zip: URL, libid: Int32)
     }
 
+    /// Версия файла архива на диске. Индекс хранит смещения записей, поэтому
+    /// архив, подменённый по тому же пути, должен переиндексироваться.
+    private struct FileStamp: Equatable {
+        let size: UInt64
+        let modified: Date
+    }
+
     /// In-memory cache of CD indices keyed by archive URL. Cheap (~few MB
     /// per archive); first touch builds the index, subsequent touches are
     /// instant. The lock is a `let` of a Sendable type so it sits in
     /// nonisolated storage cleanly. The dict is `nonisolated(unsafe) var`
     /// because it's mutable and we synchronise access through the lock.
     private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var indexCache: [URL: ZipCentralDirectory.Index] = [:]
+    nonisolated(unsafe) private static var indexCache: [URL: (stamp: FileStamp, index: ZipCentralDirectory.Index)] = [:]
 
     static func readFB2(libid: Int32, archiveURL: URL) throws -> Data {
-        guard FileManager.default.fileExists(atPath: archiveURL.path) else {
+        // Атрибуты — через FileManager, а не `URL.resourceValues`: тот
+        // кэширует значения на экземпляре URL и подмену бы не заметил.
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: archiveURL.path),
+              let size = (attrs[.size] as? NSNumber)?.uint64Value,
+              let modified = attrs[.modificationDate] as? Date else {
             throw ReaderError.archiveNotFound(archiveURL)
         }
 
-        let index = try cachedIndex(for: archiveURL)
+        let index = try cachedIndex(for: archiveURL, stamp: FileStamp(size: size, modified: modified))
         let name = "\(libid).fb2"
         guard let entry = index.entries[name] else {
             throw ReaderError.bookNotFoundInArchive(zip: archiveURL, libid: libid)
@@ -41,11 +52,11 @@ nonisolated final class ZipFB2Reader {
         }
     }
 
-    private static func cachedIndex(for archiveURL: URL) throws -> ZipCentralDirectory.Index {
+    private static func cachedIndex(for archiveURL: URL, stamp: FileStamp) throws -> ZipCentralDirectory.Index {
         cacheLock.lock()
-        if let hit = indexCache[archiveURL] {
+        if let hit = indexCache[archiveURL], hit.stamp == stamp {
             cacheLock.unlock()
-            return hit
+            return hit.index
         }
         cacheLock.unlock()
         let tBuild = ContinuousClock.now
@@ -57,7 +68,7 @@ nonisolated final class ZipFB2Reader {
         }
         print("[ZipFB2Reader] index built for \(archiveURL.lastPathComponent) (\(index.entries.count) entries) in \(ContinuousClock.now - tBuild)")
         cacheLock.lock()
-        indexCache[archiveURL] = index
+        indexCache[archiveURL] = (stamp, index)
         cacheLock.unlock()
         return index
     }

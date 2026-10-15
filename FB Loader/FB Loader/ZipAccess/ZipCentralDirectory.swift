@@ -15,7 +15,14 @@ nonisolated enum ZipCentralDirectory {
         case unsupportedCompression(method: UInt16, name: String)
         case decompressionFailed(name: String)
         case entryNotFound(zip: URL, name: String)
+        case entryTooLarge(name: String, size: UInt64)
+        case encrypted(name: String)
     }
+
+    /// Предел размера одной записи. FB2 с иллюстрациями — десятки мегабайт;
+    /// всё, что больше, — битый или подсунутый архив, и буфер под заявленный
+    /// размер выделять нельзя.
+    static let maxEntrySize: UInt64 = 512 << 20
 
     struct Entry: Sendable {
         let name: String
@@ -25,6 +32,8 @@ nonisolated enum ZipCentralDirectory {
         let localHeaderOffset: UInt64
         /// 0 = stored (no compression), 8 = deflate.
         let compressionMethod: UInt16
+        /// Бит 0 general purpose flags.
+        let isEncrypted: Bool
     }
 
     /// In-memory snapshot of an archive's central directory.
@@ -43,15 +52,16 @@ nonisolated enum ZipCentralDirectory {
         defer { try? handle.close() }
 
         let fileSize = (try handle.seekToEnd())
+        guard fileSize >= 22 else { throw ZipError.eocdNotFound(url) }
         // EOCD record is variable-length (because of optional zip comment up to
         // 65535 bytes). It lives at the very end of the file. Read up to 64 KB
         // + the 22-byte EOCD header from the tail and scan back for the
         // signature 0x06054b50.
         let scanWindow: UInt64 = min(fileSize, 65557)
         try handle.seek(toOffset: fileSize - scanWindow)
-        let tail = handle.readData(ofLength: Int(scanWindow))
+        let tail = try readExactly(handle, Int(scanWindow), url)
 
-        guard let eocdOffset = findLastSignature(in: tail, sig: 0x06054b50) else {
+        guard let eocdOffset = findLastSignature(in: tail, sig: 0x06054b50, recordSize: 22) else {
             throw ZipError.eocdNotFound(url)
         }
 
@@ -74,17 +84,21 @@ nonisolated enum ZipCentralDirectory {
         // common. Locator signature is 0x07064b50, fixed 20 bytes immediately
         // before the regular EOCD.
         if cdOffset64 == 0xFFFF_FFFF || cdSize64 == 0xFFFF_FFFF || totalEntries64 == 0xFFFF {
-            let locatorAbsOffset = (fileSize - scanWindow) + UInt64(eocdOffset) - 20
-            try handle.seek(toOffset: locatorAbsOffset)
-            let loc = handle.readData(ofLength: 20)
-            guard loc.count == 20, readU32(loc, 0) == 0x07064b50 else {
+            let eocdAbsOffset = (fileSize - scanWindow) + UInt64(eocdOffset)
+            guard eocdAbsOffset >= 20 else { throw ZipError.truncated(url) }
+            try handle.seek(toOffset: eocdAbsOffset - 20)
+            let loc = try readExactly(handle, 20, url)
+            guard readU32(loc, 0) == 0x07064b50 else {
                 throw ZipError.truncated(url)
             }
             let zip64EocdOffset = readU64(loc, 8)
+            guard fileSize >= 56, zip64EocdOffset <= fileSize - 56 else {
+                throw ZipError.truncated(url)
+            }
             try handle.seek(toOffset: zip64EocdOffset)
             // ZIP64 EOCD record starts with sig 0x06064b50, fixed 56-byte head.
-            let z64 = handle.readData(ofLength: 56)
-            guard z64.count == 56, readU32(z64, 0) == 0x06064b50 else {
+            let z64 = try readExactly(handle, 56, url)
+            guard readU32(z64, 0) == 0x06064b50 else {
                 throw ZipError.truncated(url)
             }
             totalEntries64 = readU64(z64, 32)
@@ -92,16 +106,23 @@ nonisolated enum ZipCentralDirectory {
             cdOffset64 = readU64(z64, 48)
         }
 
-        // Read the entire central directory in one go.
+        // Read the entire central directory in one go. Размер и смещение —
+        // из файла, поэтому сначала проверка, что каталог в нём помещается:
+        // иначе `Int(...)` трапает, а огромный размер — это гигантский буфер.
+        guard cdOffset64 <= fileSize, cdSize64 <= fileSize - cdOffset64 else {
+            throw ZipError.truncated(url)
+        }
         try handle.seek(toOffset: cdOffset64)
-        let cd = handle.readData(ofLength: Int(cdSize64))
-        guard UInt64(cd.count) == cdSize64 else { throw ZipError.truncated(url) }
+        let cd = try readExactly(handle, Int(cdSize64), url)
 
-        var entries = [String: Entry](minimumCapacity: Int(totalEntries64))
+        // Заявленному числу записей не верим: ёмкость — не больше, чем
+        // записей минимального размера влезет в каталог.
+        var entries = [String: Entry](minimumCapacity: Int(min(totalEntries64, cdSize64 / 46)))
         var p = 0
         while p + 46 <= cd.count {
             // Central file header layout:
             //  +0   sig 0x02014b50          4
+            //  +8   general purpose flags   2
             //  +10  compression method      2
             //  +20  compressed size         4
             //  +24  uncompressed size       4
@@ -110,7 +131,10 @@ nonisolated enum ZipCentralDirectory {
             //  +32  file comment length     2
             //  +42  local header offset     4
             //  +46  file name
-            guard readU32(cd, p) == 0x02014b50 else { break }
+            // Битая запись посреди каталога — ошибка: молча обрезанный индекс
+            // выдал бы «книга не найдена» для всех записей после неё.
+            guard readU32(cd, p) == 0x02014b50 else { throw ZipError.truncated(url) }
+            let flags = readU16(cd, p + 8)
             let method = readU16(cd, p + 10)
             var compressed = UInt64(readU32(cd, p + 20))
             var uncompressed = UInt64(readU32(cd, p + 24))
@@ -121,7 +145,7 @@ nonisolated enum ZipCentralDirectory {
 
             let nameStart = p + 46
             let nameEnd = nameStart + nameLen
-            guard nameEnd <= cd.count else { break }
+            guard nameEnd <= cd.count else { throw ZipError.truncated(url) }
             let name = String(decoding: cd[nameStart..<nameEnd], as: UTF8.self)
 
             // Walk the extra field for ZIP64 size/offset overrides.
@@ -160,7 +184,8 @@ nonisolated enum ZipCentralDirectory {
                 compressedSize: compressed,
                 uncompressedSize: uncompressed,
                 localHeaderOffset: localOffset,
-                compressionMethod: method
+                compressionMethod: method,
+                isEncrypted: flags & 1 != 0
             )
             p = nameEnd + extraLen + commentLen
         }
@@ -172,8 +197,15 @@ nonisolated enum ZipCentralDirectory {
     /// Reads and decompresses a single entry. Caller already has the index
     /// from `readIndex(of:)` and looked up the desired entry by name.
     static func extract(_ entry: Entry, from url: URL) throws -> Data {
+        guard !entry.isEncrypted else { throw ZipError.encrypted(name: entry.name) }
+        guard entry.uncompressedSize <= maxEntrySize, entry.compressedSize <= maxEntrySize else {
+            throw ZipError.entryTooLarge(name: entry.name,
+                                         size: max(entry.uncompressedSize, entry.compressedSize))
+        }
+
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
+        let fileSize = try handle.seekToEnd()
 
         // Local file header layout (only the few fields we need):
         //  +0   sig 0x04034b50           4
@@ -181,18 +213,23 @@ nonisolated enum ZipCentralDirectory {
         //  +28  extra field length       2
         //  +30  file name (variable)
         //  +30+nameLen+extraLen   start of compressed data
+        guard fileSize >= 30, entry.localHeaderOffset <= fileSize - 30 else {
+            throw ZipError.truncated(url)
+        }
         try handle.seek(toOffset: entry.localHeaderOffset)
-        let lhead = handle.readData(ofLength: 30)
-        guard lhead.count == 30, readU32(lhead, 0) == 0x04034b50 else {
+        let lhead = try readExactly(handle, 30, url)
+        guard readU32(lhead, 0) == 0x04034b50 else {
             throw ZipError.truncated(url)
         }
-        let nameLen = Int(readU16(lhead, 26))
-        let extraLen = Int(readU16(lhead, 28))
-        try handle.seek(toOffset: entry.localHeaderOffset + 30 + UInt64(nameLen + extraLen))
-        let compressed = handle.readData(ofLength: Int(entry.compressedSize))
-        guard UInt64(compressed.count) == entry.compressedSize else {
+        let nameLen = UInt64(readU16(lhead, 26))
+        let extraLen = UInt64(readU16(lhead, 28))
+        // Без переполнения: смещение ≤ fileSize − 30, длины — 16-битные.
+        let dataStart = entry.localHeaderOffset + 30 + nameLen + extraLen
+        guard dataStart <= fileSize, entry.compressedSize <= fileSize - dataStart else {
             throw ZipError.truncated(url)
         }
+        try handle.seek(toOffset: dataStart)
+        let compressed = try readExactly(handle, Int(entry.compressedSize), url)
 
         switch entry.compressionMethod {
         case 0:
@@ -231,12 +268,26 @@ nonisolated enum ZipCentralDirectory {
 
     // MARK: - Binary helpers
 
-    private static func findLastSignature(in data: Data, sig: UInt32) -> Int? {
+    /// Читает ровно `count` байт или бросает `truncated`. `read(upToCount:)`
+    /// при ошибке ввода-вывода (отключённый внешний диск, уснувший NAS)
+    /// бросает Swift-ошибку; устаревший `readData(ofLength:)` бросал
+    /// Objective-C-исключение, которое `catch` не ловит, и ронял приложение.
+    private static func readExactly(_ handle: FileHandle, _ count: Int, _ url: URL) throws -> Data {
+        guard count > 0 else { return Data() }
+        guard let data = try handle.read(upToCount: count), data.count == count else {
+            throw ZipError.truncated(url)
+        }
+        return data
+    }
+
+    /// Последнее вхождение сигнатуры, после которого в данных помещается
+    /// запись `recordSize` байт целиком.
+    private static func findLastSignature(in data: Data, sig: UInt32, recordSize: Int) -> Int? {
         let bytes = [UInt8(truncatingIfNeeded: sig),
                      UInt8(truncatingIfNeeded: sig >> 8),
                      UInt8(truncatingIfNeeded: sig >> 16),
                      UInt8(truncatingIfNeeded: sig >> 24)]
-        var i = data.count - 4
+        var i = data.count - recordSize
         while i >= 0 {
             if data[i] == bytes[0], data[i+1] == bytes[1],
                data[i+2] == bytes[2], data[i+3] == bytes[3] {

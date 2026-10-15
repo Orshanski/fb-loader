@@ -21,6 +21,14 @@ nonisolated enum INPXImporter {
     /// the first small .inp (which may have <1000 books).
     private static let progressEveryNBooks = 200
 
+    /// Имя .zip без расширения для записи .inp — как у freeLib
+    /// (importthread.cpp:250 меняет ".inp" на ".zip"). Берётся только
+    /// последний компонент: имя приходит из INPX, и `../` не должен уводить
+    /// за пределы папки архивов.
+    static func archiveBaseName(forInp name: String) -> String {
+        ((name as NSString).lastPathComponent as NSString).deletingPathExtension
+    }
+
     static func parse(
         inpxURL: URL,
         genres: GenreDictionary,
@@ -91,9 +99,7 @@ nonisolated enum INPXImporter {
             print("[INPXImporter] reading [\(archCounter)/\(inpEntries.count)] \(name)")
             onStatus?("[\(archCounter)/\(inpEntries.count)] \(name)")
 
-            // archiveIndex maps to the corresponding .zip filename without extension —
-            // exactly as freeLib does (importthread.cpp:250 replaces ".inp" with ".zip").
-            let archBase = (name as NSString).deletingPathExtension
+            let archBase = archiveBaseName(forInp: name)
             let archIdx: Int16
             if let i = archiveIndexByName[archBase] {
                 archIdx = i
