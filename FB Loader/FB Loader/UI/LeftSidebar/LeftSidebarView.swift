@@ -19,7 +19,9 @@ struct LeftSidebarView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
 
-                    LanguageFilterPicker(library: library, selection: $s.languageFilter)
+                    LanguageFilterPicker(library: library, selection: Binding(
+                        get: { state.languageFilter },
+                        set: { state.selectLanguage($0) }))
 
                     Button {
                         onOpenSearch()

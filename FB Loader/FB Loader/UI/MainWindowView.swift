@@ -22,7 +22,7 @@ struct MainWindowView: View {
                     })
             }
             VSplitView {
-                BooksTableView(library: library)
+                BooksTableView(library: library, onExport: { Task { await runExport() } })
                     .frame(maxWidth: .infinity,
                            minHeight: booksTableMinHeight,
                            idealHeight: booksTableIdealHeight)
@@ -96,11 +96,6 @@ struct MainWindowView: View {
         // Таблица книг — ScrollView, а её содержимое macOS пускает под панель
         // окна: без непрозрачного фона строки просвечивают в полосе заголовка.
         .toolbarBackground(.visible, for: .windowToolbar)
-        .onChange(of: state.shouldStartExport) { _, newValue in
-            guard newValue else { return }
-            state.shouldStartExport = false
-            Task { await runExport() }
-        }
         .sheet(item: Binding(
             get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },
             set: { _ in

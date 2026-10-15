@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// The only state persisted between app launches:
 /// - inpxURL: path to the INPX file
@@ -7,15 +8,16 @@ import Foundation
 ///
 /// All other UI state (window size, selection, filters) is intentionally NOT persisted.
 ///
-/// `Sendable` is required by Swift 6 for the `static let shared` global. The class
-/// only stores a `let defaults: UserDefaults` (itself Sendable), so the conformance
-/// is clean — there's no shared mutable in-process state to worry about.
-final class UserPaths: Sendable {
+/// Значения хранятся копией в свойствах, а не читаются из `UserDefaults` на лету:
+/// `@Observable` отслеживает только хранимые свойства, иначе открытые
+/// Настройки не видели бы смену пути.
+@Observable
+final class UserPaths {
     /// The single shared instance used by AppState and SettingsView.
     /// Production code uses `.shared`; tests instantiate with a custom UserDefaults suite.
     static let shared = UserPaths()
 
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
     private enum Keys: String {
         case inpx = "fbloader.inpx"
         case archives = "fbloader.archives"
@@ -24,28 +26,28 @@ final class UserPaths: Sendable {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        inpxURL = Self.url(for: .inpx, in: defaults)
+        archivesDirectoryURL = Self.url(for: .archives, in: defaults)
+        lastExportDirectoryURL = Self.url(for: .lastExport, in: defaults)
     }
 
     var inpxURL: URL? {
-        get { url(for: .inpx) }
-        set { set(newValue, for: .inpx) }
+        didSet { store(inpxURL, for: .inpx) }
     }
     var archivesDirectoryURL: URL? {
-        get { url(for: .archives) }
-        set { set(newValue, for: .archives) }
+        didSet { store(archivesDirectoryURL, for: .archives) }
     }
     var lastExportDirectoryURL: URL? {
-        get { url(for: .lastExport) }
-        set { set(newValue, for: .lastExport) }
+        didSet { store(lastExportDirectoryURL, for: .lastExport) }
     }
 
-    private func url(for key: Keys) -> URL? {
+    private static func url(for key: Keys, in defaults: UserDefaults) -> URL? {
         // `defaults.set(nil, forKey:)` removes the key, so `string(forKey:)`
         // never returns an empty string here — only nil or a real path.
         guard let s = defaults.string(forKey: key.rawValue) else { return nil }
         return URL(fileURLWithPath: s)
     }
-    private func set(_ url: URL?, for key: Keys) {
+    private func store(_ url: URL?, for key: Keys) {
         defaults.set(url?.path, forKey: key.rawValue)
     }
 }

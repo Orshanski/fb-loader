@@ -2,40 +2,66 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Shown when both INPX and archives directory are not configured.
-/// User picks INPX; archives folder defaults to the INPX file's parent
-/// directory (typical Flibusta layout). Override is available later
-/// in Settings if the user actually has a split setup.
+/// Спрашивает только недостающий путь. Без путей вовсе — INPX, а папкой
+/// архивов становится его директория (типичная раскладка Flibusta); отдельно
+/// её можно сменить потом в Настройках.
 struct CatalogPickerView: View {
-    @State private var inpx: URL?
-    let onComplete: (URL, URL) -> Void
+    let missing: MissingPaths
+    let userPaths: UserPaths
+    let onComplete: (_ inpx: URL, _ archives: URL) -> Void
+    @State private var picked: URL?
 
     var body: some View {
         VStack(spacing: 20) {
             Text("FB Loader").font(.largeTitle)
-            Text("Укажите INPX-файл. Папка с zip-архивами по умолчанию — это директория, где лежит INPX. Изменить отдельно её можно потом в Настройках.")
+            Text(prompt)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
 
             HStack {
-                Button("Выбрать INPX…") {
-                    let p = NSOpenPanel()
-                    p.canChooseFiles = true
-                    p.canChooseDirectories = false
-                    p.allowedContentTypes = [.init(filenameExtension: "inpx")!]
-                    if p.runModal() == .OK { inpx = p.url }
+                Button(missing == .archives ? "Выбрать папку…" : "Выбрать INPX…") {
+                    if let url = choose() { picked = url }
                 }
-                Text(inpx?.path ?? "не выбран").foregroundStyle(.secondary)
+                Text(picked?.path ?? (missing == .archives ? "не выбрана" : "не выбран"))
+                    .foregroundStyle(.secondary)
             }
             Button("Продолжить") {
-                if let i = inpx {
-                    onComplete(i, i.deletingLastPathComponent())
+                if let picked,
+                   let paths = missing.resolve(picked: picked,
+                                               inpx: userPaths.inpxURL,
+                                               archives: userPaths.archivesDirectoryURL) {
+                    onComplete(paths.inpx, paths.archives)
                 }
             }
-            .disabled(inpx == nil)
+            .disabled(picked == nil)
             .keyboardShortcut(.defaultAction)
         }
         .padding(30)
         .frame(minWidth: 600, minHeight: 350)
+    }
+
+    private var prompt: String {
+        switch missing {
+        case .both:
+            "Укажите INPX-файл. Папка с zip-архивами по умолчанию — это директория, где лежит INPX. Изменить отдельно её можно потом в Настройках."
+        case .inpx:
+            "INPX-файл не найден: \(userPaths.inpxURL?.path ?? "—"). Укажите INPX заново."
+        case .archives:
+            "Папка с zip-архивами не найдена: \(userPaths.archivesDirectoryURL?.path ?? "—"). Укажите папку с архивами заново."
+        }
+    }
+
+    private func choose() -> URL? {
+        let p = NSOpenPanel()
+        if missing == .archives {
+            p.canChooseFiles = false
+            p.canChooseDirectories = true
+        } else {
+            p.canChooseFiles = true
+            p.canChooseDirectories = false
+            p.allowedContentTypes = [.init(filenameExtension: "inpx")!]
+        }
+        return p.runModal() == .OK ? p.url : nil
     }
 }

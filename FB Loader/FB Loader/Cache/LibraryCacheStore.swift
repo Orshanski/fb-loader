@@ -27,6 +27,13 @@ nonisolated final class LibraryCacheStore {
         self.cacheURL = Self.cacheURL(in: applicationSupportRoot)
     }
 
+    func invalidate() throws {
+        do {
+            try FileManager.default.removeItem(at: cacheURL)
+        } catch CocoaError.fileNoSuchFile {
+        }
+    }
+
     func loadOrRebuild(
         inpxURL: URL,
         sourceKey: Data,
@@ -34,6 +41,7 @@ nonisolated final class LibraryCacheStore {
         rebuild: (_ inpxHash: Data) throws -> Library
     ) throws -> Library {
         let currentHash = try SHA256.hash(ofFileAt: inpxURL)
+        try Task.checkCancellation()
 
         if cachedHeader() == .init(inpxHash: currentHash, sourceKey: sourceKey) {
             do {

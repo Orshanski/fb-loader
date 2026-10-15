@@ -16,17 +16,36 @@ private struct MainWindowActionsKey: FocusedValueKey {
     typealias Value = MainWindowActions
 }
 
+/// Публикует `ContentView` на любом этапе, не только при открытом каталоге:
+/// пути можно сменить и с экрана ошибки.
+private struct OpenSettingsKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 extension FocusedValues {
     var mainWindowActions: MainWindowActions? {
         get { self[MainWindowActionsKey.self] }
         set { self[MainWindowActionsKey.self] = newValue }
     }
+
+    var openSettings: (() -> Void)? {
+        get { self[OpenSettingsKey.self] }
+        set { self[OpenSettingsKey.self] = newValue }
+    }
 }
 
 struct MainWindowCommands: Commands {
     @FocusedValue(\.mainWindowActions) private var actions
+    @FocusedValue(\.openSettings) private var openSettings
 
     var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Настройки…") {
+                openSettings?()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+            .disabled(openSettings == nil || actions?.isAvailable == false)
+        }
         CommandGroup(before: .toolbar) {
             Button(actions?.sidebarVisible == false
                    ? "Показать боковую панель" : "Скрыть боковую панель") {

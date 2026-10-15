@@ -2,12 +2,13 @@ import SwiftUI
 
 struct BooksTableView: View {
     let library: Library
+    let onExport: () -> Void
     @State private var columns: BookTableColumns = .standard
 
     var body: some View {
         // Ширина замеряется снаружи таблицы и доходит до шапки и строк через
         // окружение: иначе каждый шаг ресайза пересчитывал бы выборку книг.
-        BooksTableContent(library: library)
+        BooksTableContent(library: library, onExport: onExport)
             .environment(\.bookTableColumns, columns)
             .onGeometryChange(for: BookTableColumns.self) { proxy in
                 BookTableColumns.visibleColumns(forWidth: proxy.size.width)
@@ -17,6 +18,7 @@ struct BooksTableView: View {
 
 private struct BooksTableContent: View {
     let library: Library
+    let onExport: () -> Void
     @Environment(AppState.self) private var state
     @State private var showDateFilter = false
 
@@ -127,9 +129,7 @@ private struct BooksTableContent: View {
             contextMenuBuilder: {
                 AnyView(
                     Button("Выгрузить отмеченные (\(s.checkedBookLibids.count))") {
-                        // Export is kicked off by MainWindowView via the
-                        // shouldStartExport flag on AppState.
-                        s.shouldStartExport = true
+                        onExport()
                     }
                     .disabled(s.checkedBookLibids.isEmpty)
                 )

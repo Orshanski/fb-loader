@@ -10,6 +10,10 @@ nonisolated enum LibraryLoader {
         LibraryCacheStore.cacheURL(in: try appSupportRoot())
     }
 
+    static func invalidateCache() throws {
+        try LibraryCacheStore(applicationSupportRoot: appSupportRoot()).invalidate()
+    }
+
     static func appSupportRoot() throws -> URL {
         let fm = FileManager.default
         let base = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,

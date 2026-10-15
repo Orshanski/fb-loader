@@ -3,6 +3,7 @@ import Foundation
 @testable import FB_Loader
 
 @Suite("UserPaths")
+@MainActor
 struct UserPathsTests {
     @Test("read-then-write round-trip")
     func roundTrip() {
@@ -33,4 +34,30 @@ struct UserPathsTests {
         paths.inpxURL = nil
         #expect(paths.inpxURL == nil)
     }
+
+    @Test("значения переживают новый экземпляр")
+    func persistsAcrossInstances() {
+        let suite = UserDefaults(suiteName: "FB_Loader.test.\(UUID())")!
+        let inpx = FileManager.default.temporaryDirectory.appendingPathComponent("p.inpx")
+        UserPaths(defaults: suite).inpxURL = inpx
+        #expect(UserPaths(defaults: suite).inpxURL == inpx)
+    }
+
+    @Test("смена пути замечается наблюдателем SwiftUI")
+    func changeIsObservable() {
+        let suite = UserDefaults(suiteName: "FB_Loader.test.\(UUID())")!
+        let paths = UserPaths(defaults: suite)
+        let changed = Flag()
+        withObservationTracking {
+            _ = paths.archivesDirectoryURL
+        } onChange: {
+            changed.value = true
+        }
+
+        paths.archivesDirectoryURL = FileManager.default.temporaryDirectory
+
+        #expect(changed.value)
+    }
+
+    private final class Flag: @unchecked Sendable { var value = false }
 }

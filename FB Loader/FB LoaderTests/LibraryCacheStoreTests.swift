@@ -36,6 +36,22 @@ final class LibraryCacheStoreTests {
         return (lib, rebuilt)
     }
 
+    @Test("invalidate удаляет кэш — следующая загрузка собирает из INPX")
+    func invalidateForcesRebuild() throws {
+        _ = try load()
+        #expect(FileManager.default.fileExists(atPath: cachePath.path))
+
+        try store.invalidate()
+
+        #expect(!FileManager.default.fileExists(atPath: cachePath.path))
+        #expect(try load().rebuilt)
+    }
+
+    @Test("invalidate без кэша — не ошибка")
+    func invalidateWithoutCache() throws {
+        try store.invalidate()
+    }
+
     @Test("первый вызов собирает из INPX, второй читает кэш")
     func reparseThenLoad() throws {
         let first = try load()

@@ -7,7 +7,7 @@ import Observation
 final class AppState {
     enum LoadStage {
         case starting
-        case onboarding
+        case onboarding(MissingPaths)
         case loading(progress: String)
         case ready(Library)
         case failed(String)
@@ -26,7 +26,7 @@ final class AppState {
 
     private(set) var sidebar: SidebarSelection = .authors(nil)
     var selectedBookLibid: Int32? = nil
-    var languageFilter: String = "ru"
+    private(set) var languageFilter: String = "ru"
     var sidebarFilter: String = ""
     var checkedBookLibids: Set<Int32> = []
 
@@ -52,6 +52,14 @@ final class AppState {
         sidebarFilter = ""
         checkedBookLibids.removeAll()
         dateFilter = nil
+    }
+
+    /// Как в окне поиска: отмеченные и открытая книга остались бы от прежнего языка.
+    func selectLanguage(_ language: String) {
+        guard languageFilter != language else { return }
+        languageFilter = language
+        selectedBookLibid = nil
+        checkedBookLibids.removeAll()
     }
 
     func selectAuthor(_ id: Int32?, deepLinkName: String? = nil) {
@@ -84,10 +92,6 @@ final class AppState {
         checkedBookLibids.removeAll()
         dateFilter = nil
     }
-
-    /// Set to `true` from BooksTableView's context-menu action; observed by
-    /// MainWindowView which runs the export and resets it back to false.
-    var shouldStartExport: Bool = false
 
     /// Active export progress, if any. Drives the modal sheet.
     var exportProgress: ExportProgress? = nil
