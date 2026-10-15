@@ -31,7 +31,7 @@ enum ExportRunner {
             let errorMessage: String? = await Task.detached(priority: .utility) { () -> String? in
                 let archiveURL = archives.appendingPathComponent(archiveName)
                 do {
-                    let data = try ZipFB2Reader.readFB2(libid: book.libid, archiveURL: archiveURL)
+                    let data = try ZipFB2Reader.readFB2(entryName: book.archiveEntryName, archiveURL: archiveURL)
                     try FileManager.default.createDirectory(
                         at: dest.deletingLastPathComponent(),
                         withIntermediateDirectories: true)

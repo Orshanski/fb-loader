@@ -2,7 +2,6 @@ import Foundation
 
 nonisolated struct Book: Identifiable, Hashable, Sendable {
     /// LIBID from INPX — the book's unique identifier inside the catalog.
-    /// Also the filename inside the zip archive: "<libid>.fb2".
     let libid: Int32
     var id: Int32 { libid }
 
@@ -20,4 +19,23 @@ nonisolated struct Book: Identifiable, Hashable, Sendable {
     /// Полночь того дня, что записан в INPX строкой `YYYY-MM-DD`.
     /// `nil` — даты в записи не было.
     let dateAdded: Date?
+    let archiveFileName: String?
+
+    init(libid: Int32, title: String, authorIDs: [Int32], seriesID: Int32?,
+         seriesNum: Int16?, genreIDs: [Int16], language: String, archiveIndex: Int16,
+         size: Int32, dateAdded: Date?, archiveFileName: String? = nil) {
+        self.libid = libid
+        self.title = title
+        self.authorIDs = authorIDs
+        self.seriesID = seriesID
+        self.seriesNum = seriesNum
+        self.genreIDs = genreIDs
+        self.language = language
+        self.archiveIndex = archiveIndex
+        self.size = size
+        self.dateAdded = dateAdded
+        self.archiveFileName = archiveFileName
+    }
+
+    var archiveEntryName: String { (archiveFileName ?? String(libid)) + ".fb2" }
 }

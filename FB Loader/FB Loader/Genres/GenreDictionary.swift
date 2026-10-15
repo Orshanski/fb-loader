@@ -1,7 +1,8 @@
 import Foundation
 
 /// Loads and queries the FB2 genre dictionary embedded in the app bundle.
-/// Source: extracted from freeLib.sqlite `genre` table.
+/// Source: extracted from freeLib.sqlite `genre` table, plus Flibusta genres
+/// freeLib lacks (names and sections from flibusta.is/g, 2026-10-15).
 ///
 /// **Concurrency:** not Sendable. `genre(forCode:)` mutates internal caches
 /// (`syntheticByCode`, `nextSyntheticID`) when synthesizing entries for unknown
@@ -24,14 +25,23 @@ nonisolated final class GenreDictionary {
         }
     }
 
+    /// Раздел «Прочее»: синтетические жанры кладутся сюда, а не корневыми разделами.
+    static let otherSectionID: Int16 = 11
+
     let allGenres: [Genre]
+    let fingerprint: Data
     private let byCode: [String: Genre]
     /// Synthetic genres created on demand for unknown FB2 codes.
     /// Negative IDs to avoid collision with real ones.
     private var syntheticByCode: [String: Genre] = [:]
-    private var nextSyntheticID: Int16 = -1
+    private var nextSyntheticID: Int16? = -1
 
-    private init(rawEntries: [RawEntry]) {
+    var libraryGenres: [Genre] {
+        allGenres + syntheticByCode.values.sorted { $0.id > $1.id }
+    }
+
+    private init(rawEntries: [RawEntry], fingerprint: Data) {
+        self.fingerprint = fingerprint
         var all: [Genre] = []
         var byCode: [String: Genre] = [:]
         for r in rawEntries {
@@ -68,7 +78,7 @@ nonisolated final class GenreDictionary {
         }
         let data = try Data(contentsOf: url)
         let raw = try JSONDecoder().decode([RawEntry].self, from: data)
-        return GenreDictionary(rawEntries: raw)
+        return GenreDictionary(rawEntries: raw, fingerprint: SHA256.hash(of: data))
     }
 
     /// Returns a genre for the given FB2 code. For unknown non-empty codes,
@@ -79,9 +89,12 @@ nonisolated final class GenreDictionary {
     func genre(forCode code: String) -> Genre? {
         guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }
+        // В части INPX вместо кода — название; у freeLib для них ключи вида «биографии_и_мемуары».
+        if let g = byCode[code.lowercased().replacingOccurrences(of: " ", with: "_")] { return g }
         if let g = syntheticByCode[code] { return g }
-        let g = Genre(id: nextSyntheticID, code: code, name: code, parentID: nil)
-        nextSyntheticID -= 1
+        guard let id = nextSyntheticID else { return nil }
+        let g = Genre(id: id, code: code, name: code, parentID: Self.otherSectionID)
+        nextSyntheticID = id == Int16.min ? nil : id - 1
         syntheticByCode[code] = g
         return g
     }

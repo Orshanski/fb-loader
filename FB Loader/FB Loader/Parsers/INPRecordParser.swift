@@ -8,11 +8,12 @@ nonisolated struct INPRecord {
     let title: String
     let seriesName: String
     let seriesNum: Int16?
-    let fileBaseName: String      // libid as string, used as filename inside zip
+    let archiveFileName: String?
     let size: Int32
     let libid: Int32
     let deleted: Bool
     let format: String
+    var isFB2: Bool { format.isEmpty || format.lowercased() == "fb2" }
     /// Полночь дня, записанного в INPX строкой `YYYY-MM-DD`; `nil`, если
     /// поля не было или оно не разобралось.
     let dateAdded: Date?
@@ -44,15 +45,21 @@ nonisolated enum INPRecordParser {
             language = String(language.prefix(2))
         }
 
+        // Без LIBID freeLib берёт номер из FILE.
+        guard let libid = Int32(libidStr.isEmpty ? file : libidStr), libid > 0,
+              !title.isEmpty else {
+            return nil
+        }
+
         return INPRecord(
             authorField: author,
             genreField: genre,
             title: title,
             seriesName: seriesName,
             seriesNum: Int16(seriesNumStr),
-            fileBaseName: file,
+            archiveFileName: file.isEmpty || file == String(libid) ? nil : file,
             size: Int32(sizeStr) ?? 0,
-            libid: Int32(libidStr) ?? 0,
+            libid: libid,
             deleted: (Int(delStr) ?? 0) > 0,
             format: format,
             dateAdded: parseDate(dateStr),
@@ -73,6 +80,11 @@ nonisolated enum INPRecordParser {
         }
         var dc = DateComponents()
         dc.year = y; dc.month = m; dc.day = d
-        return Calendar.current.date(from: dc)
+        // Календарь нормализует 31 февраля в 3 марта — такая дата не дата.
+        let cal = Calendar.current
+        guard let date = cal.date(from: dc) else { return nil }
+        let back = cal.dateComponents([.year, .month, .day], from: date)
+        guard back.year == y, back.month == m, back.day == d else { return nil }
+        return date
     }
 }

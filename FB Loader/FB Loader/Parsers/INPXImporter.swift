@@ -21,22 +21,50 @@ nonisolated enum INPXImporter {
     /// the first small .inp (which may have <1000 books).
     private static let progressEveryNBooks = 200
 
-    /// Имя .zip без расширения для записи .inp — как у freeLib
-    /// (importthread.cpp:250 меняет ".inp" на ".zip"). Берётся только
-    /// последний компонент: имя приходит из INPX, и `../` не должен уводить
-    /// за пределы папки архивов.
+    /// Поднимать при любой правке разбора INPX (здесь, в парсерах, в синтетических
+    /// жанрах) — иначе у пользователей останется кэш от старого кода.
+    static let logicVersion: UInt16 = 2
+
+    /// Длина строки в кэше — 16 бит; одна кривая запись иначе ломает запись кэша.
+    static let maxStringBytes = 4096
+
+    private static func clamped(_ s: String) -> String {
+        guard s.utf8.count > maxStringBytes else { return s }
+        var out = ""
+        var bytes = 0
+        for ch in s {
+            let n = ch.utf8.count
+            if bytes + n > maxStringBytes { break }
+            out.append(ch)
+            bytes += n
+        }
+        return out
+    }
+
+    /// Не `localizedCompare`: на 167k авторов он занимает секунды.
+    private static func sortKey(_ s: String) -> String {
+        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    /// Как freeLib (importthread.cpp:250).
     static func archiveBaseName(forInp name: String) -> String {
         ((name as NSString).lastPathComponent as NSString).deletingPathExtension
     }
 
     static func parse(
         inpxURL: URL,
+        inpxHash knownHash: Data? = nil,
         genres: GenreDictionary,
         onStatus: (@Sendable (String) -> Void)? = nil,
         onProgress: (@Sendable (Int) -> Void)? = nil
     ) throws -> Library {
-        onStatus?("Хеш INPX-файла…")
-        let inpxHash = try SHA256.hash(ofFileAt: inpxURL)
+        let inpxHash: Data
+        if let knownHash {
+            inpxHash = knownHash
+        } else {
+            onStatus?("Хеш INPX-файла…")
+            inpxHash = try SHA256.hash(ofFileAt: inpxURL)
+        }
 
         onStatus?("Чтение центральной директории INPX…")
         let index: ZipCentralDirectory.Index
@@ -80,6 +108,8 @@ nonisolated enum INPXImporter {
         var seriesIDs: [String: Int32] = [:]
         var series: [Series] = []
         var books: [Book] = []
+        var seenLibids = Set<Int32>()
+        var skippedDeleted = 0, skippedNotFB2 = 0, skippedDuplicate = 0, skippedFileName = 0
 
         // Reserve slot 0 for the synthetic "(Без автора)" placeholder.
         // It may be filtered out at the end if no book actually references it.
@@ -127,7 +157,12 @@ nonisolated enum INPXImporter {
                 let trimmed = String(line).trimmingCharacters(in: trimSet)
                 guard let rec = INPRecordParser.parse(line: trimmed, fieldIndex: fieldIndex)
                 else { continue }
-                if rec.deleted { continue }
+                if rec.deleted { skippedDeleted += 1; continue }
+                if !rec.isFB2 { skippedNotFB2 += 1; continue }
+                if let f = rec.archiveFileName, f.utf8.count > maxStringBytes {
+                    skippedFileName += 1; continue
+                }
+                guard seenLibids.insert(rec.libid).inserted else { skippedDuplicate += 1; continue }
 
                 // Genres
                 let genreCodes = rec.genreField.split(separator: ":",
@@ -140,11 +175,14 @@ nonisolated enum INPXImporter {
                 let triples = INPAuthorParser.parse(rec.authorField)
                     .filter { !($0.lastName.isEmpty && $0.firstName.isEmpty && $0.middleName.isEmpty) }
                 var bookAuthorIDs: [Int32] = []
-                for t in triples {
+                for raw in triples {
                     if INPAuthorParser.isUnknown(
-                        lastName: t.lastName, firstName: t.firstName, middleName: t.middleName) {
+                        lastName: raw.lastName, firstName: raw.firstName, middleName: raw.middleName) {
                         continue
                     }
+                    let t = INPAuthorParser.Triple(lastName: clamped(raw.lastName),
+                                                   firstName: clamped(raw.firstName),
+                                                   middleName: clamped(raw.middleName))
                     if let existing = authorIDs[t] {
                         bookAuthorIDs.append(existing)
                     } else {
@@ -164,20 +202,21 @@ nonisolated enum INPXImporter {
 
                 // Series
                 var seriesID: Int32? = nil
-                if !rec.seriesName.isEmpty {
-                    if let existing = seriesIDs[rec.seriesName] {
+                let seriesName = clamped(rec.seriesName)
+                if !seriesName.isEmpty {
+                    if let existing = seriesIDs[seriesName] {
                         seriesID = existing
                     } else {
                         let newID = Int32(series.count + 1) // 0 reserved for "no series"
-                        series.append(Series(id: newID, name: rec.seriesName))
-                        seriesIDs[rec.seriesName] = newID
+                        series.append(Series(id: newID, name: seriesName))
+                        seriesIDs[seriesName] = newID
                         seriesID = newID
                     }
                 }
 
                 books.append(Book(
                     libid: rec.libid,
-                    title: rec.title,
+                    title: clamped(rec.title),
                     authorIDs: bookAuthorIDs,
                     seriesID: seriesID,
                     seriesNum: rec.seriesNum,
@@ -185,7 +224,8 @@ nonisolated enum INPXImporter {
                     language: rec.language,
                     archiveIndex: archIdx,
                     size: rec.size,
-                    dateAdded: rec.dateAdded
+                    dateAdded: rec.dateAdded,
+                    archiveFileName: rec.archiveFileName
                 ))
                 if books.count % Self.progressEveryNBooks == 0 {
                     onProgress?(books.count)
@@ -198,6 +238,7 @@ nonisolated enum INPXImporter {
             onProgress?(books.count)
         }
         print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
+        print("[INPXImporter] skipped: deleted \(skippedDeleted), not FB2 \(skippedNotFB2), duplicate LIBID \(skippedDuplicate), file name too long \(skippedFileName)")
         onStatus?("all .inp files done, total books: \(books.count); building Library…")
         // Final emit so the caller's UI ends with the actual total, not the last
         // multiple of `progressEveryNBooks`.
@@ -212,13 +253,18 @@ nonisolated enum INPXImporter {
         let visibleAuthors = unknownReferenced
             ? authors
             : authors.filter { $0.id != Author.unknownID }
-        let sortedAuthors = visibleAuthors.sorted { a, b in
-            if a.id == Author.unknownID { return false }
-            if b.id == Author.unknownID { return true }
-            return (a.lastName, a.firstName, a.middleName)
-                 < (b.lastName, b.firstName, b.middleName)
-        }
-        let sortedSeries = series.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sortedAuthors = visibleAuthors
+            .map { a in (a, sortKey(a.lastName), sortKey(a.firstName), sortKey(a.middleName)) }
+            .sorted { x, y in
+                if x.0.id == Author.unknownID { return false }
+                if y.0.id == Author.unknownID { return true }
+                return (x.1, x.2, x.3) < (y.1, y.2, y.3)
+            }
+            .map(\.0)
+        let sortedSeries = series
+            .map { s in (s, sortKey(s.name)) }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
 
         return Library(
             inpxHash: inpxHash,
@@ -226,7 +272,7 @@ nonisolated enum INPXImporter {
             archives: archiveNames,
             authors: sortedAuthors,
             series: sortedSeries,
-            genres: genres.allGenres,
+            genres: genres.libraryGenres,
             books: books,
             onStatus: onStatus
         )
