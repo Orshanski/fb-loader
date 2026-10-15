@@ -344,4 +344,19 @@ struct AppStateTests {
         #expect(s.selectedBookLibid == 7)
         #expect(s.checkedBookLibids == [1])
     }
+
+    @Test("пересборка каталога доступна только при открытом каталоге")
+    func rebuildAvailableOnlyWhenReady() throws {
+        let s = AppState()
+        #expect(!s.canRebuildCatalog)
+        s.stage = .onboarding(.both)
+        #expect(!s.canRebuildCatalog)
+        s.stage = .loading(progress: "")
+        #expect(!s.canRebuildCatalog)
+        s.stage = .failed("x")
+        #expect(!s.canRebuildCatalog)
+        let url = try #require(TestBundleAnchor.bundle.url(forResource: "tiny", withExtension: "inpx"))
+        s.stage = .ready(try INPXImporter.parse(inpxURL: url, genres: GenreDictionary.loadFromBundle()))
+        #expect(s.canRebuildCatalog)
+    }
 }

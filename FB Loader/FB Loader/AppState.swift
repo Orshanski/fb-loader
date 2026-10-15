@@ -14,6 +14,12 @@ final class AppState {
     }
 
     var stage: LoadStage = .starting
+
+    /// Пересборка нужна, когда INPX подменили при открытом каталоге; на
+    /// онбординге, во время загрузки и на экране ошибки её нет.
+    var canRebuildCatalog: Bool {
+        if case .ready = stage { true } else { false }
+    }
     /// Shared single source of truth — same instance is read by SettingsView (§14).
     let userPaths = UserPaths.shared
 

@@ -76,16 +76,23 @@ struct ContentView: View {
             SettingsView(
                 userPaths: state.userPaths,
                 rebuildProgress: settingsRebuildProgress,
+                canRebuild: state.canRebuildCatalog,
                 onClose: { state.isSettingsPresented = false },
-                onRebuild: {
-                    state.reset()
-                    settingsRebuildProgress = "Чтение каталога…"
-                    startLoad(forceRebuild: true,
-                              onProgressText: { settingsRebuildProgress = $0 },
-                              onFinish: { settingsRebuildProgress = nil })
+                onRebuild: rebuildCatalog,
+                onINPXChange: { url in
+                    state.userPaths.inpxURL = url
+                    if state.canRebuildCatalog { rebuildCatalog() }
                 }
             )
         }
+    }
+
+    private func rebuildCatalog() {
+        state.reset()
+        settingsRebuildProgress = "Чтение каталога…"
+        startLoad(forceRebuild: true,
+                  onProgressText: { settingsRebuildProgress = $0 },
+                  onFinish: { settingsRebuildProgress = nil })
     }
 
     /// Новая загрузка ждёт конца отменённой: иначе в памяти две `Library`.

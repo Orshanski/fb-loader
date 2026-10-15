@@ -37,11 +37,11 @@ nonisolated struct ExportFailure: Equatable, Sendable {
     private static func sourceReason(_ error: Error) -> String {
         switch error {
         case ZipFB2Reader.ReaderError.archiveNotFound(let url):
-            "Архив не найден: \(url.lastPathComponent)"
+            "Архив не найден — \(url.lastPathComponent)"
         case ZipFB2Reader.ReaderError.archiveUnreadable(let url, _):
             "Не удалось прочитать архив \(url.lastPathComponent)"
         case ZipFB2Reader.ReaderError.archiveCorrupt(let url, _):
-            "Архив повреждён: \(url.lastPathComponent)"
+            "Архив повреждён — \(url.lastPathComponent)"
         case ZipFB2Reader.ReaderError.bookNotFoundInArchive(let url, _):
             "Книга не найдена в архиве \(url.lastPathComponent)"
         case is ZipCentralDirectory.ZipError:

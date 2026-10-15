@@ -10,9 +10,11 @@ struct BookDetailLoadingTests {
     func readFailureMessages() {
         let cases: [(Error, String)] = [
             (ZipFB2Reader.ReaderError.archiveNotFound(zip),
-             "Не удалось прочитать книгу: архив не найден: fb2-001.zip"),
+             "Не удалось прочитать книгу: архив не найден — fb2-001.zip"),
             (ZipFB2Reader.ReaderError.bookNotFoundInArchive(zip: zip, entryName: "1.fb2"),
              "Не удалось прочитать книгу: книга не найдена в архиве fb2-001.zip"),
+            (ZipFB2Reader.ReaderError.archiveCorrupt(zip, underlying: CocoaError(.fileReadCorruptFile)),
+             "Не удалось прочитать книгу: архив повреждён — fb2-001.zip"),
             (FB2DescriptionParser.ParseError.malformed,
              "Не удалось прочитать книгу: файл книги повреждён"),
         ]

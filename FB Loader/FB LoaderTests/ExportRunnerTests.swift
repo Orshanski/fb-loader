@@ -70,7 +70,7 @@ final class ExportRunnerTests {
         #expect(progress.done == 3)
         #expect(progress.succeeded == [1])
         #expect(progress.failed.map { $0.error } == ["Книга не найдена в архиве present.zip",
-                                                     "Архив не найден: missing.zip"])
+                                                     "Архив не найден — missing.zip"])
     }
 
     @Test("ошибка записи с непрерывающим кодом не прерывает выгрузку")
@@ -124,10 +124,10 @@ struct ExportFailureTests {
     @Test("ошибки источника — причина по-русски, выгрузка продолжается")
     func sourceReasons() {
         let cases: [(Error, String)] = [
-            (ZipFB2Reader.ReaderError.archiveNotFound(zip), "Архив не найден: fb2-001.zip"),
+            (ZipFB2Reader.ReaderError.archiveNotFound(zip), "Архив не найден — fb2-001.zip"),
             (ZipFB2Reader.ReaderError.archiveUnreadable(zip, underlying: posix(EIO)),
              "Не удалось прочитать архив fb2-001.zip"),
-            (ZipFB2Reader.ReaderError.archiveCorrupt(zip, underlying: posix(EIO)), "Архив повреждён: fb2-001.zip"),
+            (ZipFB2Reader.ReaderError.archiveCorrupt(zip, underlying: posix(EIO)), "Архив повреждён — fb2-001.zip"),
             (ZipFB2Reader.ReaderError.bookNotFoundInArchive(zip: zip, entryName: "1.fb2"),
              "Книга не найдена в архиве fb2-001.zip"),
             (ZipCentralDirectory.ZipError.truncated(zip), "Архив повреждён"),

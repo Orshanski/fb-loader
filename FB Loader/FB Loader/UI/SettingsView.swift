@@ -5,8 +5,10 @@ import UniformTypeIdentifiers   // for UTType(filenameExtension:)
 struct SettingsView: View {
     let userPaths: UserPaths
     let rebuildProgress: String?
+    let canRebuild: Bool
     let onClose: () -> Void
     let onRebuild: () -> Void
+    let onINPXChange: (URL) -> Void
     @State private var cacheStatus: String = ""
 
     var body: some View {
@@ -18,8 +20,9 @@ struct SettingsView: View {
                 Button("Изменить…") {
                     let p = NSOpenPanel(); p.canChooseFiles = true; p.canChooseDirectories = false
                     p.allowedContentTypes = [.init(filenameExtension: "inpx")!]
-                    if p.runModal() == .OK { userPaths.inpxURL = p.url }
+                    if p.runModal() == .OK, let url = p.url { onINPXChange(url) }
                 }
+                .disabled(rebuildProgress != nil)
             }
             HStack {
                 Text("Папка архивов:")
@@ -30,16 +33,13 @@ struct SettingsView: View {
                     if p.runModal() == .OK { userPaths.archivesDirectoryURL = p.url }
                 }
             }
-            Text("После смены путей перезапустите приложение.")
-                .font(.caption).foregroundStyle(.secondary)
-
             Divider()
             HStack {
                 Text("Кэш каталога:")
                 Text(cacheStatus).foregroundStyle(.secondary).font(.caption)
                 Spacer()
                 Button("Пересобрать каталог") { onRebuild() }
-                    .disabled(rebuildProgress != nil)
+                    .disabled(!canRebuild || rebuildProgress != nil)
             }
             if let rebuildProgress {
                 HStack(spacing: 8) {
@@ -50,9 +50,6 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
-            } else {
-                Text("Каталог пересобрается из INPX прямо сейчас.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Divider()
