@@ -58,7 +58,9 @@ struct MainWindowView: View {
             try? await Task.sleep(for: RestoredPaneSize.revealTimeout)
             revealLayout()
         }
-        .frame(minWidth: 1000, minHeight: 640)
+        // Без minWidth: минимум ширины окна — сумма минимумов зон, иначе узкая
+        // правая панель (без «Жанров» и «Размера») недостижима.
+        .frame(minHeight: 640)
         .sheet(isPresented: $showSearch) {
             SearchWindowView(
                 library: library,
