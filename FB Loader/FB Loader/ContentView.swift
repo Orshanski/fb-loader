@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var state = AppState()
-    @State private var showSettings = false
     @State private var settingsRebuildProgress: String?
     @State private var loadGate = LoadSessionGate()
 
@@ -72,13 +71,13 @@ struct ContentView: View {
             await loadLibrary()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            showSettings = true
+            state.isSettingsPresented = true
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $state.isSettingsPresented) {
             SettingsView(
                 userPaths: state.userPaths,
                 rebuildProgress: settingsRebuildProgress,
-                onClose: { showSettings = false },
+                onClose: { state.isSettingsPresented = false },
                 onRebuild: {
                     state.reset()
                     settingsRebuildProgress = "Чтение каталога…"

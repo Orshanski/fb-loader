@@ -4,6 +4,9 @@ import SwiftUI
 /// `@State` в `MainWindowView` иначе не дотягивается. Пока каталог не открыт,
 /// значения нет и пункты неактивны.
 struct MainWindowActions {
+    /// Ложно, пока открыт любой sheet: иначе флаг поиска «зависал» бы до его
+    /// закрытия, а сайдбар прятался бы за модальным окном.
+    var isAvailable: Bool
     var sidebarVisible: Bool
     var toggleSidebar: () -> Void
     var openSearch: () -> Void
@@ -30,7 +33,7 @@ struct MainWindowCommands: Commands {
                 actions?.toggleSidebar()
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
-            .disabled(actions == nil)
+            .disabled(actions?.isAvailable != true)
             Divider()
         }
         CommandGroup(after: .textEditing) {
@@ -38,7 +41,7 @@ struct MainWindowCommands: Commands {
                 actions?.openSearch()
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(actions == nil)
+            .disabled(actions?.isAvailable != true)
         }
     }
 }

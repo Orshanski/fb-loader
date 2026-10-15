@@ -77,6 +77,7 @@ struct MainWindowView: View {
             }
         }
         .focusedSceneValue(\.mainWindowActions, MainWindowActions(
+            isAvailable: !showSearch && state.exportProgress == nil && !state.isSettingsPresented,
             sidebarVisible: sidebarVisible,
             toggleSidebar: { sidebarVisible.toggle() },
             openSearch: { showSearch = true }))
