@@ -43,12 +43,11 @@ struct MainWindowView: View {
                 } else {
                     Text("Выберите книгу")
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .frame(minHeight: bookDetailMinHeight,
-                               idealHeight: bookDetailIdealHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(idealHeight: bookDetailIdealHeight)
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(minWidth: BookTableColumns.minimumPaneWidth, maxWidth: .infinity)
         }
         .frame(minWidth: 1000, minHeight: 640)
         .toolbar {

@@ -83,9 +83,11 @@ Header высотой ~72pt, с одним padding-блоком 12pt со все
 | 3 | № | 50pt | trailing, tabular | `seriesNum` или `—` если нет серии |
 | 4 | Размер | 80pt | trailing, tabular | `ByteCountFormatter` |
 | 5 | Дата | 100pt | trailing, tabular | `dd.MM.yyyy` |
-| 6 | Жанры | 220pt | leading, ellipsis-tail | через `, ` |
+| 6 | Жанры | flex, min 120pt, ~30% гибкой ширины | leading, ellipsis-tail | через `, ` |
 
 `tabular` = `.monospacedDigit()` на этих `Text`.
+
+Видимость и ширина колонок — одна функция `BookTableColumns.visibleColumns(forWidth:)` для шапки и строк: при сужении панели сначала скрывается «Жанры», затем «Размер».
 
 ### 3.3 Строки
 
