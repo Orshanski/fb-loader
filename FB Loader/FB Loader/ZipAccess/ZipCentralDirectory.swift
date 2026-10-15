@@ -17,12 +17,17 @@ nonisolated enum ZipCentralDirectory {
         case entryNotFound(zip: URL, name: String)
         case entryTooLarge(name: String, size: UInt64)
         case encrypted(name: String)
+        case checksumMismatch(name: String)
     }
 
     /// Предел размера одной записи. FB2 с иллюстрациями — десятки мегабайт;
     /// всё, что больше, — битый или подсунутый архив, и буфер под заявленный
     /// размер выделять нельзя.
     static let maxEntrySize: UInt64 = 512 << 20
+
+    /// Предел размера центрального каталога. У архивов Флибусты он —
+    /// единицы мегабайт; больше — битое значение, а не повод читать гигабайты.
+    static let maxDirectorySize: UInt64 = 256 << 20
 
     struct Entry: Sendable {
         let name: String
@@ -34,6 +39,9 @@ nonisolated enum ZipCentralDirectory {
         let compressionMethod: UInt16
         /// Бит 0 general purpose flags.
         let isEncrypted: Bool
+        /// Из центрального каталога — он источник правды и при флаге 3
+        /// (data descriptor), когда в локальном заголовке нули.
+        let crc32: UInt32
     }
 
     /// In-memory snapshot of an archive's central directory.
@@ -85,11 +93,19 @@ nonisolated enum ZipCentralDirectory {
         // before the regular EOCD.
         if cdOffset64 == 0xFFFF_FFFF || cdSize64 == 0xFFFF_FFFF || totalEntries64 == 0xFFFF {
             let eocdAbsOffset = (fileSize - scanWindow) + UInt64(eocdOffset)
-            guard eocdAbsOffset >= 20 else { throw ZipError.truncated(url) }
-            try handle.seek(toOffset: eocdAbsOffset - 20)
-            let loc = try readExactly(handle, 20, url)
-            guard readU32(loc, 0) == 0x07064b50 else {
-                throw ZipError.truncated(url)
+            var loc = Data()
+            if eocdAbsOffset >= 20 {
+                try handle.seek(toOffset: eocdAbsOffset - 20)
+                loc = try readExactly(handle, 20, url)
+            }
+            guard loc.count == 20, readU32(loc, 0) == 0x07064b50 else {
+                // Ровно 65535 записей — законный обычный zip без ZIP64:
+                // размер и смещение каталога тогда настоящие.
+                guard cdOffset64 != 0xFFFF_FFFF, cdSize64 != 0xFFFF_FFFF else {
+                    throw ZipError.truncated(url)
+                }
+                return try readDirectory(handle, url: url, fileSize: fileSize,
+                                         offset: cdOffset64, size: cdSize64, total: totalEntries64)
             }
             let zip64EocdOffset = readU64(loc, 8)
             guard fileSize >= 56, zip64EocdOffset <= fileSize - 56 else {
@@ -106,10 +122,19 @@ nonisolated enum ZipCentralDirectory {
             cdOffset64 = readU64(z64, 48)
         }
 
-        // Read the entire central directory in one go. Размер и смещение —
-        // из файла, поэтому сначала проверка, что каталог в нём помещается:
-        // иначе `Int(...)` трапает, а огромный размер — это гигантский буфер.
-        guard cdOffset64 <= fileSize, cdSize64 <= fileSize - cdOffset64 else {
+        return try readDirectory(handle, url: url, fileSize: fileSize,
+                                 offset: cdOffset64, size: cdSize64, total: totalEntries64)
+    }
+
+    /// Читает центральный каталог одним куском и строит индекс.
+    private static func readDirectory(_ handle: FileHandle, url: URL, fileSize: UInt64,
+                                      offset cdOffset64: UInt64, size cdSize64: UInt64,
+                                      total totalEntries64: UInt64) throws -> Index {
+        // Размер и смещение — из файла, поэтому сначала проверка, что каталог
+        // в нём помещается: иначе `Int(...)` трапает, а огромный размер —
+        // это гигантский буфер.
+        guard cdOffset64 <= fileSize, cdSize64 <= fileSize - cdOffset64,
+              cdSize64 <= maxDirectorySize else {
             throw ZipError.truncated(url)
         }
         try handle.seek(toOffset: cdOffset64)
@@ -124,6 +149,7 @@ nonisolated enum ZipCentralDirectory {
             //  +0   sig 0x02014b50          4
             //  +8   general purpose flags   2
             //  +10  compression method      2
+            //  +16  CRC-32                  4
             //  +20  compressed size         4
             //  +24  uncompressed size       4
             //  +28  file name length        2
@@ -131,11 +157,17 @@ nonisolated enum ZipCentralDirectory {
             //  +32  file comment length     2
             //  +42  local header offset     4
             //  +46  file name
-            // Битая запись посреди каталога — ошибка: молча обрезанный индекс
-            // выдал бы «книга не найдена» для всех записей после неё.
-            guard readU32(cd, p) == 0x02014b50 else { throw ZipError.truncated(url) }
+            guard readU32(cd, p) == 0x02014b50 else {
+                // После всех заявленных записей допустима чужая запись
+                // (digital signature, APPNOTE 4.3.13). Посреди каталога —
+                // ошибка: молча обрезанный индекс выдал бы «книга не найдена»
+                // для всех записей после неё.
+                if UInt64(entries.count) >= totalEntries64 { break }
+                throw ZipError.truncated(url)
+            }
             let flags = readU16(cd, p + 8)
             let method = readU16(cd, p + 10)
+            let crc = readU32(cd, p + 16)
             var compressed = UInt64(readU32(cd, p + 20))
             var uncompressed = UInt64(readU32(cd, p + 24))
             let nameLen = Int(readU16(cd, p + 28))
@@ -185,7 +217,8 @@ nonisolated enum ZipCentralDirectory {
                 uncompressedSize: uncompressed,
                 localHeaderOffset: localOffset,
                 compressionMethod: method,
-                isEncrypted: flags & 1 != 0
+                isEncrypted: flags & 1 != 0,
+                crc32: crc
             )
             p = nameEnd + extraLen + commentLen
         }
@@ -231,24 +264,31 @@ nonisolated enum ZipCentralDirectory {
         try handle.seek(toOffset: dataStart)
         let compressed = try readExactly(handle, Int(entry.compressedSize), url)
 
+        let data: Data
         switch entry.compressionMethod {
         case 0:
-            return compressed
+            data = compressed
         case 8:
             // Raw DEFLATE — no zlib wrapper. Apple's Compression framework
             // calls this `COMPRESSION_ZLIB`.
-            return try inflate(deflate: compressed,
+            data = try inflate(deflate: compressed,
                                expected: Int(entry.uncompressedSize),
                                name: entry.name)
         default:
             throw ZipError.unsupportedCompression(method: entry.compressionMethod, name: entry.name)
         }
+        // Без CRC повреждённый поток или заниженный размер дают «успешно»
+        // распакованный мусор, и на экспорт уходит испорченная книга.
+        guard CRC32.checksum(data) == entry.crc32 else {
+            throw ZipError.checksumMismatch(name: entry.name)
+        }
+        return data
     }
 
     private static func inflate(deflate src: Data, expected: Int, name: String) throws -> Data {
         var out = Data(count: expected)
-        let written: Int = try out.withUnsafeMutableBytes { (outBuf: UnsafeMutableRawBufferPointer) -> Int in
-            try src.withUnsafeBytes { (inBuf: UnsafeRawBufferPointer) -> Int in
+        try out.withUnsafeMutableBytes { (outBuf: UnsafeMutableRawBufferPointer) in
+            try src.withUnsafeBytes { (inBuf: UnsafeRawBufferPointer) in
                 guard let outBase = outBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
                       let inBase = inBuf.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                     throw ZipError.decompressionFailed(name: name)
@@ -259,10 +299,8 @@ nonisolated enum ZipCentralDirectory {
                 if n == 0 || n != expected {
                     throw ZipError.decompressionFailed(name: name)
                 }
-                return n
             }
         }
-        if written != expected { out.removeLast(out.count - written) }
         return out
     }
 

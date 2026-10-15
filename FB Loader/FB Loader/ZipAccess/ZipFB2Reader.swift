@@ -9,6 +9,9 @@ import Foundation
 nonisolated final class ZipFB2Reader {
     enum ReaderError: Error {
         case archiveNotFound(URL)
+        /// Файл есть, но прочитать нельзя: нет доступа, ошибка ввода-вывода,
+        /// том отключился.
+        case archiveUnreadable(URL, underlying: Error)
         case archiveCorrupt(URL, underlying: Error)
         case bookNotFoundInArchive(zip: URL, libid: Int32)
     }
@@ -31,8 +34,16 @@ nonisolated final class ZipFB2Reader {
     static func readFB2(libid: Int32, archiveURL: URL) throws -> Data {
         // Атрибуты — через FileManager, а не `URL.resourceValues`: тот
         // кэширует значения на экземпляре URL и подмену бы не заметил.
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: archiveURL.path),
-              let size = (attrs[.size] as? NSNumber)?.uint64Value,
+        guard FileManager.default.fileExists(atPath: archiveURL.path) else {
+            throw ReaderError.archiveNotFound(archiveURL)
+        }
+        let attrs: [FileAttributeKey: Any]
+        do {
+            attrs = try FileManager.default.attributesOfItem(atPath: archiveURL.path)
+        } catch {
+            throw ReaderError.archiveUnreadable(archiveURL, underlying: error)
+        }
+        guard let size = (attrs[.size] as? NSNumber)?.uint64Value,
               let modified = attrs[.modificationDate] as? Date else {
             throw ReaderError.archiveNotFound(archiveURL)
         }
