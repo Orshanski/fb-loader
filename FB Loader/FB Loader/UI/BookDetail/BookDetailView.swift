@@ -25,12 +25,10 @@ struct BookDetailView: View {
     @State private var info: FB2BookInfo?
     @State private var translatorsExpanded = false
 
-    /// Ширина строки аннотации, дальше которой текст читать тяжело.
-    static let annotationMaxWidth: CGFloat = 680
+    /// Шире строку читать тяжело.
+    static let textColumnMaxWidth: CGFloat = 680
 
     var body: some View {
-        // Обложка — отдельная колонка, чтобы аннотация шла сразу под метаданными
-        // и получала всю высоту панели, а не остаток под обложкой.
         HStack(alignment: .top, spacing: 18) {
             cover
                 .padding(.vertical, 16)
@@ -43,12 +41,12 @@ struct BookDetailView: View {
                     Divider().padding(.vertical, 12)
                     annotationView
                 }
+                .frame(maxWidth: Self.textColumnMaxWidth, alignment: .leading)
                 .padding(.vertical, 16)
                 .padding(.trailing, 20)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .scrollIndicators(.automatic)
-            // Новая книга открывается с начала, а не с позиции прокрутки прежней.
             .id(book.libid)
         }
         .padding(.leading, 20)
@@ -213,7 +211,7 @@ struct BookDetailView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
                         .lineSpacing(3)
-                        .frame(maxWidth: Self.annotationMaxWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
