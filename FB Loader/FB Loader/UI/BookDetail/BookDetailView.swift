@@ -25,35 +25,51 @@ struct BookDetailView: View {
     @State private var info: FB2BookInfo?
     @State private var translatorsExpanded = false
 
+    /// Ширина строки аннотации, дальше которой текст читать тяжело.
+    static let annotationMaxWidth: CGFloat = 680
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().padding(.vertical, 12)
-            annotationView
+        // Обложка — отдельная колонка, чтобы аннотация шла сразу под метаданными
+        // и получала всю высоту панели, а не остаток под обложкой.
+        HStack(alignment: .top, spacing: 18) {
+            cover
+                .padding(.vertical, 16)
+            // Метаданные и аннотация прокручиваются одним блоком: при прокрутке
+            // шапка уходит вверх и аннотации достаётся вся высота панели.
+            // Закреплённая шапка отнимала бы её постоянно.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    meta
+                    Divider().padding(.vertical, 12)
+                    annotationView
+                }
+                .padding(.vertical, 16)
+                .padding(.trailing, 20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .scrollIndicators(.automatic)
+            // Новая книга открывается с начала, а не с позиции прокрутки прежней.
+            .id(book.libid)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.leading, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: book.libid) { await loadDetail() }
     }
 
-    // MARK: - Header
+    // MARK: - Meta
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 18) {
-            cover
-            VStack(alignment: .leading, spacing: 8) {
-                titleAndMeta
-                authorsBlock
-                HStack(alignment: .top, spacing: 22) {
-                    seriesBlock
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    translatorsBlock
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+    private var meta: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            titleAndMeta
+            authorsBlock
+            HStack(alignment: .top, spacing: 22) {
+                seriesBlock
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                translatorsBlock
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -191,23 +207,17 @@ struct BookDetailView: View {
     @ViewBuilder
     private var annotationView: some View {
         if let a = info?.annotation, !a.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(annotationParagraphs(a), id: \.self) { p in
-                        Text(p)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
-                            .lineSpacing(3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(annotationParagraphs(a), id: \.self) { p in
+                    Text(p)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(NSColor.textColor).opacity(0.85))
+                        .lineSpacing(3)
+                        .frame(maxWidth: Self.annotationMaxWidth, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.trailing, 6)
             }
-            .scrollIndicators(.automatic)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
