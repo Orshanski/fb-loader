@@ -2,6 +2,21 @@ import SwiftUI
 
 struct BooksTableView: View {
     let library: Library
+    @State private var columns: BookTableColumns = .standard
+
+    var body: some View {
+        // Ширина замеряется снаружи таблицы и доходит до шапки и строк через
+        // окружение: иначе каждый шаг ресайза пересчитывал бы выборку книг.
+        BooksTableContent(library: library)
+            .environment(\.bookTableColumns, columns)
+            .onGeometryChange(for: BookTableColumns.self) { proxy in
+                BookTableColumns.visibleColumns(forWidth: proxy.size.width)
+            } action: { columns = $0 }
+    }
+}
+
+private struct BooksTableContent: View {
+    let library: Library
     @Environment(AppState.self) private var state
     @State private var showDateFilter = false
 
@@ -127,7 +142,7 @@ struct BooksTableView: View {
     private func header(count: Int, total: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             titleRow(count: count, total: total)
-            colsRow
+            ColumnsHeaderRow(dateButton: dateColumnButton)
         }
         .padding(.horizontal, 16)
         .frame(height: 72)
@@ -136,15 +151,22 @@ struct BooksTableView: View {
     @ViewBuilder
     private func titleRow(count: Int, total: Int) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Шапка фиксированной высоты 72pt: вторая строка названия обрезала
+            // бы подписи колонок, поэтому длинное имя усекается.
             if let label = titleLabel {
                 Text(label.prefix).foregroundStyle(.secondary)
+                    .fixedSize()
                 Text(label.name).fontWeight(.semibold)
+                    .truncationMode(.tail)
             } else {
                 Text("Выберите автора, серию или жанр").foregroundStyle(.secondary)
+                    .truncationMode(.tail)
             }
-            Spacer()
+            Spacer(minLength: 6)
             counter(count: count, total: total)
+                .fixedSize()
         }
+        .lineLimit(1)
         .font(.system(size: 13))
     }
 
@@ -202,27 +224,8 @@ struct BooksTableView: View {
         return "\(n) \(word)"
     }
 
-    private var colsRow: some View {
-        HStack(spacing: 10) {
-            Spacer().frame(width: BookRow.checkboxWidth)
-            Text("Название")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("№")
-                .frame(width: BookRow.numWidth, alignment: .trailing)
-            Text("Размер")
-                .frame(width: BookRow.sizeWidth, alignment: .trailing)
-            dateColumnButton
-            Text("Жанры")
-                .frame(width: BookRow.genresWidth, alignment: .leading)
-        }
-        .font(.system(size: 10, weight: .semibold))
-        .textCase(.uppercase)
-        .kerning(0.6)
-        .foregroundStyle(.secondary)
-    }
-
     /// Заголовок колонки «Дата» — кнопка, открывающая поповер фильтра.
-    /// Занимает ровно `BookRow.dateWidth` и ровно тем же `Text`, что и
+    /// Занимает ровно `BookTableColumns.dateWidth` и ровно тем же `Text`, что и
     /// остальные заголовки: любой значок внутри этой ширины сдвинул бы
     /// подпись относительно значений в строках. Кликабельность показывается
     /// подсветкой при наведении, а активный фильтр — цветом.
@@ -238,7 +241,7 @@ struct BooksTableView: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .bold))
             }
-            .frame(width: BookRow.dateWidth, alignment: .trailing)
+            .frame(width: BookTableColumns.dateWidth, alignment: .trailing)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -263,6 +266,34 @@ struct BooksTableView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 4)
+    }
+}
+
+private struct ColumnsHeaderRow<DateButton: View>: View {
+    let dateButton: DateButton
+    @Environment(\.bookTableColumns) private var columns
+
+    var body: some View {
+        HStack(spacing: BookTableColumns.spacing) {
+            Spacer().frame(width: BookTableColumns.checkboxWidth)
+            Text("Название")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("№")
+                .frame(width: BookTableColumns.numWidth, alignment: .trailing)
+            if columns.showsSize {
+                Text("Размер")
+                    .frame(width: BookTableColumns.sizeWidth, alignment: .trailing)
+            }
+            dateButton
+            if columns.showsGenres {
+                Text("Жанры")
+                    .frame(width: columns.genresWidth, alignment: .leading)
+            }
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .textCase(.uppercase)
+        .kerning(0.6)
+        .foregroundStyle(.secondary)
     }
 }
 

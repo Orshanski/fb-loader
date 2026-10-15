@@ -32,6 +32,7 @@ struct FB_LoaderApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            MainWindowCommands()
         }
     }
 }

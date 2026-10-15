@@ -6,7 +6,7 @@ struct SearchWindowView: View {
     let archivesRoot: URL?
     /// Initial language inherited from main window at sheet-open time.
     let initialLanguage: String
-    /// Closure to dismiss the sheet — provided by the parent (LeftSidebarView).
+    /// Closure to dismiss the sheet — provided by the parent (MainWindowView).
     let onClose: () -> Void
     /// Preferred sheet size — рассчитывается родителем как 80% от главного
     /// окна (10% полей с каждой стороны). Параметром, чтобы не лезть в
@@ -40,7 +40,7 @@ struct SearchWindowView: View {
             detailPanel
         }
         // Фиксированный размер sheet'а на основе размера главного окна
-        // (80% — родитель в LeftSidebarView читает NSApp.mainWindow и
+        // (80% — родитель в MainWindowView читает NSApp.mainWindow и
         // считает .width * 0.8 / .height * 0.8). Фиксированный (не min/max)
         // фрейм убирает AppKit-recursion warning во время первого layout
         // pass'а sheet'а.

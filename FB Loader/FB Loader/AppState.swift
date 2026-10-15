@@ -92,6 +92,10 @@ final class AppState {
     /// Active export progress, if any. Drives the modal sheet.
     var exportProgress: ExportProgress? = nil
 
+    /// Sheet настроек открыт. Живёт здесь, а не в ContentView: пока он открыт,
+    /// пункты меню главного окна должны быть неактивны.
+    var isSettingsPresented = false
+
     func reset() {
         sidebar = .authors(nil)
         selectedBookLibid = nil

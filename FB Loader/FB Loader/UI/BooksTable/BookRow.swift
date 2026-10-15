@@ -18,20 +18,15 @@ struct BookRow: View {
     /// menu). If `nil`, no context menu is attached.
     var contextMenuBuilder: (() -> AnyView)? = nil
 
+    @Environment(\.bookTableColumns) private var columns
     @State private var hovered = false
 
-    static let checkboxWidth: CGFloat = 28
-    static let numWidth: CGFloat = 50
-    static let sizeWidth: CGFloat = 80
-    static let dateWidth: CGFloat = 100
-    static let genresWidth: CGFloat = 220
-
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: BookTableColumns.spacing) {
             Toggle("", isOn: $isChecked)
                 .toggleStyle(.compactCheckbox)
                 .labelsHidden()
-                .frame(width: BookRow.checkboxWidth, alignment: .center)
+                .frame(width: BookTableColumns.checkboxWidth, alignment: .center)
 
             Text(book.title)
                 .lineLimit(1)
@@ -42,23 +37,27 @@ struct BookRow: View {
             Text(book.seriesNum.map { "\($0)" } ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: BookRow.numWidth, alignment: .trailing)
+                .frame(width: BookTableColumns.numWidth, alignment: .trailing)
 
-            Text(byteCount(book.size))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.sizeWidth, alignment: .trailing)
+            if columns.showsSize {
+                Text(byteCount(book.size))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: BookTableColumns.sizeWidth, alignment: .trailing)
+            }
 
             Text(book.dateAdded.map(DateFormat.dayMonthYear.string(from:)) ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: BookRow.dateWidth, alignment: .trailing)
+                .frame(width: BookTableColumns.dateWidth, alignment: .trailing)
 
-            Text(genresString)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(.secondary)
-                .frame(width: BookRow.genresWidth, alignment: .leading)
+            if columns.showsGenres {
+                Text(genresString)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(.secondary)
+                    .frame(width: columns.genresWidth, alignment: .leading)
+            }
         }
         .font(.system(size: 13))
         .padding(.leading, indented ? 30 : 16)
@@ -90,5 +89,16 @@ private struct OptionalContextMenu: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct BookTableColumnsKey: EnvironmentKey {
+    static let defaultValue = BookTableColumns.standard
+}
+
+extension EnvironmentValues {
+    var bookTableColumns: BookTableColumns {
+        get { self[BookTableColumnsKey.self] }
+        set { self[BookTableColumnsKey.self] = newValue }
     }
 }
