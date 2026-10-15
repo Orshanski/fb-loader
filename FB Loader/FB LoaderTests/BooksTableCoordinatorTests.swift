@@ -269,6 +269,16 @@ struct BooksTableKeyboardTests {
         #expect(h.model.selectionWrites == [21])
     }
 
+    @Test("⌥↑ штатно прыгает в начало: с заголовком в строке 0 выбрана первая книга")
+    func optionUpJumpsToStart() {
+        let h = BooksTableHarness(books: Array(BooksTableFixture.books[2...]))
+        h.select(row: 2)
+        h.model.selectionWrites.removeAll()
+        h.table.keyDown(with: up([.option]))
+        #expect(h.table.selectedRow == 1)
+        #expect(h.model.selectionWrites == [20])
+    }
+
     @Test("на последней книге ↓ — выбор на месте")
     func downAtEnd() {
         let h = BooksTableHarness()
