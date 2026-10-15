@@ -465,6 +465,33 @@ struct BooksTableHeaderTests {
         #expect(c.datePress(at: 43) == .open)
     }
 
+    @Test("«Дата»: решение берётся на mouseDown, отпускание его выполняет и сбрасывает")
+    func headerPressFlow() {
+        let h = BooksTableHarness()
+        let c = h.coordinator
+        let dateColumn = h.table.tableColumn(withIdentifier: BookTableColumnID.date.identifier)!
+        c.headerMouseDown(on: .date, at: 1)
+        #expect(c.pendingDatePress == .open)
+        c.headerMouseDown(on: .num, at: 2)
+        #expect(c.pendingDatePress == nil)
+        c.notePopoverClosed(at: 42)
+        c.headerMouseDown(on: .date, at: 42)
+        #expect(c.pendingDatePress == .close)
+        c.tableView(h.table, didClick: dateColumn)
+        #expect(c.pendingDatePress == nil)
+        #expect(!c.isDatePopoverShown)
+    }
+
+    @Test("«Дата» без контекста: нажатие игнорируется, поповер не открывается")
+    func headerPressWithoutContext() {
+        let h = BooksTableHarness(context: nil)
+        let dateColumn = h.table.tableColumn(withIdentifier: BookTableColumnID.date.identifier)!
+        h.coordinator.headerMouseDown(on: .date, at: 1)
+        #expect(h.coordinator.pendingDatePress == .ignore)
+        h.coordinator.tableView(h.table, didClick: dateColumn)
+        #expect(!h.coordinator.isDatePopoverShown)
+    }
+
     @Test("области подписей: Название с 54pt, Дата 100pt после промежутка, шеврон в 16pt от края последней колонки")
     func contentRects() {
         let frame = NSRect(x: 0, y: 0, width: 500, height: 33)

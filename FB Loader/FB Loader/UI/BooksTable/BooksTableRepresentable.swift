@@ -67,8 +67,7 @@ struct BooksTableRepresentable: NSViewRepresentable {
         }
 
         let header = BooksHeaderView(frame: NSRect(x: 0, y: 0, width: 0, height: BooksHeaderView.height))
-        header.datePressAction = { [weak coordinator] timestamp in coordinator?.datePress(at: timestamp) ?? .ignore }
-        header.performDatePress = { [weak coordinator] action in coordinator?.perform(action) }
+        header.releasedOverDate = { [weak coordinator] in coordinator?.completePendingDatePress() }
         table.headerView = header
         table.cornerView = nil
 
@@ -100,6 +99,7 @@ struct BooksTableRepresentable: NSViewRepresentable {
         private var isUpdatingSelection = false
         private var datePopover: NSPopover?
         private var lastPopoverCloseTimestamp: TimeInterval?
+        private(set) var pendingDatePress: DatePress?
 
         init(model: any BooksTableModel, library: Library, exportAction: ExportAction) {
             self.model = model
@@ -308,10 +308,27 @@ struct BooksTableRepresentable: NSViewRepresentable {
             datePopover = nil
         }
 
-        /// Мышь сюда не доходит (шапка не зовёт super.mouseDown) — только нажатие VoiceOver.
+        /// Решение принимается на нажатии: transient-поповер закрывается тем же mouseDown раньше, чем отпускание дойдёт до didClick.
+        func tableView(_: NSTableView, mouseDownInHeaderOf tableColumn: NSTableColumn) {
+            headerMouseDown(on: BookTableColumnID(rawValue: tableColumn.identifier.rawValue),
+                            at: NSApp.currentEvent?.timestamp ?? -1)
+        }
+
+        func headerMouseDown(on column: BookTableColumnID?, at timestamp: TimeInterval) {
+            pendingDatePress = column == .date ? datePress(at: timestamp) : nil
+        }
+
         func tableView(_: NSTableView, didClick tableColumn: NSTableColumn) {
             guard tableColumn.identifier == BookTableColumnID.date.identifier else { return }
-            perform(datePress(at: NSApp.currentEvent?.timestamp ?? -1))
+            // Нет нажатия мышью — это штатное нажатие VoiceOver на ячейку.
+            if pendingDatePress == nil { pendingDatePress = datePress(at: NSApp.currentEvent?.timestamp ?? -1) }
+            completePendingDatePress()
+        }
+
+        func completePendingDatePress() {
+            guard let action = pendingDatePress else { return }
+            pendingDatePress = nil
+            perform(action)
         }
 
         // MARK: Data source / delegate

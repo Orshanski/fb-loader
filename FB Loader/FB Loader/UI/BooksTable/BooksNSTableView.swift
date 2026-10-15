@@ -364,7 +364,7 @@ final class BooksHeaderCell: NSTableHeaderCell {
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
-        if column == .date, header?.isDatePressed == true {
+        if column == .date, header?.isDatePressed == true, header?.dateState != .disabled {
             NSGraphicsContext.current?.cgContext.setAlpha(0.5)
         }
         switch column {
@@ -390,8 +390,7 @@ final class BooksHeaderView: NSTableHeaderView {
     static let height: CGFloat = 33
     var dateState: DateHeaderState = .disabled
     private(set) var isDatePressed = false
-    var datePressAction: ((TimeInterval) -> DatePress)?
-    var performDatePress: ((DatePress) -> Void)?
+    var releasedOverDate: (() -> Void)?
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
@@ -405,29 +404,24 @@ final class BooksHeaderView: NSTableHeaderView {
         NSRect(x: bounds.minX, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
     }
 
-    /// Без `super`: у колонок нет сортировки и выбора, кликабельна только «Дата».
+    /// AppKit не подсвечивает ячейку своей шапки при нажатии, поэтому «Дата» приглушается здесь. После долгого нажатия
+    /// штатный didClick не приходит, поэтому отпускание над колонкой обрабатывается отдельно.
     override func mouseDown(with event: NSEvent) {
-        guard let tableView else { return }
         let index = column(at: convert(event.locationInWindow, from: nil))
-        guard index >= 0,
-              tableView.tableColumns[index].identifier == BookTableColumnID.date.identifier,
-              let action = datePressAction?(event.timestamp), action != .ignore
-        else { return }
-        let rect = headerRect(ofColumn: index)
-        var inside = true
-        setDatePressed(true)
-        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-            inside = rect.contains(convert(next.locationInWindow, from: nil))
-            setDatePressed(inside)
-            if next.type == .leftMouseUp { break }
-        }
+        let isDate = index >= 0 && tableView?.tableColumns[index].identifier == BookTableColumnID.date.identifier
+        let rect = isDate ? headerRect(ofColumn: index) : .zero
+        if isDate { setDatePressed(true) }
+        super.mouseDown(with: event)
         setDatePressed(false)
-        if inside { performDatePress?(action) }
+        if isDate, let window, rect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+            releasedOverDate?()
+        }
     }
 
     private func setDatePressed(_ pressed: Bool) {
         guard pressed != isDatePressed else { return }
         isDatePressed = pressed
         needsDisplay = true
+        displayIfNeeded()
     }
 }
