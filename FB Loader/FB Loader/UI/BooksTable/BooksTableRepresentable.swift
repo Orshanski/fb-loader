@@ -1,8 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Координатор пишет выбор и галочки через протокол: в тестах — подделка,
-/// считающая записи.
+/// Протокол, а не AppState: тесты подставляют подделку и считают записи выбора.
 @MainActor
 protocol BooksTableModel: AnyObject {
     var selectedBookLibid: Int32? { get set }
@@ -164,19 +163,20 @@ struct BooksTableRepresentable: NSViewRepresentable {
                 tableView.updateHoverFromMouse()
             } else {
                 syncSelection(of: tableView, to: newSelected)
-                if cellsChanged { reloadVisibleTitleCells(of: tableView) }
+                if cellsChanged { reloadLiveTitleCells(of: tableView) }
             }
         }
 
-        private func reloadVisibleTitleCells(of tableView: NSTableView) {
-            let visible = tableView.rows(in: tableView.visibleRect)
-            guard visible.length > 0,
-                  let column = tableView.tableColumns.firstIndex(where: {
-                      $0.identifier == BookTableColumnID.title.identifier })
+        /// Все живые строки, а не только `visibleRect`: AppKit держит строки за краем окна, и они иначе остались бы со старым видом.
+        private func reloadLiveTitleCells(of tableView: NSTableView) {
+            guard let column = tableView.tableColumns.firstIndex(where: {
+                $0.identifier == BookTableColumnID.title.identifier })
             else { return }
+            var live = IndexSet()
+            tableView.enumerateAvailableRowViews { _, row in live.insert(row) }
+            guard !live.isEmpty else { return }
             withoutWritingSelection {
-                tableView.reloadData(forRowIndexes: IndexSet(integersIn: visible.location ..< NSMaxRange(visible)),
-                                     columnIndexes: IndexSet(integer: column))
+                tableView.reloadData(forRowIndexes: live, columnIndexes: IndexSet(integer: column))
             }
         }
 
@@ -296,7 +296,8 @@ struct BooksTableRepresentable: NSViewRepresentable {
             popover.contentViewController = host
             datePopover = popover
             // Шапка flipped: .maxY — её нижний край, поповер под заголовком.
-            popover.show(relativeTo: header.headerRect(ofColumn: column), of: header, preferredEdge: .maxY)
+            let anchor = BooksHeaderCell.contentRect(for: .date, in: header.headerRect(ofColumn: column))
+            popover.show(relativeTo: anchor, of: header, preferredEdge: .maxY)
         }
 
         func popoverWillClose(_: Notification) {
@@ -385,7 +386,9 @@ struct BooksTableRepresentable: NSViewRepresentable {
             let row = tableView.selectedRow
             guard let libid = rows.libid(at: row) else { return }
             model.selectedBookLibid = libid
-            if row > 0, !rows.isBook(row - 1) { tableView.scrollRowToVisible(row - 1) }
+            // Мышью заголовок не подтягиваем: таблица под курсором не должна сдвигаться.
+            let byKeyboard = (tableView as? BooksNSTableView)?.isHandlingKeyDown ?? false
+            if byKeyboard, row > 0, !rows.isBook(row - 1) { tableView.scrollRowToVisible(row - 1) }
         }
     }
 }

@@ -289,7 +289,7 @@ final class BooksNSTableView: NSTableView {
 
     /// После прокрутки колёсиком `mouseMoved` не приходит — строка под курсором другая.
     func updateHoverFromMouse() {
-        guard let window else { setHoveredRow(-1); return }
+        guard let window, window.isKeyWindow else { setHoveredRow(-1); return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         setHoveredRow(visibleRect.contains(point) ? row(at: point) : -1)
     }

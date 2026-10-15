@@ -5,7 +5,6 @@ nonisolated enum BookTableRow: Sendable {
     case seriesHeader(Series, count: Int)
 }
 
-/// Строки таблицы книг главного окна: книги без серии, затем группы серий.
 nonisolated struct BookTableRows: Sendable {
     let rows: [BookTableRow]
     private let rowByLibid: [Int32: Int]
@@ -31,7 +30,11 @@ nonisolated struct BookTableRows: Sendable {
         return b
     }
 
-    func isBook(_ row: Int) -> Bool { book(at: row) != nil }
+    /// Без привязки значения: вызывается из `heightOfRow` на каждую строку и не должен копировать `Book`.
+    func isBook(_ row: Int) -> Bool {
+        guard rows.indices.contains(row), case .book = rows[row] else { return false }
+        return true
+    }
 
     func libid(at row: Int) -> Int32? { book(at: row)?.libid }
 
@@ -98,7 +101,7 @@ nonisolated func spaceRoute(lastTypeSelectKey: Date?, now: Date) -> SpaceRoute {
     return now.timeIntervalSince(last) < 1 ? .typeSelect : .toggleCheck
 }
 
-/// Смена ключа — новая выборка: перезагрузка строк, прокрутка, перерисовка шапки.
+/// Клик и галочка ключ не меняют: по нему решается, пересобирать ли строки таблицы.
 nonisolated struct BooksTableKey: Equatable, Sendable {
     let context: BooksByContext.Context?
     let language: String

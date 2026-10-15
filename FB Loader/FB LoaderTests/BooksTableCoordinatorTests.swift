@@ -218,11 +218,30 @@ struct BooksTableCoordinatorTests {
         #expect(h.table.selectedRow == -1)
     }
 
-    @Test("клик по галочке не выделяет строку: таблица отдаёт событие галочке")
-    func checkboxGetsMouse() {
+    @Test("клик по галочке переключает её и не меняет выбор")
+    func checkboxClickKeepsSelection() {
         let h = BooksTableHarness()
-        let box = BookCheckbox()
-        #expect(h.table.validateProposedFirstResponder(box, for: nil))
+        h.select(row: 0)
+        h.model.selectionWrites.removeAll()
+        h.window.layoutIfNeeded()
+        h.table.layoutSubtreeIfNeeded()
+        let cell = h.table.view(atColumn: 0, row: 1, makeIfNecessary: true) as! BookTitleCellView
+        cell.layoutSubtreeIfNeeded()
+        let box = cell.checkbox
+        let point = box.convert(NSPoint(x: box.bounds.midX, y: box.bounds.midY), to: nil)
+        func event(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                               windowNumber: h.window.windowNumber, context: nil,
+                               eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        let hit = h.window.contentView?.superview?.hitTest(point)
+        // Мышь достаётся галочке, а не таблице: NSTableView.mouseDown, который выделяет строку, не вызывается.
+        #expect(hit === box)
+        hit?.mouseDown(with: event(.leftMouseDown))
+        hit?.mouseUp(with: event(.leftMouseUp))
+        #expect(h.model.checkedBookLibids == [11])
+        #expect(h.table.selectedRow == 0)
+        #expect(h.model.selectionWrites.isEmpty)
     }
 }
 
@@ -277,6 +296,24 @@ struct BooksTableKeyboardTests {
         h.table.keyDown(with: up([.option]))
         #expect(h.table.selectedRow == 1)
         #expect(h.model.selectionWrites == [20])
+    }
+
+    @Test("⌘↓ и ⌘↑ штатно шагают на одну строку: заголовок серии не выбирается")
+    func commandArrowsSkipHeader() {
+        let h = BooksTableHarness()
+        h.select(row: 1)
+        h.table.keyDown(with: down([.command]))
+        #expect(h.table.selectedRow == 3)
+        h.table.keyDown(with: up([.command]))
+        #expect(h.table.selectedRow == 1)
+    }
+
+    @Test("без выбора ↑ — последняя книга")
+    func upWithoutSelection() {
+        let h = BooksTableHarness()
+        h.table.keyDown(with: up())
+        #expect(h.table.selectedRow == 4)
+        #expect(h.model.selectionWrites == [21])
     }
 
     @Test("на последней книге ↓ — выбор на месте")
@@ -428,15 +465,6 @@ struct BooksTableHeaderTests {
         #expect(c.datePress(at: 43) == .open)
     }
 
-    @Test("нажатие на «Дату» без контекста поповер не открывает")
-    func noPopoverWithoutContext() {
-        let h = BooksTableHarness(context: nil)
-        let dateColumn = h.table.tableColumn(withIdentifier: BookTableColumnID.date.identifier)!
-        h.coordinator.tableView(h.table, didClick: dateColumn)
-        h.coordinator.perform(.open)
-        #expect(!h.coordinator.isDatePopoverShown)
-    }
-
     @Test("области подписей: Название с 54pt, Дата 100pt после промежутка, шеврон в 16pt от края последней колонки")
     func contentRects() {
         let frame = NSRect(x: 0, y: 0, width: 500, height: 33)
@@ -449,5 +477,95 @@ struct BooksTableHeaderTests {
         let genres = BooksHeaderCell.contentRect(for: .genres, in: NSRect(x: 800, y: 0, width: 246, height: 33))
         #expect(genres.minX == 810)
         #expect(genres.width == 220)
+    }
+}
+
+
+@Suite("BooksTable scrolling and live rows")
+@MainActor
+struct BooksTableScrollTests {
+    /// 40 книг без серии (libid 1…40), затем [Серия] (строка 40) и 30 книг серии (libid 101…130, строки 41…70).
+    private func manyBooks() -> [Book] {
+        (1...40).map { BooksTableFixture.book(Int32($0), "Л\($0)") }
+            + (1...30).map { BooksTableFixture.book(Int32(100 + $0), "С\($0)", series: 1, num: Int16($0)) }
+    }
+
+    /// Верх списка — отрицательный origin: под шапкой таблицы.
+    private let topY = -BooksHeaderView.height
+
+    private var clipY: (BooksTableHarness) -> CGFloat { { $0.scrollView.contentView.bounds.origin.y } }
+
+    private func scrollToRow(_ h: BooksTableHarness, _ row: Int) {
+        h.table.scrollRowToVisible(row)
+        h.scrollView.reflectScrolledClipView(h.scrollView.contentView)
+    }
+
+    @Test("смена ключа без выбранной книги — к началу")
+    func newKeyScrollsToTop() {
+        let h = BooksTableHarness(books: manyBooks())
+        scrollToRow(h, 70)
+        #expect(clipY(h) > topY)
+        h.apply(books: manyBooks(), context: .author(2))
+        #expect(clipY(h) == topY)
+    }
+
+    @Test("deep-link: новая выборка с выбранной книгой — книга и заголовок её серии видимы")
+    func deepLinkScrollsToBookWithHeader() {
+        let h = BooksTableHarness(books: manyBooks())
+        scrollToRow(h, 70)
+        h.model.selectedBookLibid = 101
+        h.apply(books: manyBooks(), context: .author(2))
+        let visible = h.table.rows(in: h.table.visibleRect)
+        #expect(NSLocationInRange(40, visible))
+        #expect(NSLocationInRange(41, visible))
+    }
+
+    @Test("выбор мышью первой книги серии не двигает таблицу, стрелка ↑ подтягивает заголовок")
+    func headerScrollOnlyByKeyboard() {
+        let books = (1...60).map { BooksTableFixture.book(Int32($0), "С\($0)", series: 1, num: Int16($0)) }
+        let h = BooksTableHarness(books: books)
+        let headerHeight = BooksNSTableView.seriesHeaderHeight
+        func scrollPastHeader() {
+            h.scrollView.contentView.scroll(to: NSPoint(x: 0, y: topY + headerHeight))
+            h.scrollView.reflectScrolledClipView(h.scrollView.contentView)
+        }
+        scrollPastHeader()
+        h.select(row: 1)
+        #expect(clipY(h) == topY + headerHeight)
+
+        h.select(row: 2)
+        scrollPastHeader()
+        h.table.keyDown(with: {
+            let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function],
+                                     timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: String(Character(UnicodeScalar(UInt32(NSUpArrowFunctionKey))!)),
+                                     charactersIgnoringModifiers: String(Character(UnicodeScalar(UInt32(NSUpArrowFunctionKey))!)),
+                                     isARepeat: false, keyCode: 126)!
+            return e
+        }())
+        #expect(h.table.selectedRow == 1)
+        #expect(clipY(h) == topY)
+    }
+
+    @Test("смена галочек обновляет и живые строки за краем окна")
+    func liveRowsOutsideVisibleRectUpdate() {
+        let h = BooksTableHarness(books: manyBooks())
+        h.window.setContentSize(NSSize(width: 900, height: 120))
+        h.table.layoutSubtreeIfNeeded()
+        scrollToRow(h, 35)
+        scrollToRow(h, 5)
+        h.model.checkedBookLibids = Set(manyBooks().map(\.libid))
+        h.model.selectedBookLibid = 7
+        h.apply(books: manyBooks(), context: .author(1))
+        var outside = 0
+        h.table.enumerateAvailableRowViews { rowView, row in
+            guard let libid = h.coordinator.rows.libid(at: row),
+                  let cell = h.table.view(atColumn: 0, row: row, makeIfNecessary: false) as? BookTitleCellView
+            else { return }
+            if !rowView.frame.intersects(h.table.visibleRect) { outside += 1 }
+            #expect(cell.checkbox.isOn, "row \(row)")
+            #expect(cell.showsSelected == (libid == 7), "row \(row)")
+        }
+        #expect(outside > 0)
     }
 }

@@ -10,10 +10,7 @@ struct BookRow: View {
     @Binding var isChecked: Bool
     @Binding var isSelected: Bool
 
-    /// Optional context-menu builder. Wrapped in `AnyView` so the View tree
-    /// stays type-erased — the call sites have very different menu shapes
-    /// (BooksTable's "Выгрузить отмеченные" vs search-window's local-export
-    /// menu). If `nil`, no context menu is attached.
+    /// `AnyView`, чтобы вызывающие стирали тип своего меню; `nil` — без меню.
     var contextMenuBuilder: (() -> AnyView)? = nil
 
     @Environment(\.bookTableColumns) private var columns
