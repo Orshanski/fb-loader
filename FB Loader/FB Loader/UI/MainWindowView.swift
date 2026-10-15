@@ -5,6 +5,7 @@ struct MainWindowView: View {
     let library: Library
     @Environment(AppState.self) private var state
     @State private var sidebarVisible = true
+    @State private var showSearch = false
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -14,7 +15,7 @@ struct MainWindowView: View {
     var body: some View {
         HSplitView {
             if sidebarVisible {
-                LeftSidebarView(library: library)
+                LeftSidebarView(library: library, onOpenSearch: { showSearch = true })
                     .frame(minWidth: 280, idealWidth: 300, maxWidth: 480)
             }
             VSplitView {
@@ -50,6 +51,15 @@ struct MainWindowView: View {
             .frame(minWidth: BookTableColumns.minimumPaneWidth, maxWidth: .infinity)
         }
         .frame(minWidth: 1000, minHeight: 640)
+        .sheet(isPresented: $showSearch) {
+            SearchWindowView(
+                library: library,
+                archivesRoot: state.userPaths.archivesDirectoryURL,
+                initialLanguage: state.languageFilter,
+                preferredSize: searchSheetSize(),
+                onClose: { showSearch = false }
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -57,9 +67,21 @@ struct MainWindowView: View {
                 } label: {
                     Image(systemName: "sidebar.left")
                 }
-                .help(sidebarVisible ? "Скрыть боковую панель" : "Показать боковую панель")
+                .help(sidebarVisible ? "Скрыть боковую панель (⌃⌘S)" : "Показать боковую панель (⌃⌘S)")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .help("Поиск по библиотеке (⌘F)")
             }
         }
+        .focusedSceneValue(\.mainWindowActions, MainWindowActions(
+            sidebarVisible: sidebarVisible,
+            toggleSidebar: { sidebarVisible.toggle() },
+            openSearch: { showSearch = true }))
         // Таблица книг — ScrollView, а её содержимое macOS пускает под панель
         // окна: без непрозрачного фона строки просвечивают в полосе заголовка.
         .toolbarBackground(.visible, for: .windowToolbar)
@@ -82,6 +104,17 @@ struct MainWindowView: View {
             state.checkedBookLibids = progress.removingSucceeded(
                 from: state.checkedBookLibids)
         }
+    }
+
+    /// 80% главного окна — по 10% полей с каждой стороны. Читается в момент
+    /// открытия sheet'а.
+    private func searchSheetSize() -> CGSize {
+        if let main = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && !$0.isSheet }) {
+            let parent = main.frame.size
+            return CGSize(width: parent.width * 0.8,
+                          height: parent.height * 0.8)
+        }
+        return CGSize(width: 1100, height: 800)
     }
 
     private struct ProgressIdentifier: Identifiable {

@@ -3,8 +3,8 @@ import AppKit
 
 struct LeftSidebarView: View {
     let library: Library
+    let onOpenSearch: () -> Void
     @Environment(AppState.self) private var state
-    @State private var showSearch = false
 
     var body: some View {
         @Bindable var s = state
@@ -22,7 +22,7 @@ struct LeftSidebarView: View {
                     LanguageFilterPicker(library: library, selection: $s.languageFilter)
 
                     Button {
-                        showSearch = true
+                        onOpenSearch()
                     } label: {
                         Image(systemName: "magnifyingglass")
                     }
@@ -59,15 +59,6 @@ struct LeftSidebarView: View {
                                selectedGenreID: genreBinding(currentID: id))
             }
         }
-        .sheet(isPresented: $showSearch) {
-            SearchWindowView(
-                library: library,
-                archivesRoot: state.userPaths.archivesDirectoryURL,
-                initialLanguage: state.languageFilter,
-                preferredSize: searchSheetSize(),
-                onClose: { showSearch = false }
-            )
-        }
     }
 
     private enum SectionTag: Hashable { case authors, series, genres }
@@ -101,17 +92,5 @@ struct LeftSidebarView: View {
 
     private func genreBinding(currentID: Int16?) -> Binding<Int16?> {
         Binding(get: { currentID }, set: { state.selectGenre($0) })
-    }
-
-    /// 80% of main window — 10% margin on each side. Read at sheet-open
-    /// time. If main window is unavailable for some reason (rare —
-    /// sidebar lives inside main window), falls back to a sensible default.
-    private func searchSheetSize() -> CGSize {
-        if let main = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && !$0.isSheet }) {
-            let parent = main.frame.size
-            return CGSize(width: parent.width * 0.8,
-                          height: parent.height * 0.8)
-        }
-        return CGSize(width: 1100, height: 800)
     }
 }
