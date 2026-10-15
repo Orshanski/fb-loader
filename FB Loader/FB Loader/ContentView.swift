@@ -80,25 +80,37 @@ struct ContentView: View {
                 onRebuild: {
                     state.reset()
                     settingsRebuildProgress = "Чтение каталога…"
-                    try? LibraryLoader.invalidateCache()
-                    startLoad(onProgressText: { settingsRebuildProgress = $0 },
+                    startLoad(forceRebuild: true,
+                              onProgressText: { settingsRebuildProgress = $0 },
                               onFinish: { settingsRebuildProgress = nil })
                 }
             )
         }
     }
 
-    private func startLoad(onProgressText: ((String) -> Void)? = nil,
+    /// Новая загрузка ждёт конца отменённой: иначе в памяти две `Library`.
+    private func startLoad(forceRebuild: Bool = false,
+                           onProgressText: ((String) -> Void)? = nil,
                            onFinish: (() -> Void)? = nil) {
-        loadTask?.cancel()
+        guard let inpx = state.userPaths.inpxURL else {
+            onFinish?()
+            return
+        }
+        let previous = loadTask
+        previous?.cancel()
+        loadGate.cancel()
         loadTask = Task {
-            await loadLibrary(onProgressText: onProgressText)
+            await previous?.value
+            if !Task.isCancelled {
+                await loadLibrary(inpx: inpx, forceRebuild: forceRebuild,
+                                  onProgressText: onProgressText)
+            }
             onFinish?()
         }
     }
 
-    private func loadLibrary(onProgressText: ((String) -> Void)? = nil) async {
-        guard let inpx = state.userPaths.inpxURL else { return }
+    private func loadLibrary(inpx: URL, forceRebuild: Bool,
+                             onProgressText: ((String) -> Void)?) async {
         let loadToken = loadGate.begin()
         state.stage = .loading(progress: "Чтение каталога…")
         onProgressText?("Чтение каталога…")
@@ -111,6 +123,7 @@ struct ContentView: View {
             let lib = try await runDetachedCancellable {
                 try await LibraryLoader.load(
                     inpxURL: inpx,
+                    forceRebuild: forceRebuild,
                     onStatus: { msg in
                         let formatted = progress.setStatus(msg)
                         Task { @MainActor in
@@ -136,8 +149,6 @@ struct ContentView: View {
             if loadGate.finish(loadToken) {
                 state.stage = .ready(lib)
             }
-        } catch is CancellationError {
-            // Отменяет её только следующая загрузка — экран теперь показывает ту.
         } catch {
             if loadGate.finish(loadToken) {
                 state.stage = .failed("\(error)")
@@ -194,6 +205,11 @@ final class LoadSessionGate {
     func apply(_ token: Token, _ body: () -> Void) {
         guard activeToken == token else { return }
         body()
+    }
+
+    /// Колбэки и результат отменённой загрузки стадию уже не трогают.
+    func cancel() {
+        activeToken = nil
     }
 
     @discardableResult

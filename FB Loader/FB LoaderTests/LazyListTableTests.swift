@@ -61,4 +61,18 @@ struct LazyListTableTests {
 
         #expect(box.writes.isEmpty)
     }
+
+    @Test("сокращение списка, в котором выделенной строки больше нет, выбор не пишет")
+    func shrinkingReloadDoesNotWrite() {
+        let (table, coordinator, box) = makeTable(items: [10, 20, 30])
+        table.selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+        box.writes.removeAll()
+
+        coordinator.items = [Item(id: 10)]
+        coordinator.withoutWritingSelection { table.reloadData() }
+        coordinator.syncSelection(of: table, to: 30)
+
+        #expect(table.selectedRow == -1)
+        #expect(box.writes.isEmpty)
+    }
 }

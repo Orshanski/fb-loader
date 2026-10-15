@@ -21,7 +21,7 @@ struct BookDetailLoadingTests {
         }
     }
 
-    @Test("отмена ожидающей задачи доходит до фоновой работы")
+    @Test("отмена ожидающей задачи доходит до фоновой работы", .timeLimit(.minutes(1)))
     func detachedWorkSeesCancellation() async {
         let started = AsyncStream<Void>.makeStream()
         let outer = Task {
@@ -41,7 +41,7 @@ struct BookDetailLoadingTests {
     }
 }
 
-@Suite("Отмена загрузки каталога")
+@Suite("Отмена чтения архивов")
 struct LibraryLoadCancellationTests {
     @Test("отменённая задача прерывает импорт INPX")
     func importerStopsWhenCancelled() async throws {
@@ -52,5 +52,40 @@ struct LibraryLoadCancellationTests {
             return try INPXImporter.parse(inpxURL: url, genres: dict)
         }
         await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
+    @Test("отменённая задача не распаковывает книгу из архива")
+    func zipReaderStopsWhenCancelled() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let zip = dir.appendingPathComponent("lib.zip")
+        try ZipBuilder(items: [.init(name: "1.fb2", payload: Data("<x/>".utf8))]).build().data.write(to: zip)
+
+        #expect(try ZipFB2Reader.readFB2(entryName: "1.fb2", archiveURL: zip) == Data("<x/>".utf8))
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try ZipFB2Reader.readFB2(entryName: "1.fb2", archiveURL: zip)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
+    @Test("отменённая загрузка не пишет кэш каталога")
+    func cancelledLoadDoesNotSaveCache() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inpx = try #require(TestBundleAnchor.bundle.url(forResource: "tiny", withExtension: "inpx"))
+        let dict = try GenreDictionary.loadFromBundle()
+        let task = Task.detached {
+            try LibraryCacheStore(applicationSupportRoot: root).loadOrRebuild(inpxURL: inpx, sourceKey: Data(repeating: 1, count: 32)) { hash in
+                let lib = try INPXImporter.parse(inpxURL: inpx, inpxHash: hash, genres: dict)
+                withUnsafeCurrentTask { $0?.cancel() }
+                return lib
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: LibraryCacheStore.cacheURL(in: root).path))
     }
 }

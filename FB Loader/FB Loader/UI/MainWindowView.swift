@@ -9,6 +9,7 @@ struct MainWindowView: View {
     /// Окно показывается, когда разделитель сайдбара уже стоит на сохранённом
     /// месте: иначе зоны на глазах прыгают из положения по умолчанию.
     @State private var layoutReady = false
+    @State private var exportAction = ExportAction()
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -22,7 +23,7 @@ struct MainWindowView: View {
                     })
             }
             VSplitView {
-                BooksTableView(library: library, onExport: { Task { await runExport() } })
+                BooksTableView(library: library, exportAction: exportAction)
                     .frame(maxWidth: .infinity,
                            minHeight: booksTableMinHeight,
                            idealHeight: booksTableIdealHeight)
@@ -54,6 +55,7 @@ struct MainWindowView: View {
             .layoutPriority(1)
         }
         .opacity(layoutReady ? 1 : 0)
+        .onAppear { exportAction.perform = { Task { await runExport() } } }
         .task {
             try? await Task.sleep(for: RestoredPaneSize.revealTimeout)
             revealLayout()

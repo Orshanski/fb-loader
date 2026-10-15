@@ -22,4 +22,17 @@ struct LoadSessionGateTests {
 
         #expect(applied == ["loading"])
     }
+
+    @Test("после cancel колбэки и результат прежней загрузки не применяются")
+    func cancelledTokenIgnored() {
+        let gate = LoadSessionGate()
+        let token = gate.begin()
+        var applied = false
+
+        gate.cancel()
+        gate.apply(token) { applied = true }
+
+        #expect(!applied)
+        #expect(gate.finish(token) == false)
+    }
 }

@@ -19,6 +19,7 @@ struct MissingPathsTests {
     @Test("недоступен только INPX — спрашивается только он")
     func onlyINPXMissing() {
         #expect(check(inpx: inpx, archives: archives, reachable: [archives]) == .inpx)
+        #expect(check(inpx: nil, archives: archives, reachable: [archives]) == .inpx)
     }
 
     @Test("недоступна только папка архивов — спрашивается только она")
@@ -31,7 +32,13 @@ struct MissingPathsTests {
     func bothMissing() {
         #expect(check(inpx: nil, archives: nil, reachable: []) == .both)
         #expect(check(inpx: inpx, archives: archives, reachable: []) == .both)
-        #expect(check(inpx: nil, archives: archives, reachable: [archives]) == .inpx)
+    }
+
+    @Test("сохранённого второго пути нет — resolve не собирает пару")
+    func resolveWithoutCounterpart() {
+        let picked = URL(fileURLWithPath: "/x")
+        #expect(MissingPaths.inpx.resolve(picked: picked, inpx: nil, archives: nil) == nil)
+        #expect(MissingPaths.archives.resolve(picked: picked, inpx: nil, archives: nil) == nil)
     }
 
     @Test("выбор INPX при .inpx папку архивов сохраняет")
