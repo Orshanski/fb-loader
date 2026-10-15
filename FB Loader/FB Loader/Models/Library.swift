@@ -46,22 +46,21 @@ nonisolated final class Library: Sendable {
 
     // MARK: - Search index (transient, built in init, NOT persisted)
     //
-    // Token-level fuzzy-search keys, parallel to authors / series / books.
-    // Each token is `[UInt32]` — raw codepoints after `SearchPreprocess.tokens`
-    // (lowercase + ё→е + non-alnum-as-separator). Built once at init,
+    // Token-level fuzzy-search keys, parallel to authors / series / books,
+    // tokens from `SearchPreprocess.tokens` packed into `TokenStore`. Built once at init,
     // ~2 s on full Flibusta-scale catalog (581k books / 167k authors /
     // 69k series). Light variant: per-book keeps only title tokens; for
     // book scoring the engine dispatches author/series tokens via
     // `searchAuthorIdx` / `searchSeriesIdx` lookups.
-    let searchKeyAuthors: [[[UInt32]]]  // parallel to authors
-    let searchKeySeries:  [[[UInt32]]]  // parallel to series — base key, used by parallelScanBooks combined key
+    let searchKeyAuthors: TokenStore  // parallel to authors
+    let searchKeySeries:  TokenStore  // parallel to series — base key, used by parallelScanBooks combined key
     /// Extended series key: base series tokens + tokens of all distinct
     /// authors with at least one book in the series. Used only by
     /// `SearchEngine.parallelScan` for the Series bucket so cross-token
     /// queries like «сандерсон мстители» match series «Мстители» whose
     /// author is Сандерсон.
-    let searchKeySeriesExt: [[[UInt32]]]
-    let searchKeyTitle:   [[[UInt32]]]  // parallel to books
+    let searchKeySeriesExt: TokenStore
+    let searchKeyTitle:   TokenStore  // parallel to books
     let searchAuthorIdx:  [Int32]       // per book: index into searchKeyAuthors, -1 if missing
     let searchSeriesIdx:  [Int32]       // per book: index into searchKeySeries, -1 if no series
 
@@ -178,22 +177,21 @@ nonisolated final class Library: Sendable {
         print("[Library.init] \(searchStatus)")
         onStatus?(searchStatus)
 
-        var sAuthors: [[[UInt32]]] = []
-        sAuthors.reserveCapacity(authors.count)
+        var sAuthors = TokenStore()
         for a in authors {
-            sAuthors.append(SearchPreprocess.tokens(a.displayName))
+            sAuthors.appendTokenized(a.displayName)
         }
+        sAuthors.shrink()
         self.searchKeyAuthors = sAuthors
 
-        var sSeries: [[[UInt32]]] = []
-        sSeries.reserveCapacity(series.count)
+        var sSeries = TokenStore()
         for s in series {
-            sSeries.append(SearchPreprocess.tokens(s.name))
+            sSeries.appendTokenized(s.name)
         }
+        sSeries.shrink()
         self.searchKeySeries = sSeries
 
-        var sTitles: [[[UInt32]]] = []
-        sTitles.reserveCapacity(books.count)
+        var sTitles = TokenStore()
         var aIdx: [Int32] = []
         aIdx.reserveCapacity(books.count)
         var sIdx: [Int32] = []
@@ -207,7 +205,7 @@ nonisolated final class Library: Sendable {
         seriesIndexByID.reserveCapacity(series.count)
         for (i, s) in series.enumerated() { seriesIndexByID[s.id] = i }
         for b in books {
-            sTitles.append(SearchPreprocess.tokens(b.title))
+            sTitles.appendTokenized(b.title)
             // Primary author: first authorID; -1 if missing.
             if let firstAID = b.authorIDs.first,
                let idx = authorIndexByID[firstAID] {
@@ -221,6 +219,7 @@ nonisolated final class Library: Sendable {
                 sIdx.append(-1)
             }
         }
+        sTitles.shrink()
         self.searchKeyTitle = sTitles
         self.searchAuthorIdx = aIdx
         self.searchSeriesIdx = sIdx
@@ -237,15 +236,21 @@ nonisolated final class Library: Sendable {
             if aIdxK < 0 { continue }
             authorIdxBySeriesIdx[Int(sIdxK)].insert(aIdxK)
         }
-        var sSeriesExt: [[[UInt32]]] = []
-        sSeriesExt.reserveCapacity(series.count)
-        for i in 0..<series.count {
-            var ext = sSeries[i]
-            for aIdxOfSeries in authorIdxBySeriesIdx[i] {
-                ext.append(contentsOf: sAuthors[Int(aIdxOfSeries)])
+        var sSeriesExt = TokenStore()
+        sSeries.withView { seriesView in
+            sAuthors.withView { authorsView in
+                var ext: [UnsafeBufferPointer<UInt32>] = []
+                for i in 0..<series.count {
+                    ext.removeAll(keepingCapacity: true)
+                    seriesView.appendTokens(of: i, to: &ext)
+                    for aIdxOfSeries in authorIdxBySeriesIdx[i] {
+                        authorsView.appendTokens(of: Int(aIdxOfSeries), to: &ext)
+                    }
+                    sSeriesExt.append(ext)
+                }
             }
-            sSeriesExt.append(ext)
         }
+        sSeriesExt.shrink()
         self.searchKeySeriesExt = sSeriesExt
 
         print("[Library.init] search indices built")

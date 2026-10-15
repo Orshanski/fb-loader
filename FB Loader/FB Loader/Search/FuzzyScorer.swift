@@ -35,6 +35,11 @@ nonisolated enum FuzzyScorer {
     /// O(m·n) time, O(n) space. The 3rd row (`prev2`) is needed for the
     /// transposition lookback.
     nonisolated static func damerauLevenshteinOSA(_ a: [UInt32], _ b: [UInt32]) -> Int {
+        a.withUnsafeBufferPointer { a in b.withUnsafeBufferPointer { b in damerauLevenshteinOSA(a, b) } }
+    }
+
+    nonisolated static func damerauLevenshteinOSA(_ a: UnsafeBufferPointer<UInt32>,
+                                                  _ b: UnsafeBufferPointer<UInt32>) -> Int {
         let m = a.count
         let n = b.count
         if m == 0 { return n }
@@ -68,6 +73,11 @@ nonisolated enum FuzzyScorer {
     /// Per-token score: sum-normalized DL ratio with first-character anchor.
     /// Returns 0..100.
     nonisolated static func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
+        q.withUnsafeBufferPointer { q in c.withUnsafeBufferPointer { c in tokenMatchScore(q, c) } }
+    }
+
+    nonisolated static func tokenMatchScore(_ q: UnsafeBufferPointer<UInt32>,
+                                            _ c: UnsafeBufferPointer<UInt32>) -> Double {
         if q.isEmpty || c.isEmpty { return 0 }
         let d = damerauLevenshteinOSA(q, c)
         let total = q.count + c.count
@@ -101,6 +111,20 @@ nonisolated enum FuzzyScorer {
     /// return 0 immediately. Sharply reduces work on multi-token queries
     /// against most candidates.
     nonisolated static func tokenMinRatioCut(qTokens: [[UInt32]], cTokens: [[UInt32]],
+                                             cutoff: Double) -> Double {
+        var store = TokenStore()
+        store.append(qTokens)
+        store.append(cTokens)
+        return store.withView { view in
+            var q: [UnsafeBufferPointer<UInt32>] = [], c: [UnsafeBufferPointer<UInt32>] = []
+            view.appendTokens(of: 0, to: &q)
+            view.appendTokens(of: 1, to: &c)
+            return tokenMinRatioCut(qTokens: q, cTokens: c, cutoff: cutoff)
+        }
+    }
+
+    nonisolated static func tokenMinRatioCut(qTokens: [UnsafeBufferPointer<UInt32>],
+                                             cTokens: [UnsafeBufferPointer<UInt32>],
                                              cutoff: Double) -> Double {
         if qTokens.isEmpty || cTokens.isEmpty { return 0 }
         var minScore = Double.infinity

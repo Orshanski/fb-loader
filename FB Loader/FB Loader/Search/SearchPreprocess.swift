@@ -41,15 +41,7 @@ nonisolated enum SearchPreprocess {
         // первых 4→8→16 пере-аллокаций для типичного входа.
         current.reserveCapacity(16)
         for u in raw.unicodeScalars {
-            var c = u.value
-            // ё (U+0451) и Ё (U+0401) → е (U+0435). Ё лежит вне диапазона
-            // А..Я (U+0410..U+042F), поэтому lowercase-блок ниже её
-            // не двигает повторно.
-            if c == 0x0451 || c == 0x0401 { c = 0x0435 }
-            // ASCII upper → lower
-            if c >= 0x41 && c <= 0x5A { c += 0x20 }
-            // Cyrillic upper А..Я → а..я
-            else if c >= 0x0410 && c <= 0x042F { c += 0x20 }
+            let c = normalized(u.value)
             if isWordScalar(c) {
                 current.append(c)
             } else if !current.isEmpty {
@@ -65,6 +57,19 @@ nonisolated enum SearchPreprocess {
         }
         if !current.isEmpty { tokens.append(current) }
         return tokens
+    }
+
+    nonisolated static func normalized(_ scalar: UInt32) -> UInt32 {
+        var c = scalar
+        // ё (U+0451) и Ё (U+0401) → е (U+0435). Ё лежит вне диапазона
+        // А..Я (U+0410..U+042F), поэтому lowercase-блок ниже её
+        // не двигает повторно.
+        if c == 0x0451 || c == 0x0401 { c = 0x0435 }
+        // ASCII upper → lower
+        if c >= 0x41 && c <= 0x5A { c += 0x20 }
+        // Cyrillic upper А..Я → а..я
+        else if c >= 0x0410 && c <= 0x042F { c += 0x20 }
+        return c
     }
 
     /// True if `s` is an ASCII digit OR any Unicode-alphabetic scalar
