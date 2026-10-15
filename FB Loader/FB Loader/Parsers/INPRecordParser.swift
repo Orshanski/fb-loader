@@ -40,7 +40,7 @@ nonisolated enum INPRecordParser {
         let delStr = at(fieldIndex.deleted)
         let format = at(fieldIndex.format)
         let dateStr = at(fieldIndex.date)
-        var language = at(fieldIndex.language)
+        var language = at(fieldIndex.language).lowercased()
         if language.count > 2 {
             language = String(language.prefix(2))
         }

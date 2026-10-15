@@ -31,4 +31,80 @@ struct LibraryLookupTests {
     func duplicateKeepsFirst() {
         #expect(lib.book(libid: 7)?.title == "Первая")
     }
+
+    @Test("автор и серия по id")
+    func authorAndSeries() {
+        let a = Author(id: 42, lastName: "Толстой", firstName: "Лев", middleName: "")
+        let lib = Library(inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+                          authors: [Author.unknown, a], series: [Series(id: 5, name: "С")], genres: [],
+                          books: [])
+        #expect(lib.author(id: 42)?.lastName == "Толстой")
+        #expect(lib.author(id: 7) == nil)
+        #expect(lib.series(id: 5)?.name == "С")
+        #expect(lib.series(id: 6) == nil)
+    }
+}
+
+@Suite("Library — книги по языкам")
+struct LibraryLanguageCountTests {
+    private static func book(_ libid: Int32, authors: [Int32], series: Int32?, lang: String) -> Book {
+        Book(libid: libid, title: "t", authorIDs: authors, seriesID: series, seriesNum: nil,
+             genreIDs: [], language: lang, archiveIndex: 0, size: 0, dateAdded: nil)
+    }
+
+    private let lib = Library(
+        inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+        authors: [Author.unknown,
+                  Author(id: 1, lastName: "А", firstName: "", middleName: ""),
+                  Author(id: 2, lastName: "Б", firstName: "", middleName: "")],
+        series: [Series(id: 9, name: "С")], genres: [],
+        books: [book(1, authors: [1], series: 9, lang: "ru"),
+                book(2, authors: [1, 2], series: 9, lang: "ru"),
+                book(3, authors: [1], series: nil, lang: "en"),
+                book(4, authors: [2], series: 9, lang: "")])
+
+    @Test("автор: по каждому языку отдельно")
+    func authorCounts() {
+        #expect(lib.bookCount(authorID: 1, language: "ru") == 2)
+        #expect(lib.bookCount(authorID: 1, language: "en") == 1)
+        #expect(lib.bookCount(authorID: 1, language: "") == 0)
+        #expect(lib.bookCount(authorID: 2, language: "ru") == 1)
+        #expect(lib.bookCount(authorID: 2, language: "") == 1)
+    }
+
+    @Test("серия: по каждому языку отдельно")
+    func seriesCounts() {
+        #expect(lib.bookCount(seriesID: 9, language: "ru") == 2)
+        #expect(lib.bookCount(seriesID: 9, language: "") == 1)
+        #expect(lib.bookCount(seriesID: 9, language: "en") == 0)
+    }
+
+    @Test("автор без книг между авторами с книгами, у соседа три языка")
+    func gapsAndManyLanguages() {
+        let lib = Library(
+            inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+            authors: [Author(id: 1, lastName: "А", firstName: "", middleName: ""),
+                      Author(id: 2, lastName: "Б", firstName: "", middleName: ""),
+                      Author(id: 3, lastName: "В", firstName: "", middleName: ""),
+                      Author(id: 4, lastName: "Г", firstName: "", middleName: "")],
+            series: [], genres: [],
+            books: [Self.book(1, authors: [1], series: nil, lang: "ru"),
+                    Self.book(2, authors: [3], series: nil, lang: "ru"),
+                    Self.book(3, authors: [3], series: nil, lang: "en"),
+                    Self.book(4, authors: [3], series: nil, lang: "de"),
+                    Self.book(5, authors: [3], series: nil, lang: "de")])
+        #expect(lib.bookCount(authorID: 1, language: "ru") == 1)
+        #expect(lib.bookCount(authorID: 2, language: "ru") == 0)
+        #expect(lib.bookCount(authorID: 3, language: "ru") == 1)
+        #expect(lib.bookCount(authorID: 3, language: "en") == 1)
+        #expect(lib.bookCount(authorID: 3, language: "de") == 2)
+        #expect(lib.bookCount(authorID: 4, language: "ru") == 0)
+    }
+
+    @Test("незнакомые id и язык — ноль")
+    func unknown() {
+        #expect(lib.bookCount(authorID: 99, language: "ru") == 0)
+        #expect(lib.bookCount(seriesID: 99, language: "ru") == 0)
+        #expect(lib.bookCount(authorID: 1, language: "de") == 0)
+    }
 }

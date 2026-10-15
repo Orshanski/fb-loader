@@ -29,11 +29,11 @@ struct MainWindowView: View {
                         library: library, archivesRoot: archives, book: book,
                         isCurrentSelection: { state.selectedBookLibid == book.libid },
                         onSelectAuthor: { aid in
-                            let name = library.authorByID[aid]?.displayName
+                            let name = library.author(id: aid)?.displayName
                             state.selectAuthor(aid, deepLinkName: name)
                         },
                         onSelectSeries: { sid in
-                            let name = library.seriesByID[sid]?.name
+                            let name = library.series(id: sid)?.name
                             state.selectSeries(sid, deepLinkName: name)
                         }
                     )

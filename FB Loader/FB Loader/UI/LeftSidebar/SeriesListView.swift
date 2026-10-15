@@ -10,13 +10,12 @@ struct SeriesListView: View {
         let langKey = languageFilter == BooksByContext.unspecifiedLanguageToken
             ? ""
             : languageFilter
-        let counts = library.bookCountBySeriesByLang
         FilteredSidebarList(
             items: library.series,
             lowercasedNames: library.lowercasedSeriesNames,
-            countFor: { s in counts[s.id]?[langKey] ?? 0 },
+            countFor: { s in library.bookCount(seriesID: s.id, language: langKey) },
             labelFor: { s in s.name },
-            trailingLabelFor: { s in "\(counts[s.id]?[langKey] ?? 0)" },
+            trailingLabelFor: { s in "\(library.bookCount(seriesID: s.id, language: langKey))" },
             selectedID: $selectedSeriesID,
             filterText: filterText,
             filterKey: "\(languageFilter)|\(filterText)"

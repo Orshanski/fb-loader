@@ -27,9 +27,9 @@ struct TokenStoreTests {
         let s = store()
         let got: [[[UInt32]]] = s.withView { view in
             (0..<s.count).map { i in
-                var out: [UnsafeBufferPointer<UInt32>] = []
+                var out: [SearchToken] = []
                 view.appendTokens(of: i, to: &out)
-                return out.map(Array.init)
+                return out.map { $0.map(UInt32.init) }
             }
         }
         #expect(got == [a, b, c])
@@ -42,7 +42,17 @@ struct TokenStoreTests {
     func tokenizeParity(_ raw: String) {
         var s = TokenStore()
         s.appendTokenized(raw)
-        #expect(s[0] == SearchPreprocess.tokens(raw))
+        let expected = SearchPreprocess.tokens(raw).map { $0.map { UInt32(TokenStore.char($0)) } }
+        #expect(s[0] == expected)
+    }
+
+    @Test("символы вне BMP сводятся к U+FFFD и в поиске не различаются")
+    func nonBMP() {
+        var s = TokenStore()
+        s.appendTokenized("𐐀𐐁 x")
+        #expect(s[0] == [[0xFFFD, 0xFFFD], [0x78]])
+        let score = FuzzyScorer.tokenMinRatioCut(qTokens: [[0x10400]], cTokens: [[0x10428]], cutoff: 0)
+        #expect(score == 100)
     }
 
     @Test("пустое хранилище")
@@ -60,7 +70,7 @@ struct TokenStoreTests {
         s.append(q); s.append(cand)
         let viaArrays = FuzzyScorer.tokenMinRatioCut(qTokens: q, cTokens: cand, cutoff: 50)
         let viaView: Double = s.withView { view in
-            var qt: [UnsafeBufferPointer<UInt32>] = [], ct: [UnsafeBufferPointer<UInt32>] = []
+            var qt: [SearchToken] = [], ct: [SearchToken] = []
             view.appendTokens(of: 0, to: &qt)
             view.appendTokens(of: 1, to: &ct)
             return FuzzyScorer.tokenMinRatioCut(qTokens: qt, cTokens: ct, cutoff: 50)

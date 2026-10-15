@@ -35,11 +35,12 @@ nonisolated enum FuzzyScorer {
     /// O(m·n) time, O(n) space. The 3rd row (`prev2`) is needed for the
     /// transposition lookback.
     nonisolated static func damerauLevenshteinOSA(_ a: [UInt32], _ b: [UInt32]) -> Int {
-        a.withUnsafeBufferPointer { a in b.withUnsafeBufferPointer { b in damerauLevenshteinOSA(a, b) } }
+        let a = a.map(TokenStore.char), b = b.map(TokenStore.char)
+        return a.withUnsafeBufferPointer { a in b.withUnsafeBufferPointer { b in damerauLevenshteinOSA(a, b) } }
     }
 
-    nonisolated static func damerauLevenshteinOSA(_ a: UnsafeBufferPointer<UInt32>,
-                                                  _ b: UnsafeBufferPointer<UInt32>) -> Int {
+    nonisolated static func damerauLevenshteinOSA(_ a: SearchToken,
+                                                  _ b: SearchToken) -> Int {
         let m = a.count
         let n = b.count
         if m == 0 { return n }
@@ -51,7 +52,7 @@ nonisolated enum FuzzyScorer {
         for i in 1...m {
             cur[0] = i
             let ai = a[i - 1]
-            let aiPrev: UInt32 = i >= 2 ? a[i - 2] : 0
+            let aiPrev: SearchChar = i >= 2 ? a[i - 2] : 0
             for j in 1...n {
                 let bj = b[j - 1]
                 let cost = ai == bj ? 0 : 1
@@ -73,11 +74,12 @@ nonisolated enum FuzzyScorer {
     /// Per-token score: sum-normalized DL ratio with first-character anchor.
     /// Returns 0..100.
     nonisolated static func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
-        q.withUnsafeBufferPointer { q in c.withUnsafeBufferPointer { c in tokenMatchScore(q, c) } }
+        let q = q.map(TokenStore.char), c = c.map(TokenStore.char)
+        return q.withUnsafeBufferPointer { q in c.withUnsafeBufferPointer { c in tokenMatchScore(q, c) } }
     }
 
-    nonisolated static func tokenMatchScore(_ q: UnsafeBufferPointer<UInt32>,
-                                            _ c: UnsafeBufferPointer<UInt32>) -> Double {
+    nonisolated static func tokenMatchScore(_ q: SearchToken,
+                                            _ c: SearchToken) -> Double {
         if q.isEmpty || c.isEmpty { return 0 }
         let d = damerauLevenshteinOSA(q, c)
         let total = q.count + c.count
@@ -116,15 +118,15 @@ nonisolated enum FuzzyScorer {
         store.append(qTokens)
         store.append(cTokens)
         return store.withView { view in
-            var q: [UnsafeBufferPointer<UInt32>] = [], c: [UnsafeBufferPointer<UInt32>] = []
+            var q: [SearchToken] = [], c: [SearchToken] = []
             view.appendTokens(of: 0, to: &q)
             view.appendTokens(of: 1, to: &c)
             return tokenMinRatioCut(qTokens: q, cTokens: c, cutoff: cutoff)
         }
     }
 
-    nonisolated static func tokenMinRatioCut(qTokens: [UnsafeBufferPointer<UInt32>],
-                                             cTokens: [UnsafeBufferPointer<UInt32>],
+    nonisolated static func tokenMinRatioCut(qTokens: [SearchToken],
+                                             cTokens: [SearchToken],
                                              cutoff: Double) -> Double {
         if qTokens.isEmpty || cTokens.isEmpty { return 0 }
         var minScore = Double.infinity

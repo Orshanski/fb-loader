@@ -23,7 +23,7 @@ nonisolated enum INPXImporter {
 
     /// Поднимать при любой правке разбора INPX (здесь, в парсерах, в синтетических
     /// жанрах) — иначе у пользователей останется кэш от старого кода.
-    static let logicVersion: UInt16 = 2
+    static let logicVersion: UInt16 = 3
 
     /// Длина строки в кэше — 16 бит; одна кривая запись иначе ломает запись кэша.
     static let maxStringBytes = 4096
@@ -109,6 +109,7 @@ nonisolated enum INPXImporter {
         var series: [Series] = []
         var books: [Book] = []
         var seenLibids = Set<Int32>()
+        var authorLists = Interner<Int32>(), genreLists = Interner<Int16>()
         var skippedDeleted = 0, skippedNotFB2 = 0, skippedDuplicate = 0, skippedFileName = 0
 
         // Reserve slot 0 for the synthetic "(Без автора)" placeholder.
@@ -217,10 +218,10 @@ nonisolated enum INPXImporter {
                 books.append(Book(
                     libid: rec.libid,
                     title: clamped(rec.title),
-                    authorIDs: bookAuthorIDs,
+                    authorIDs: authorLists.intern(bookAuthorIDs),
                     seriesID: seriesID,
                     seriesNum: rec.seriesNum,
-                    genreIDs: genreIDs,
+                    genreIDs: genreLists.intern(genreIDs),
                     language: rec.language,
                     archiveIndex: archIdx,
                     size: rec.size,

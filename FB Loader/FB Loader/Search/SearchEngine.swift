@@ -13,14 +13,14 @@ nonisolated enum SearchEngine {
         var qStore = TokenStore()
         qStore.appendTokenized(query)
         return qStore.withView { qView in
-            var q: [UnsafeBufferPointer<UInt32>] = []
+            var q: [SearchToken] = []
             qView.appendTokens(of: 0, to: &q)
             if q.isEmpty { return SearchResults(authors: [], series: [], books: []) }
             return run(qTokens: q, language: language, in: lib)
         }
     }
 
-    nonisolated private static func run(qTokens qToks: [UnsafeBufferPointer<UInt32>],
+    nonisolated private static func run(qTokens qToks: [SearchToken],
                                         language: String, in lib: Library) -> SearchResults {
 
         // 1. Authors — все matches выше cutoff, отсортированные по убыванию.
@@ -78,14 +78,14 @@ nonisolated enum SearchEngine {
 
     /// Слова запроса — только чтение во время скана.
     nonisolated private struct SendableTokens: @unchecked Sendable {
-        let tokens: [UnsafeBufferPointer<UInt32>]
+        let tokens: [SearchToken]
     }
 
     /// Generic параллельный скан: choice — единый массив токенов на индекс
     /// (авторы и серии). Книги используют отдельный путь
     /// `parallelScanBooks` с объединением title+author+series tokens.
     nonisolated private static func parallelScan(
-        qTokens: [UnsafeBufferPointer<UInt32>],
+        qTokens: [SearchToken],
         keys: TokenStore,
         cutoff: Double
     ) -> [Hit] {
@@ -104,7 +104,7 @@ nonisolated enum SearchEngine {
                     if lo >= hi { return }
                     var local: [Hit] = []
                     local.reserveCapacity(64)
-                    var key: [UnsafeBufferPointer<UInt32>] = []
+                    var key: [SearchToken] = []
                     for i in lo..<hi {
                         key.removeAll(keepingCapacity: true)
                         view.appendTokens(of: i, to: &key)
@@ -130,7 +130,7 @@ nonisolated enum SearchEngine {
     /// фильтрует по языку. Дедуп с авторско-серийными бакетами делается
     /// постфактум в `run` через `filterBookHitsAgainstMatched`.
     nonisolated private static func parallelScanBooks(
-        qTokens: [UnsafeBufferPointer<UInt32>],
+        qTokens: [SearchToken],
         language: String,
         in lib: Library,
         cutoff: Double
@@ -154,7 +154,7 @@ nonisolated enum SearchEngine {
                             if lo >= hi { return }
                             var local: [Hit] = []
                             local.reserveCapacity(128)
-                            var combined: [UnsafeBufferPointer<UInt32>] = []
+                            var combined: [SearchToken] = []
                             combined.reserveCapacity(16)
                             for i in lo..<hi {
                                 if lib.books[i].language != langKey { continue }

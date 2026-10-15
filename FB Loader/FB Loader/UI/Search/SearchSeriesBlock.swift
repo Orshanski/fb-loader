@@ -30,7 +30,7 @@ struct SearchSeriesBlock: View {
         guard let first = booksInLanguage.first,
               let aid = first.authorIDs.first
         else { return nil }
-        return library.authorByID[aid]
+        return library.author(id: aid)
     }
 
     var body: some View {

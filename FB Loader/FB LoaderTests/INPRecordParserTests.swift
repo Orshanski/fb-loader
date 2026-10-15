@@ -62,6 +62,13 @@ struct INPRecordParserTests {
         #expect(r.language == "ru")
     }
 
+    @Test("код языка в нижнем регистре: «RU» и «ru» — один язык")
+    func languageLowercased() throws {
+        let r = try #require(INPRecordParser.parse(line: INPXFixture.line(libid: "5", lang: "RU"),
+                                                   fieldIndex: .defaults))
+        #expect(r.language == "ru")
+    }
+
     @Test("returns nil for empty line")
     func empty() {
         #expect(INPRecordParser.parse(line: "", fieldIndex: .defaults) == nil)
