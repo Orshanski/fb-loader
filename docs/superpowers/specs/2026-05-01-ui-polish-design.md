@@ -80,7 +80,7 @@ Header высотой ~72pt, с одним padding-блоком 12pt со все
 
 | # | Имя | Ширина | Выравнивание | Контент |
 |---|---|---|---|---|
-| 1 | (чекбокс) | 28pt | center | `Toggle` без label |
+| 1 | (чекбокс) | 28pt | center | галочка 14×14 (`BookCheckbox` в главном окне, `CompactCheckbox` в окне поиска) |
 | 2 | Название | flex | leading, ellipsis-tail | `Text(book.title)` |
 | 3 | № | 50pt | trailing, tabular | `seriesNum` или `—` если нет серии |
 | 4 | Размер | 80pt | trailing, tabular | `ByteCountFormatter` |
@@ -107,7 +107,7 @@ Header высотой ~72pt, с одним padding-блоком 12pt со все
 Выгрузить отмеченные (N)
 ```
 
-Активно если N > 0. Остаётся в `bookRow` как сейчас (см. `BooksTableView.swift:116-123`).
+Активно если N > 0. В главном окне — `menu(for:)` таблицы, без обводки строки ([2026-10-15-books-nstableview-design.md](2026-10-15-books-nstableview-design.md)).
 
 **Что чинит:** «Авторы выводимые как попало» (теперь в карточке, см. §4), таблица колонок выровнена с заголовками; группы серий не схлопываются (раздражающий клик ушёл).
 

@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Standalone book-table row used by both the main `BooksTableView` (with
-/// `AppState`-derived bindings) and the search-window sheet (with local-
-/// `SearchCoordinator` bindings). Selection and check state come in as
-/// explicit `@Binding` parameters; an optional `contextMenuBuilder`
-/// closure lets each call site provide its own context menu (or none).
+/// Строка книги окна поиска (`SearchWindowView`): выбор и галочка — через
+/// `@Binding`, контекстное меню — необязательное. Главное окно рисует книги
+/// в `NSTableView` (`BooksTableRepresentable`).
 struct BookRow: View {
     let book: Book
     let library: Library
