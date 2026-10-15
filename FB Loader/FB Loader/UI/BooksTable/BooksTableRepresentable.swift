@@ -106,6 +106,12 @@ struct BooksTableRepresentable: NSViewRepresentable {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(clipFrameDidChange(_:)),
                 name: NSView.frameDidChangeNotification, object: clip)
+            clip.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(clipBoundsDidChange(_:)),
+                name: NSView.boundsDidChangeNotification, object: clip)
+            table.onSpaceToggle = { [weak self] in self?.toggleCheckAtSelectedRow() }
+            table.menuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
             layoutColumns(width: clip.frame.width)
         }
 
@@ -145,6 +151,7 @@ struct BooksTableRepresentable: NSViewRepresentable {
                 syncSelection(of: tableView, to: newSelected)
                 scroll(tableView, to: newRows.scrollTarget(selectedLibid: newSelected))
                 tableView.headerView?.needsDisplay = true
+                tableView.updateHoverFromMouse()
             } else {
                 syncSelection(of: tableView, to: newSelected)
                 if cellsChanged { reloadVisibleTitleCells(of: tableView) }
@@ -207,6 +214,35 @@ struct BooksTableRepresentable: NSViewRepresentable {
             case .date: book.dateAdded.map(DateFormat.dayMonthYear.string(from:)) ?? "—"
             case .genres: book.genreIDs.compactMap { library.genreByID[$0]?.name }.joined(separator: ", ")
             }
+        }
+
+        @objc private func clipBoundsDidChange(_: Notification) {
+            tableView?.updateHoverFromMouse()
+        }
+
+        func toggleCheckAtSelectedRow() {
+            guard let tableView, let libid = rows.libid(at: tableView.selectedRow) else { return }
+            toggleCheck(libid: libid)
+        }
+
+        /// Выгружаются книги с галочками, а не строка под курсором.
+        func contextMenu(forRow row: Int) -> NSMenu? {
+            guard rows.isBook(row) else { return nil }
+            let count = model.checkedBookLibids.count
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            let item = NSMenuItem(title: "Выгрузить отмеченные (\(count))",
+                                  action: #selector(exportChecked(_:)), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = count > 0
+            menu.addItem(item)
+            return menu
+        }
+
+        @objc func exportChecked(_: Any?) { exportAction.perform() }
+
+        func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            (rowView as? BooksRowView)?.isHovered = row == (tableView as? BooksNSTableView)?.hoveredRow
         }
 
         // MARK: Data source / delegate

@@ -227,15 +227,82 @@ final class BooksNSTableView: NSTableView {
     private(set) var isHandlingKeyDown = false
     private(set) var reloadDataCount = 0
 
+    var lastTypeSelectKey: Date?
+    var now: () -> Date = Date.init
+    var onSpaceToggle: (() -> Void)?
+    var menuProvider: ((Int) -> NSMenu?)?
+    private(set) var hoveredRow = -1
+    private var hoverArea: NSTrackingArea?
+
     override func reloadData() {
         reloadDataCount += 1
+        hoveredRow = -1
         super.reloadData()
     }
 
     override func keyDown(with event: NSEvent) {
+        let commandKeys = event.modifierFlags.intersection([.command, .control, .option])
+        if commandKeys.isEmpty, event.charactersIgnoringModifiers == " " {
+            if spaceRoute(lastTypeSelectKey: lastTypeSelectKey, now: now()) == .toggleCheck {
+                onSpaceToggle?()
+                return
+            }
+        } else if commandKeys.isEmpty, Self.isPrintable(event.characters) {
+            lastTypeSelectKey = now()
+        }
         isHandlingKeyDown = true
         defer { isHandlingKeyDown = false }
         super.keyDown(with: event)
+    }
+
+    private static func isPrintable(_ characters: String?) -> Bool {
+        guard let characters, !characters.isEmpty else { return false }
+        return characters.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0) && !(0xF700 ... 0xF8FF).contains($0.value)
+        }
+    }
+
+    /// Без `super`: штатная реализация выставляет `clickedRow` и обводит строку.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?(row(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        setHoveredRow(row(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setHoveredRow(-1)
+    }
+
+    /// После прокрутки колёсиком `mouseMoved` не приходит — строка под курсором другая.
+    func updateHoverFromMouse() {
+        guard let window else { setHoveredRow(-1); return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHoveredRow(visibleRect.contains(point) ? row(at: point) : -1)
+    }
+
+    func setHoveredRow(_ row: Int) {
+        guard row != hoveredRow else { return }
+        if (0 ..< numberOfRows).contains(hoveredRow) {
+            (rowView(atRow: hoveredRow, makeIfNecessary: false) as? BooksRowView)?.isHovered = false
+        }
+        hoveredRow = row
+        if (0 ..< numberOfRows).contains(row) {
+            (rowView(atRow: row, makeIfNecessary: false) as? BooksRowView)?.isHovered = true
+        }
     }
 
     override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {

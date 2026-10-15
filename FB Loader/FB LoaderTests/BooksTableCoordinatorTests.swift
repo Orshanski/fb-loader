@@ -225,3 +225,153 @@ struct BooksTableCoordinatorTests {
         #expect(h.table.validateProposedFirstResponder(box, for: nil))
     }
 }
+
+@MainActor
+private func keyEvent(_ characters: String, keyCode: UInt16,
+                      modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                     windowNumber: 0, context: nil, characters: characters,
+                     charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)!
+}
+
+@MainActor
+private func arrow(_ scalar: Int, keyCode: UInt16, _ modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+    keyEvent(String(Character(UnicodeScalar(UInt32(scalar))!)), keyCode: keyCode,
+             modifiers: modifiers.union([.numericPad, .function]))
+}
+
+@MainActor private func down(_ m: NSEvent.ModifierFlags = []) -> NSEvent { arrow(NSDownArrowFunctionKey, keyCode: 125, m) }
+@MainActor private func up(_ m: NSEvent.ModifierFlags = []) -> NSEvent { arrow(NSUpArrowFunctionKey, keyCode: 126, m) }
+@MainActor private func space() -> NSEvent { keyEvent(" ", keyCode: 49) }
+
+@Suite("BooksTable keyboard and menu")
+@MainActor
+struct BooksTableKeyboardTests {
+    @Test("↓ и ⇧↓: выбор перескакивает заголовок серии и пишется в модель")
+    func arrowsSkipHeader() {
+        for mods: NSEvent.ModifierFlags in [[], [.shift]] {
+            let h = BooksTableHarness()
+            h.select(row: 1)
+            h.model.selectionWrites.removeAll()
+            h.table.keyDown(with: down(mods))
+            #expect(h.table.selectedRow == 3, "mods \(mods.rawValue)")
+            #expect(h.model.selectionWrites == [20], "mods \(mods.rawValue)")
+        }
+    }
+
+    @Test("⌥↓ штатно прыгает в конец: выбрана последняя книга, не заголовок")
+    func optionDownJumpsToEnd() {
+        let h = BooksTableHarness()
+        h.select(row: 1)
+        h.model.selectionWrites.removeAll()
+        h.table.keyDown(with: down([.option]))
+        #expect(h.table.selectedRow == 4)
+        #expect(h.model.selectionWrites == [21])
+    }
+
+    @Test("на последней книге ↓ — выбор на месте")
+    func downAtEnd() {
+        let h = BooksTableHarness()
+        h.select(row: 4)
+        h.model.selectionWrites.removeAll()
+        h.table.keyDown(with: down())
+        #expect(h.table.selectedRow == 4)
+        #expect(h.model.selectionWrites.isEmpty)
+    }
+
+    @Test("без выбора ↓ при заголовке в строке 0 — первая книга; ↑ на ней — на месте")
+    func headerAtTop() {
+        let series = Array(BooksTableFixture.books[2...])
+        let h = BooksTableHarness(books: series)
+        h.table.keyDown(with: down())
+        #expect(h.table.selectedRow == 1)
+        h.table.keyDown(with: up())
+        #expect(h.table.selectedRow == 1)
+    }
+
+    @Test("пробел с выделением переключает галочку туда и обратно, выбор не меняется")
+    func spaceToggles() {
+        let h = BooksTableHarness()
+        h.select(row: 0)
+        h.model.selectionWrites.removeAll()
+        h.table.keyDown(with: space())
+        #expect(h.model.checkedBookLibids == [10])
+        h.table.keyDown(with: space())
+        #expect(h.model.checkedBookLibids.isEmpty)
+        #expect(h.table.selectedRow == 0)
+        #expect(h.model.selectionWrites.isEmpty)
+    }
+
+    @Test("пробел без выделения — ничего; выбранной в модели книги нет в строках — ничего")
+    func spaceWithoutSelection() {
+        let h = BooksTableHarness()
+        h.table.keyDown(with: space())
+        #expect(h.model.checkedBookLibids.isEmpty)
+        let hidden = BooksTableHarness(selected: 99)
+        hidden.table.keyDown(with: space())
+        #expect(hidden.model.checkedBookLibids.isEmpty)
+    }
+
+    @Test("пробел меньше чем через секунду после буквы уходит в type-select")
+    func spaceAfterLetter() {
+        let h = BooksTableHarness()
+        h.select(row: 0)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        h.table.now = { clock }
+        h.table.keyDown(with: keyEvent("б", keyCode: 43))
+        #expect(h.table.lastTypeSelectKey == clock)
+        clock += 0.5
+        h.table.keyDown(with: space())
+        #expect(h.model.checkedBookLibids.isEmpty)
+    }
+
+    @Test("меню на книге: один пункт с N, неактивен при N = 0, действие — ExportAction")
+    func contextMenu() {
+        let h = BooksTableHarness(checked: [10, 20])
+        var exports = 0
+        h.exportAction.perform = { exports += 1 }
+        let menu = h.coordinator.contextMenu(forRow: 0)
+        #expect(menu?.items.count == 1)
+        #expect(menu?.items.first?.title == "Выгрузить отмеченные (2)")
+        #expect(menu?.items.first?.isEnabled == true)
+        menu?.performActionForItem(at: 0)
+        #expect(exports == 1)
+
+        h.model.checkedBookLibids = []
+        let empty = h.coordinator.contextMenu(forRow: 3)
+        #expect(empty?.items.first?.title == "Выгрузить отмеченные (0)")
+        #expect(empty?.items.first?.isEnabled == false)
+    }
+
+    @Test("меню на заголовке серии и пустом месте — nil")
+    func noMenuOnHeader() {
+        let h = BooksTableHarness()
+        #expect(h.coordinator.contextMenu(forRow: 2) == nil)
+        #expect(h.coordinator.contextMenu(forRow: -1) == nil)
+    }
+
+    @Test("ПКМ по невыделенной книге: меню есть, выбор и модель не меняются")
+    func rightClickKeepsSelection() {
+        let h = BooksTableHarness()
+        h.select(row: 0)
+        h.model.selectionWrites.removeAll()
+        let rect = h.table.rect(ofRow: 3)
+        let point = h.table.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        let event = NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [],
+                                       timestamp: 0, windowNumber: h.window.windowNumber, context: nil,
+                                       eventNumber: 0, clickCount: 1, pressure: 1)!
+        #expect(h.table.menu(for: event) != nil)
+        #expect(h.table.selectedRow == 0)
+        #expect(h.model.selectionWrites.isEmpty)
+    }
+
+    @Test("hover сбрасывается при перезагрузке строк")
+    func hoverResetsOnReload() {
+        let h = BooksTableHarness()
+        h.table.setHoveredRow(1)
+        #expect(h.table.hoveredRow == 1)
+        // reloadData напрямую: apply ещё пересчитывает hover по реальному курсору — тест зависел бы от мыши.
+        h.table.reloadData()
+        #expect(h.table.hoveredRow == -1)
+    }
+}
