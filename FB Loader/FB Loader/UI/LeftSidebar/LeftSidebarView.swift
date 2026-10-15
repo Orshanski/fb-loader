@@ -29,6 +29,8 @@ struct LeftSidebarView: View {
                     .buttonStyle(.borderless)
                     .help("Поиск по библиотеке")
                 }
+                // Шапка не сжимается — её ширина задаёт минимальную ширину сайдбара.
+                .fixedSize(horizontal: true, vertical: false)
 
                 TextField("Фильтр", text: $s.sidebarFilter)
                     .textFieldStyle(.roundedBorder)

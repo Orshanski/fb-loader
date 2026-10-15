@@ -214,8 +214,9 @@ private struct RestoredPaneSize: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .frame(minWidth: axis == .horizontal ? dimension.min : nil,
-                   maxWidth: axis == .horizontal ? dimension.max : nil,
+            // Минимум ширины сайдбара задаёт его шапка: при явном minWidth frame
+            // отдаёт split view это число, и шапка шире него обрезается.
+            .frame(maxWidth: axis == .horizontal ? dimension.max : nil,
                    minHeight: axis == .vertical ? dimension.min : nil)
             // Скрыта до установки разделителя — и при первом показе окна,
             // и когда сайдбар снова показывают после скрытия.

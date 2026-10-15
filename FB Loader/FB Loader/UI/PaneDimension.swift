@@ -9,6 +9,8 @@ nonisolated struct PaneDimension: Sendable {
     let ideal: CGFloat
     let max: CGFloat
 
+    /// `min` прижимает только сохранённое значение; реальный минимум зоны —
+    /// ширина шапки сайдбара (см. `RestoredPaneSize`).
     static let sidebarWidth = PaneDimension(
         key: "fbloader.layout.sidebarWidth", min: 280, ideal: 300, max: 480)
     static let bookDetailHeight = PaneDimension(
