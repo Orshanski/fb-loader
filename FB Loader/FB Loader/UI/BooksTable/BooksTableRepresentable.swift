@@ -71,7 +71,8 @@ struct BooksTableRepresentable: NSViewRepresentable {
         table.headerView = header
         table.cornerView = nil
 
-        let scrollView = NSScrollView()
+        let scrollView = BooksScrollView()
+        scrollView.onTile = { [weak coordinator] width in coordinator?.layoutColumns(width: width) }
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
@@ -110,10 +111,6 @@ struct BooksTableRepresentable: NSViewRepresentable {
         func attach(table: BooksNSTableView, scrollView: NSScrollView) {
             tableView = table
             let clip = scrollView.contentView
-            clip.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(clipFrameDidChange(_:)),
-                name: NSView.frameDidChangeNotification, object: clip)
             clip.postsBoundsChangedNotifications = true
             NotificationCenter.default.addObserver(
                 self, selector: #selector(clipBoundsDidChange(_:)),
@@ -123,13 +120,8 @@ struct BooksTableRepresentable: NSViewRepresentable {
             layoutColumns(width: clip.frame.width)
         }
 
-        @objc private func clipFrameDidChange(_ notification: Notification) {
-            guard let clip = notification.object as? NSView else { return }
-            layoutColumns(width: clip.frame.width)
-        }
-
         /// От ширины clip view, а не панели: с постоянной полосой прокрутки
-        /// колонки уже панели на её ширину.
+        /// колонки уже панели на её ширину. Пишет только изменившееся.
         func layoutColumns(width: CGFloat) {
             // До первой раскладки SwiftUI ширина clip view нулевая.
             guard let tableView, width > 0 else { return }
@@ -137,9 +129,9 @@ struct BooksTableRepresentable: NSViewRepresentable {
             for id in BookTableColumnID.allCases {
                 guard let column = tableView.tableColumn(withIdentifier: id.identifier) else { continue }
                 if let w = layout.width(of: id) {
-                    column.isHidden = false
+                    if column.isHidden { column.isHidden = false }
                     if column.width != w { column.width = w }
-                } else {
+                } else if !column.isHidden {
                     column.isHidden = true
                 }
             }

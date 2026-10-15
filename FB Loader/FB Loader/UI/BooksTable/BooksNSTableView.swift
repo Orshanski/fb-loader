@@ -425,3 +425,23 @@ final class BooksHeaderView: NSTableHeaderView {
         displayIfNeeded()
     }
 }
+
+/// Ширины колонок меняются в `tile()` до `super.tile()`: из уведомления о смене frame clip view
+/// они менялись посреди раскладки, и AppKit ругался на транзакцию CA во время commit.
+final class BooksScrollView: NSScrollView {
+    var onTile: ((CGFloat) -> Void)?
+
+    override func tile() {
+        onTile?(contentWidthAfterTiling)
+        super.tile()
+    }
+
+    /// Ширина clip view, которой она станет после `super.tile()`: с постоянной полосой прокрутки она уже frame.
+    private var contentWidthAfterTiling: CGFloat {
+        NSScrollView.contentSize(forFrameSize: frame.size,
+                                 horizontalScrollerClass: nil,
+                                 verticalScrollerClass: hasVerticalScroller ? NSScroller.self : nil,
+                                 borderType: borderType, controlSize: .regular,
+                                 scrollerStyle: scrollerStyle).width
+    }
+}

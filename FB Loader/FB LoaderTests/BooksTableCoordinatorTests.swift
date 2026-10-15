@@ -185,6 +185,22 @@ struct BooksTableCoordinatorTests {
         #expect(!hidden(.date))
     }
 
+    @Test("колонки раскладываются из tile() scroll view по будущей ширине clip view")
+    func tileLayoutsColumns() {
+        let h = BooksTableHarness()
+        func hidden(_ id: BookTableColumnID) -> Bool { h.table.tableColumn(withIdentifier: id.identifier)!.isHidden }
+        func visibleSum() -> CGFloat { h.table.tableColumns.filter { !$0.isHidden }.reduce(0) { $0 + $1.width } }
+        h.scrollView.setFrameSize(NSSize(width: 600, height: 400))
+        h.scrollView.tile()
+        #expect(hidden(.genres))
+        #expect(!hidden(.size))
+        #expect(visibleSum() == h.scrollView.contentView.frame.width)
+        h.scrollView.setFrameSize(NSSize(width: 1200, height: 400))
+        h.scrollView.tile()
+        #expect(!hidden(.genres))
+        #expect(visibleSum() == h.scrollView.contentView.frame.width)
+    }
+
     @Test("тексты ячеек: «—» без номера и даты, жанры через запятую, размер файла")
     func cellTexts() {
         let c = BooksTableHarness().coordinator
