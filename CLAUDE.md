@@ -83,3 +83,7 @@ macOS Swift 6 / SwiftUI приложение, открывает INPX-индек
 - **`Library` — `nonisolated final class … : Sendable`,** все stored properties — `let`-ы, mutate'ить нельзя после `init`. Любой новый параллельный массив (lowercased-кеш, search-key) добавляется по тому же паттерну.
 - **Тесты — Swift Testing**, не XCTest. `import Testing`, `@Suite`, `@Test`, `#expect`. Файлы — в `FB Loader/FB LoaderTests/`.
 - **Xcode `PBXFileSystemSynchronizedRootGroup`** — новые `.swift`-файлы внутри отслеживаемых директорий автоматически попадают в build target, никаких ручных правок `project.pbxproj` не требуется.
+- **Комментарии — только неочевидное «почему»:** внешнее ограничение, отвергнутая альтернатива, обоснование константы, правило для будущих правок. Обычно одна строка. Пересказ того, что делает код, не писать.
+- **Без `git worktree`.** Работа в основной папке репозитория, ветки переключаются там: Alexey собирает проект в Xcode из неё.
+- **Сбой подписи тестового бандла.** Если сборка падает с `CodeSign failed … FB LoaderTests.xctest … is not signed`, в DerivedData остался бандл от прерванной сборки — пересобрать с `clean test`.
+- **Вывод сборки не обрезать** `tail`/`head` (их блокирует хук) — фильтровать `grep`. Три предупреждения `appintentsmetadataprocessor … Metadata extraction skipped` — известный шум Xcode (App Intents в проекте нет); остальные предупреждения чинить.
