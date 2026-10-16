@@ -1,10 +1,6 @@
 import SwiftUI
 
-/// 14×14 checkbox styled to match the UI polish mockup
-/// (`docs/superpowers/specs/2026-05-01-ui-polish-design.md`):
-/// thin gray border + white fill when off, accent fill + white tick when on.
-/// macOS's default `Toggle` checkbox is taller and uses the system control
-/// look, which doesn't match the row's tight 13pt typography.
+/// 14×14 checkbox: the system `Toggle` is taller and doesn't fit the row's tight 13pt typography.
 struct CompactCheckboxStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button {

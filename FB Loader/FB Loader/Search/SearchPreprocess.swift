@@ -1,11 +1,8 @@
 import Foundation
 
-/// Search-text normalization for the fuzzy scorer pipeline.
+/// Normalizes a string and splits it into `[UInt32]` scalar tokens for `FuzzyScorer`.
 ///
-/// `tokens(_:)` normalises a string and splits it into a sequence of
-/// `[UInt32]` codepoint tokens, ready to feed into `FuzzyScorer`.
-///
-/// Steps (applied in order):
+/// Steps, in order:
 /// 0. NFC: разложенная «e + U+0301» склеивается в «é». Только для строк с
 ///    комбинирующими знаками — проверка дешевле безусловной нормализации.
 /// 1. ё/Ё → е (rapidfuzz's `default_process` doesn't do this; librarium does
@@ -14,37 +11,20 @@ import Foundation
 ///    диапазонам, остальное — через Unicode-свойства (без `String.lowercased()`
 ///    и его аллокаций в горячем цикле).
 /// 3. Любой не-буквенный/не-цифровой codepoint — разделитель токенов.
-///    Буквенность проверяем через `Unicode.Scalar.properties.isAlphabetic` —
-///    это покрывает украинскую кириллицу (і, ї, є, ґ), белорусскую (ў),
-///    латиницу с диакритикой (é, ü, ł) и пр. Без этого порт срезал бы
-///    легитимные буквы во многих именах (см. ревью C2).
-///
-/// Возвращает массив непустых токенов, каждый — массив raw scalar.value
-/// (UInt32). Скорер дальше работает на UInt32 и не возвращается в `String`.
-///
-/// `nonisolated` обязательно: проект собирается с
-/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, и без этой пометки функция
-/// окажется MainActor-isolated, что сломает её вызов из `Task.detached`
-/// внутри `SearchCoordinator` и из `DispatchQueue.concurrentPerform`.
+///    Буквенность — `Unicode.Scalar.properties.isAlphabetic`: так не срезаются украинская и белорусская
+///    кириллица и латиница с диакритикой (і, ї, ў, é, ł).
 nonisolated enum SearchPreprocess {
     nonisolated static func tokens(_ raw: String) -> [[UInt32]] {
         if raw.isEmpty { return [] }
         var tokens: [[UInt32]] = []
         var current: [UInt32] = []
-        // 16 — эмпирический size-hint под средне-длинное слово в каталоге
-        // (имена авторов, названия). Конкретное число не критично — ARC/CoW
-        // всё равно перевыделит при росте, — но стартовая ёмкость избегает
-        // первых 4→8→16 пере-аллокаций для типичного входа.
+        // Size hint for a typical word; the exact value is not critical.
         current.reserveCapacity(16)
         forEachNormalizedScalar(raw) { c in
             if isWordScalar(c) {
                 current.append(c)
             } else if !current.isEmpty {
-                // CoW: tokens.append(current) копирует ссылку на буфер;
-                // перевыделение через `current = []` + reserveCapacity
-                // — это явный fresh-buffer pattern, чтобы следующая
-                // мутация не CoW-копировала уже сохранённый в tokens
-                // буфер.
+                // Новый буфер вместо переиспользования: tokens держит ссылку на старый, мутация вызвала бы CoW-копию.
                 tokens.append(current)
                 current = []
                 current.reserveCapacity(16)
@@ -115,9 +95,6 @@ nonisolated enum SearchPreprocess {
         return u.properties.lowercaseMapping.unicodeScalars.first?.value ?? c
     }
 
-    /// True if `s` is an ASCII digit OR any Unicode-alphabetic scalar
-    /// (letters from any script, including marks-with-letter-semantics
-    /// per UAX #29). Drives the token-boundary decision in `tokens(_:)`.
     nonisolated static func isWordScalar(_ s: UInt32) -> Bool {
         if s < 0x80 { return (s >= 0x30 && s <= 0x39) || (s >= 0x61 && s <= 0x7A) || (s >= 0x41 && s <= 0x5A) }
         if s >= 0x0410 && s <= 0x044F { return true }

@@ -1,13 +1,7 @@
 import SwiftUI
 
-/// Wrapping HStack — packs subviews left-to-right, wraps to next line when
-/// the row is full. Used for the author chips block in `BookDetailView`,
-/// where the count varies from 1 to ~10 and the row width depends on the
-/// VSplitView divider position.
-///
-/// macOS doesn't ship a built-in flow layout; this `Layout`-protocol impl
-/// is enough for the chip case (single proposed width, no per-row alignment
-/// fancy stuff).
+/// Wrapping HStack for the author chips in `BookDetailView` (1 to ~10 of them, width set by the divider).
+/// SwiftUI has no built-in flow layout; this handles a single proposed width and nothing fancier.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 4
     var lineSpacing: CGFloat = 4
@@ -38,7 +32,6 @@ struct FlowLayout: Layout {
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            // Wrap to next row if this subview doesn't fit and we're not at row start.
             if x > 0, x + size.width > maxWidth {
                 y += rowHeight + lineSpacing
                 x = 0

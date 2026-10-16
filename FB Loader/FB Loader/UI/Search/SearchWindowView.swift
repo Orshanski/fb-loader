@@ -5,19 +5,13 @@ struct SearchWindowView: View {
     let library: Library
     let archivesRoot: URL?
     let exportSession: ExportSession
-    /// Initial language inherited from main window at sheet-open time.
     let initialLanguage: String
-    /// Closure to dismiss the sheet — provided by the parent (MainWindowView).
     let onClose: () -> Void
-    /// Preferred sheet size — рассчитывается родителем как 80% от главного
-    /// окна (10% полей с каждой стороны). Параметром, чтобы не лезть в
-    /// `NSApp.mainWindow` из контента sheet'а, который сам не знает, кто
-    /// его родитель.
+    /// 80% главного окна; параметром, а не через `NSApp.mainWindow`: контент sheet'а не знает своего родителя.
     let preferredSize: CGSize
 
     @State private var coord: SearchCoordinator
-    /// Search trigger token for SwiftUI `.task(id:)` — flipping it kicks
-    /// off a search. Initial nil → no search until the user clicks «Поиск».
+    /// Смена значения запускает поиск через `.task(id:)`; nil — пока не нажали «Поиск».
     @State private var pendingSearchToken: UUID? = nil
 
     init(library: Library, archivesRoot: URL?, exportSession: ExportSession, initialLanguage: String,
@@ -40,11 +34,7 @@ struct SearchWindowView: View {
             Divider()
             detailPanel
         }
-        // Фиксированный размер sheet'а на основе размера главного окна
-        // (80% — родитель в MainWindowView читает NSApp.mainWindow и
-        // считает .width * 0.8 / .height * 0.8). Фиксированный (не min/max)
-        // фрейм убирает AppKit-recursion warning во время первого layout
-        // pass'а sheet'а.
+        // Фиксированный (не min/max) фрейм: иначе AppKit-recursion warning на первом layout pass'е sheet'а.
         .frame(width: preferredSize.width, height: preferredSize.height)
         .task(id: pendingSearchToken) {
             guard pendingSearchToken != nil else { return }
@@ -75,15 +65,11 @@ struct SearchWindowView: View {
                 triggerSearch()
             }
             .disabled(coord.isSearching || coord.query.trimmingCharacters(in: .whitespaces).isEmpty)
-            // Enter в TextField обрабатывается через `.onSubmit { triggerSearch() }`
-            // на самом поле — этого достаточно. `.keyboardShortcut(.return)` на
-            // кнопке тут добавлять не надо: SwiftUI на macOS отдаёт Enter
-            // фокусированному TextField через onSubmit, а второй обработчик на
-            // кнопке создаст конкуренцию (двойной запуск или пропуск, по
-            // настроению фокуса).
+            // Enter обрабатывает `.onSubmit` на поле; `.keyboardShortcut(.return)` на кнопке дал бы второй
+            // обработчик (двойной запуск или пропуск).
 
             Button("Закрыть") { onClose() }
-                .keyboardShortcut(.cancelAction)   // Escape
+                .keyboardShortcut(.cancelAction)
         }
         .padding(12)
     }
@@ -123,11 +109,9 @@ struct SearchWindowView: View {
                 library: library, archivesRoot: archives, book: book,
                 isCurrentSelection: { coord.selectedBookLibid == book.libid },
                 onSelectAuthor: { _ in
-                    // No-op for v1 in sheet context — sidebar navigation
-                    // doesn't apply when viewing a book in the search sheet.
+                    // В sheet навигации по сайдбару нет.
                 },
                 onSelectSeries: { _ in
-                    // No-op for v1 in sheet context.
                 }
             )
                 .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)

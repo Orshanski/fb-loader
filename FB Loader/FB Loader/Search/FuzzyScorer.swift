@@ -1,39 +1,18 @@
 import Foundation
 
-/// Fuzzy-matching scorer for the search pipeline.
+/// Score per token pair: `(|q|+|c| - dl_osa(q,c)) / (|q|+|c|) * 100` (Damerau-Levenshtein, OSA variant).
+/// If `q[0] != c[0]` the score is multiplied by 0.85: this kills cross-prefix false positives like
+/// «сандерсо → Андерсон» (87.5 → 74) without hurting «достоевск → Достоевский» (90).
 ///
-/// Scoring formula: per-token sum-normalized Damerau-Levenshtein ratio
-/// with first-character anchor.
-/// `score = (|q|+|c| - dl_osa(q,c)) / (|q|+|c|) * 100`
-/// If `q[0] != c[0]`, score is multiplied by `0.85`. The anchor empirically
-/// kills cross-prefix false positives like «сандерсо → Андерсон» (87.5 → 74)
-/// and «Достоевский → Островский» (85.7 → 73), without hurting prefix-
-/// anchored real matches («достоевск → Достоевский» = 90).
-///
-/// `tokenMinRatio*` semantics: every query token must find a best match
-/// among choice tokens; the weakest per-token best across the query drags
-/// the final `min(...)` score down. Same shape as the previous LCS-based
-/// scorer — the change is purely in `tokenMatchScore`.
-///
-/// `nonisolated enum` namespace pattern matches `SearchPreprocess` /
-/// `LibraryLoader` in this codebase. Required because the project compiles
-/// with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and these functions
-/// are called from `Task.detached` and `DispatchQueue.concurrentPerform`
-/// workers.
+/// `tokenMinRatio*`: every query token must find its best match among the choice tokens;
+/// the weakest of those bests is the final score.
 nonisolated enum FuzzyScorer {
-    /// Score cutoff used to separate real matches from noise. Empirically
-    /// tuned against the spike4 corpus on the full 167k-author / 581k-book
-    /// catalog: at 83 we keep all real typos and prefix matches («короли →
-    /// королей» = 84.6, «Махабрахата → Махабхарата» = 90.9, «достоевск →
-    /// Достоевский» = 90), and reject the previously-leaking false
-    /// positives («сандерсо → Андерсон» = 74, «Достоевский → Островский» =
-    /// 73, «Толстой → Толстиков» = 81.2).
+    /// Tuned on the full 167k-author catalog: 83 keeps typos and prefixes («короли → королей» = 84.6)
+    /// and rejects false positives («Толстой → Толстиков» = 81.2, «сандерсо → Андерсон» = 74).
     nonisolated static let scoreCutoff: Double = 83.0
 
-    /// Damerau-Levenshtein distance, OSA variant: substitutions and
-    /// adjacent transpositions count as 1 op. Standard 3-row rolling DP,
-    /// O(m·n) time, O(n) space. The 3rd row (`prev2`) is needed for the
-    /// transposition lookback.
+    /// OSA variant: substitutions and adjacent transpositions cost 1. Rolling 3-row DP; `prev2` serves
+    /// the transposition lookback.
     nonisolated static func damerauLevenshteinOSA(_ a: [UInt32], _ b: [UInt32]) -> Int {
         let a = a.map(TokenStore.char), b = b.map(TokenStore.char)
         return a.withUnsafeBufferPointer { a in b.withUnsafeBufferPointer { b in damerauLevenshteinOSA(a, b) } }
@@ -56,10 +35,10 @@ nonisolated enum FuzzyScorer {
             for j in 1...n {
                 let bj = b[j - 1]
                 let cost = ai == bj ? 0 : 1
-                var v = min(prev[j] + 1, cur[j - 1] + 1)         // del / ins
-                v = min(v, prev[j - 1] + cost)                    // sub / match
+                var v = min(prev[j] + 1, cur[j - 1] + 1)
+                v = min(v, prev[j - 1] + cost)
                 if i > 1, j > 1, ai == b[j - 2], aiPrev == bj {
-                    v = min(v, prev2[j - 2] + 1)                  // transposition
+                    v = min(v, prev2[j - 2] + 1)
                 }
                 cur[j] = v
             }
@@ -71,8 +50,6 @@ nonisolated enum FuzzyScorer {
         return prev[n]
     }
 
-    /// Per-token score: sum-normalized DL ratio with first-character anchor.
-    /// Returns 0..100.
     nonisolated static func tokenMatchScore(_ q: [UInt32], _ c: [UInt32]) -> Double {
         let q = q.map(TokenStore.char), c = c.map(TokenStore.char)
         return q.withUnsafeBufferPointer { q in c.withUnsafeBufferPointer { c in tokenMatchScore(q, c) } }
@@ -88,9 +65,6 @@ nonisolated enum FuzzyScorer {
         return score
     }
 
-    /// `token_min_ratio` semantics: every query-token must find a best
-    /// match in some choice-token; the weakest per-token best across the
-    /// query drags the final `min(...)` score down.
     nonisolated static func tokenMinRatio(qTokens: [[UInt32]], cTokens: [[UInt32]]) -> Double {
         if qTokens.isEmpty || cTokens.isEmpty { return 0 }
         var minScore = Double.infinity
@@ -107,11 +81,8 @@ nonisolated enum FuzzyScorer {
         return minScore == .infinity ? 0 : minScore
     }
 
-    /// Production-pace `tokenMinRatio` with cutoff-pruning early exit:
-    /// if any query-token's best match across choice tokens is below
-    /// `cutoff`, the final `min(...)` will also be below `cutoff` —
-    /// return 0 immediately. Sharply reduces work on multi-token queries
-    /// against most candidates.
+    /// Like `tokenMinRatio`, but returns 0 as soon as one query token's best match is below `cutoff`
+    /// (the final min would be too).
     nonisolated static func tokenMinRatioCut(qTokens: [[UInt32]], cTokens: [[UInt32]],
                                              cutoff: Double) -> Double {
         var store = TokenStore()
@@ -137,7 +108,7 @@ nonisolated enum FuzzyScorer {
                 if s > bestForQ { bestForQ = s }
                 if bestForQ >= 100.0 { break }
             }
-            if bestForQ < cutoff { return 0 }     // pruning
+            if bestForQ < cutoff { return 0 }
             if bestForQ < minScore { minScore = bestForQ }
         }
         return minScore == .infinity ? 0 : minScore

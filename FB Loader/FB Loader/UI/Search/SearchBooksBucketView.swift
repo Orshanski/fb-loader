@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// «Совпадения по книгам» bucket. Paginated by 20 — «Загрузить ещё +20»
-/// extends `coord.visibleBooksCount`.
+/// «Совпадения по книгам»: «Загрузить ещё +20» расширяет `coord.visibleBooksCount`.
 struct SearchBooksBucketView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library

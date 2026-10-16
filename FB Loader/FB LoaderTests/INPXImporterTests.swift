@@ -14,10 +14,8 @@ struct INPXImporterTests {
         #expect(lib.archives == ["lib-001"])
         #expect(lib.inpxVersion == "20260301")
 
-        // Authors: Толстой + Дяченко(М) + Дяченко(С) + Олди = 4 (or 3 if Дяченки dedup —
-        // they are different middleNames, so distinct → 4).
+        // Дяченко (М) and Дяченко (С) differ by middle name, so they are two authors.
         #expect(lib.authors.count == 4)
-        // Series: "Великие романы" + "Большая серия" = 2.
         #expect(lib.series.count == 2)
 
         let bookByLibid = Dictionary(uniqueKeysWithValues: lib.books.map { ($0.libid, $0) })

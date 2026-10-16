@@ -12,14 +12,12 @@ nonisolated struct Book: Identifiable, Hashable, Sendable {
     /// Полночь того дня, что записан в INPX строкой `YYYY-MM-DD`.
     /// `nil` — даты в записи не было.
     let dateAdded: Date?
-    /// LIBID from INPX — the book's unique identifier inside the catalog.
     let libid: Int32
     var id: Int32 { libid }
-    /// Size in bytes (from INPX).
     let size: Int32
     let seriesID: Int32?
     let seriesNum: Int16?
-    /// Index into `Library.archives` array (the zip filename without .zip extension).
+    /// Into `Library.archives` (names without `.zip`).
     let archiveIndex: Int16
 
     init(libid: Int32, title: String, authorIDs: [Int32], seriesID: Int32?,

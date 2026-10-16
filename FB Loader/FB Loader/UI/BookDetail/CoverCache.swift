@@ -1,10 +1,7 @@
 import Foundation
 import AppKit
 
-/// Disk-backed jpg cache for FB2 cover images at
-/// `~/Library/Caches/<bundleID>/covers/<libid>.jpg`. Caller extracts cover
-/// bytes from an already-parsed `FB2BookInfo` and calls `store(_:for:)`;
-/// next visit hits `cachedImage(for:)` directly.
+/// Disk cache of cover jpgs at `~/Library/Caches/<bundleID>/covers/<libid>.jpg`.
 ///
 /// `nonisolated final class` + `Sendable`: единственное изменяемое состояние — суммарный размер
 /// и вытеснение — спрятано в `Accounting` под одной блокировкой, `cacheDir` и лимит неизменны;
@@ -40,9 +37,6 @@ nonisolated final class CoverCache: Sendable {
         self.limitBytes = limitBytes
     }
 
-    /// Disk-cached cover, if previously stored. Caller checks this first; on
-    /// miss, the caller is responsible for extracting cover bytes from an
-    /// already-parsed `FB2BookInfo` and calling `store(_:for:)` to persist.
     func cachedImage(for book: Book) -> NSImage? {
         let url = cacheURL(for: book)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -51,7 +45,7 @@ nonisolated final class CoverCache: Sendable {
         return NSImage(contentsOf: url)
     }
 
-    /// Writes cover bytes to the disk cache and returns an NSImage for them. Вызывать вне main actor.
+    /// Вызывать вне main actor.
     func store(_ coverBytes: Data, for book: Book) -> NSImage? {
         let url = cacheURL(for: book)
         accounting.lock.withLock {

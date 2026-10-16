@@ -1,11 +1,7 @@
 import Foundation
 
-/// Reads a single FB2 file from a Flibusta-style .zip archive.
-/// Uses our own ZIP central-directory reader (`ZipCentralDirectory`) — the
-/// previous ZIPFoundation-based path took ~20 s per book on a 1.5 GB zip on
-/// external storage because its iterator hits disk per CD record. The CD is
-/// read once per archive in one big chunk, cached in memory, then any book
-/// in that archive is fetched in <100 ms.
+/// Reads one FB2 from a Flibusta .zip via `ZipCentralDirectory`. The old ZIPFoundation path took ~20 s per book
+/// on a 1.5 GB archive on external storage; now the CD is read once per archive and cached.
 nonisolated final class ZipFB2Reader {
     enum ReaderError: Error {
         case archiveNotFound(URL)
@@ -19,11 +15,7 @@ nonisolated final class ZipFB2Reader {
         let modified: Date
     }
 
-    /// In-memory cache of CD indices keyed by archive URL. Cheap (~few MB
-    /// per archive); first touch builds the index, subsequent touches are
-    /// instant. The lock is a `let` of a Sendable type so it sits in
-    /// nonisolated storage cleanly. The dict is `nonisolated(unsafe) var`
-    /// because it's mutable and we synchronise access through the lock.
+    /// CD indices per archive URL; the `nonisolated(unsafe)` dict is guarded by `cacheLock`.
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var indexCache: [URL: (stamp: FileStamp, index: ZipCentralDirectory.Index)] = [:]
 

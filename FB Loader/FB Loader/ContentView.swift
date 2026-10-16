@@ -122,9 +122,7 @@ struct ContentView: View {
         state.stage = .loading(progress: "Чтение каталога…")
         onProgressText?("Чтение каталога…")
         do {
-            // UI throttle: importer ticks 1000s of times during a real import
-            // (every 200 books). We hop each tick to MainActor, but only commit
-            // a state.stage write if at least 100 ms passed since the last commit.
+            // Importer ticks thousands of times; commit to state.stage at most once per 100 ms.
             let progress = LoadingProgressBag()
             let lastCountUpdate = AtomicLastUpdate()
             let lib = try await runDetachedCancellable {
@@ -227,9 +225,7 @@ final class LoadSessionGate {
     }
 }
 
-/// Two-field progress bag used by `loadLibrary()`: the importer pushes
-/// status-message updates and per-N-books counter updates from a background
-/// thread; this bag combines them into a single render string under a lock,
+/// Merges status and counter updates from the background importer into one string under a lock,
 /// so neither stream overwrites the other.
 private nonisolated final class LoadingProgressBag: @unchecked Sendable {
     private let lock = NSLock()
@@ -255,8 +251,6 @@ private nonisolated final class LoadingProgressBag: @unchecked Sendable {
     }
 }
 
-/// Trivial 100-ms throttle for MainActor-bound progress writes.
-/// Lives here (not in AppState) because it's purely a view-side concern.
 @MainActor
 private final class AtomicLastUpdate {
     private var lastTick: ContinuousClock.Instant = .now - .seconds(1)

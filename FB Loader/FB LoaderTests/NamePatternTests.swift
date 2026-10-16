@@ -88,7 +88,7 @@ struct NamePatternTests {
         #expect(p.matches("болдин"))             // именно тут glob отличается от word-prefix:
         #expect(p.matches("гл олди и компания")) // в substring-режиме «болдин» матчится.
         #expect(p.matches("xxxолдиyyy"))
-        #expect(!p.matches("вася"))              // подстроки нет вообще
+        #expect(!p.matches("вася"))
     }
 
     @Test("Glob с двумя сегментами (пет*ров) требует порядка и якорей")
@@ -97,9 +97,9 @@ struct NamePatternTests {
         #expect(p.matches("петров"))
         #expect(p.matches("петяров"))
         #expect(p.matches("петрович ров"))
-        #expect(!p.matches("ровпет"))                // не тот порядок
-        #expect(!p.matches("петровский"))            // не на конце
-        #expect(!p.matches("апетров"))               // не с начала
+        #expect(!p.matches("ровпет"))
+        #expect(!p.matches("петровский"))
+        #expect(!p.matches("апетров"))
     }
 
     @Test("Двойная звёздочка эквивалентна одинарной")

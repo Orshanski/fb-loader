@@ -5,16 +5,10 @@ struct SidebarRowStyle {
     var fontWeight: NSFont.Weight = .regular
 }
 
-/// Sidebar list with a debounced, off-main name filter. Generic over the
-/// item type so authors and series share one implementation.
+/// Sidebar list with a debounced, off-main name filter, shared by authors and series.
 ///
-/// `lowercasedNames` is a parallel array to `items` — the same length, the
-/// same order. The Library pre-computes both so we can scan 100k+ entries
-/// without re-allocating lowercased strings per keystroke.
-///
-/// `filterKey` lets the caller invalidate the filter task when an external
-/// dependency (e.g. language filter) changes; whenever it differs from the
-/// previous render, `.task(id:)` cancels the in-flight scan and starts over.
+/// `lowercasedNames` parallels `items` (same length and order); `Library` precomputes it so a keystroke
+/// doesn't re-lowercase 100k+ names. A changed `filterKey` restarts the in-flight scan via `.task(id:)`.
 struct FilteredSidebarList<Item: Identifiable & Sendable>: View
 where Item.ID: Hashable & Sendable {
     let items: [Item]

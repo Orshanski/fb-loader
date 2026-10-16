@@ -1,10 +1,7 @@
 import Foundation
 
-/// `nonisolated` so `load(inpxURL:)` can be called from MainActor (e.g. SwiftUI's
-/// `.task`) and actually run on a background cooperative thread instead of
-/// blocking the main thread for the entire INPX import (~36 MB, 700k records).
-/// Project default isolation is MainActor; without this the heavy I/O+parse
-/// chain stays main-bound and freezes the UI.
+/// `nonisolated` so `load(inpxURL:)` runs off the main thread when called from MainActor;
+/// under the MainActor default the heavy INPX parse would freeze the UI.
 nonisolated enum LibraryLoader {
     static func cacheURL() throws -> URL {
         LibraryCacheStore.cacheURL(in: try appSupportRoot())
@@ -20,11 +17,8 @@ nonisolated enum LibraryLoader {
         return dir
     }
 
-    /// Load library: from cache if hash matches, else reparse INPX.
-    /// Heavy — should be called from a background Task.
-    /// `onProgress` is called from a background context every N parsed books
-    /// (only on the rebuild path; cache hits skip it). The caller is responsible
-    /// for hopping to MainActor before mutating UI state.
+    /// `onProgress` fires from a background context, only on the rebuild path (cache hits skip it);
+    /// the caller hops to MainActor itself.
     static func load(
         inpxURL: URL,
         forceRebuild: Bool = false,

@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// One «автор <имя>» result block. Header is collapsible. When expanded,
-/// shows the author's books in the same structure as the main `BooksTableView`
-/// when that author is selected: loose books first, then series-grouped
-/// sub-sections with seriesNum-sorted books.
+/// Collapsible «автор» block; books are laid out as in `BooksTableView` for a selected author:
+/// loose books first, then series groups.
 struct SearchAuthorBlock: View {
     @Bindable var coord: SearchCoordinator
     let library: Library

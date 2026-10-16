@@ -145,7 +145,6 @@ struct LanguageFilterPicker: View {
 
     private func displayLanguages() -> [String] {
         var langs = library.languages
-        // Replace empty string with our sentinel for the picker.
         langs.removeAll { $0.isEmpty }
         if library.languages.contains("") {
             langs.append(BooksByContext.unspecifiedLanguageToken)

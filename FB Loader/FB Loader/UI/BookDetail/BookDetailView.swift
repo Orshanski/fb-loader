@@ -6,19 +6,12 @@ struct BookDetailView: View {
     let archivesRoot: URL
     let book: Book
 
-    /// Returns true if the current `book` is still the user's active
-    /// selection. Used to discard stale `loadDetail` results when the user
-    /// has clicked another book mid-load. Owner provides the closure
-    /// (main window: AppState's selected libid == book.libid; search sheet:
-    /// `coord.selectedBookLibid == book.libid`).
+    /// Guards `loadDetail` against stale results when the user selects another book mid-load.
     let isCurrentSelection: () -> Bool
 
-    /// Called when the user taps an author chip in the detail card. Owner
-    /// decides what to do (main window: navigate to author tab; search
-    /// sheet: no-op for v1).
+    /// Main window navigates to the author tab; the search sheet ignores it.
     let onSelectAuthor: (Int32) -> Void
 
-    /// Called when the user taps the series chip.
     let onSelectSeries: (Int32) -> Void
 
     @State private var coverImage: NSImage?
@@ -260,7 +253,6 @@ struct BookDetailView: View {
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
 
-            // Fast path: cover image already cached on disk from a prior visit.
             let cachedCover = cache?.cachedImage(for: b)
             if cachedCover != nil, !Task.isCancelled {
                 let img = cachedCover

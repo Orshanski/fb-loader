@@ -1,9 +1,6 @@
 import SwiftUI
 
-/// Pill-shaped clickable chip used for authors / series / similar tappable
-/// metadata in `BookDetailView`. Mirrors the spec in the UI polish design
-/// (2026-05-01): light-gray fill, soft border, accent text; on hover the
-/// fill flips to accent and text to white.
+/// Pill-shaped tappable chip (authors, series) for `BookDetailView`; fills with accent on hover.
 struct Chip: View {
     let title: String
     let action: () -> Void

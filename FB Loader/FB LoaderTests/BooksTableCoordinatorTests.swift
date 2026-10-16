@@ -148,7 +148,6 @@ struct BooksTableCoordinatorTests {
         #expect(c.tableView(h.table, selectionIndexesForProposedSelection: IndexSet(integer: 2)) == IndexSet(integer: 1))
         #expect(c.tableView(h.table, selectionIndexesForProposedSelection: IndexSet()) == IndexSet(integer: 1))
         #expect(c.tableView(h.table, selectionIndexesForProposedSelection: IndexSet(integer: 4)) == IndexSet(integer: 4))
-        // Из {текущая, другая} берётся не текущая.
         #expect(c.tableView(h.table, selectionIndexesForProposedSelection: IndexSet([1, 3])) == IndexSet(integer: 3))
     }
 

@@ -138,7 +138,6 @@ struct FB2DescriptionParserTests {
         #expect(info.coverImageData == Self.png)
     }
 
-    // MARK: - Review fixes
 
     private static func ns(_ body: String) -> String {
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + body

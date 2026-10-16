@@ -1,12 +1,8 @@
 import Foundation
 
-/// In-memory snapshot of the entire catalog. Built by `INPXImporter`,
-/// persisted as a binary cache, queried by the UI.
-/// All stored properties are `let`s of Sendable value types, so the
-/// instance is safely shareable across actors after `init`.
 nonisolated final class Library: Sendable {
-    let inpxHash: Data           // SHA-256 of INPX content
-    let inpxVersion: String      // contents of version.info ("20260301" etc.)
+    let inpxHash: Data
+    let inpxVersion: String
     let archives: [String]       // .zip filenames (without extension), indexed by archiveIndex
     let authors: [Author]        // sorted by lastName, then firstName
     let series: [Series]         // sorted by name
@@ -17,7 +13,7 @@ nonisolated final class Library: Sendable {
     // Номера в `authors`/`series`, а не копии: копия 171k `Author` стоила ~24 МБ.
     private let authorIndexByID: [Int32: Int32]
     private let seriesIndexByID: [Int32: Int32]
-    let genreByID: [Int16: Genre]       // O(1) lookup
+    let genreByID: [Int16: Genre]
     /// Номер в `books`, а не копия книги: вторая копия 594k `Book` стоила десятки МБ.
     private let bookIndexByLibid: [Int32: Int32]
     let booksByAuthor: [Int32: [Int]]   // authorID → indices into `books`
@@ -34,22 +30,16 @@ nonisolated final class Library: Sendable {
     private let authorLanguageCounts: LanguageCounts
     private let seriesLanguageCounts: LanguageCounts
 
-    // Lowercased names parallel to `authors` / `series`, computed once at
-    // `init` time. Used by sidebar filter (AuthorsListView / SeriesListView)
-    // to avoid `displayName.lowercased()` allocation on every keystroke
-    // across 100k+ authors. Transient: NOT persisted in LibraryBinaryCodec.
+    // Lowercased names parallel to `authors` / `series`: the sidebar filter would otherwise allocate
+    // on every keystroke across 100k+ authors. Not persisted.
     let lowercasedAuthorNames: [String]
     let lowercasedSeriesNames: [String]
     let lowercasedGenreNames: [Int16: String]
     let lowercasedSidebarGenreNames: [String]
 
     // MARK: - Search index (transient, built in init, NOT persisted)
-    //
-    // Token-level fuzzy-search keys, parallel to authors / series / books,
-    // tokens from `SearchPreprocess.tokens` packed into `TokenStore`, built once at init.
-    // Light variant: per-book keeps only title tokens; for
-    // book scoring the engine dispatches author/series tokens via
-    // `bookAuthorStarts`/`bookAuthorIndices` / `searchSeriesIdx` lookups.
+    // Token keys parallel to authors / series / books, packed into `TokenStore`. Book keys hold title tokens
+    // only; the engine reaches author/series tokens via `bookAuthorStarts`/`bookAuthorIndices`/`searchSeriesIdx`.
     // Псевдо-автор «(Без автора)» в поиске не участвует: пустой ключ, в ключи книг и серий не входит.
     let searchKeyAuthors: TokenStore  // parallel to authors
     let searchKeySeries:  TokenStore  // parallel to series — base key, used by parallelScanBooks combined key
@@ -85,9 +75,8 @@ nonisolated final class Library: Sendable {
         self.books = books
 
         // Build secondary indices.
-        // INPXImporter (Phase 3) is responsible for ID uniqueness in `authors`,
-        // `series` and `genres`. Duplicates here would crash via Dictionary's
-        // uniqueness precondition — that crash is the contract violation signal.
+        // INPXImporter guarantees ID uniqueness in `authors`, `series` and `genres`; a duplicate crashes in
+        // Dictionary's uniqueness precondition, which is the intended contract-violation signal.
         let startStatus = "[Library.init] start: \(books.count) books, \(authors.count) authors, \(series.count) series, \(genres.count) genres"
         print(startStatus)
         onStatus?(startStatus)

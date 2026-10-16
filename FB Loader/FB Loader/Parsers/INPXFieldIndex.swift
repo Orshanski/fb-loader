@@ -1,12 +1,7 @@
 import Foundation
 
-/// Mapping of logical INP fields to their column index in a record.
-/// Defaults match freeLib's hard-coded fallback (importthread.cpp:685-722).
-/// Real INPX archives override this via STRUCTURE.INFO.
-///
-/// Recognised tokens: AUTHOR, GENRE, TITLE, SERIES, SERNO, FILE, SIZE, LIBID,
-/// DEL, EXT, DATE, LANG. Out of scope (not stored in `Book`): STARS, KEYWORDS,
-/// FOLDER, TAG, TAGSERIES, TAGAUTHOR — silently ignored.
+/// Logical INP field → column index. Defaults match freeLib's fallback (importthread.cpp:685-722);
+/// STRUCTURE.INFO overrides them. Tokens not stored in `Book` (STARS, KEYWORDS, FOLDER, TAG*) are ignored.
 nonisolated struct INPXFieldIndex: Sendable, Equatable {
     var author: Int
     var genre: Int
@@ -27,12 +22,8 @@ nonisolated struct INPXFieldIndex: Sendable, Equatable {
     )
 
     static func fromStructureInfo(_ text: String) -> INPXFieldIndex {
-        // STRUCTURE.INFO may begin with a non-field header line (e.g.
-        // "INPX VERSION;1.0") followed by the field row. freeLib iterates all
-        // lines and accumulates positions (importthread.cpp:737-782). If no
-        // recognised token is ever seen, fall back to defaults — that's a
-        // header-only or malformed file, and silently returning all -1 would
-        // drop the entire archive.
+        // STRUCTURE.INFO may begin with a header line ("INPX VERSION;1.0"); freeLib scans all lines
+        // (importthread.cpp:737-782). No recognised token → defaults, else every field is -1 and the archive is dropped.
         var idx = INPXFieldIndex(
             author: -1, genre: -1, title: -1, series: -1, seriesNum: -1,
             file: -1, size: -1, libid: -1, deleted: -1, format: -1, date: -1, language: -1

@@ -1,21 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// `NSTableView`-backed lazy list, used in place of SwiftUI `Table` when the
-/// item count is large (100k+). SwiftUI Table on macOS 26 spends ~20 seconds
-/// diffing transitions like 166k → 500; `NSTableView.reloadData()` is O(1)
-/// at the API level and lazily fetches rows for the visible viewport via
-/// the data-source protocol — millions of rows are routine for it.
+/// `NSTableView`-backed list used instead of SwiftUI `Table` for 100k+ items: Table spends ~20 s diffing
+/// transitions like 166k → 500, while `reloadData()` is O(1) and rows load lazily.
 ///
-/// Single-column, no header. Selection is single, bound externally.
-/// `trailingLabelFor` is optional — when set, each row renders a secondary
-/// right-aligned text (used for per-row book counts in author/series lists).
+/// Single column, no header, single selection bound externally; `trailingLabelFor` adds a right-aligned
+/// secondary label (book counts).
 struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Hashable {
     let items: [Item]
     @Binding var selectedID: Item.ID?
     /// Pure label producer. Called per visible row, so it must be cheap.
     let labelFor: (Item) -> String
-    /// Optional right-aligned secondary label (e.g. count).
     var trailingLabelFor: ((Item) -> String)? = nil
     var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
     var scrollMemory: SidebarMemory? = nil
@@ -179,13 +174,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             self.binding = binding
         }
 
-        // Explicit empty `nonisolated deinit` — workaround for an ICE in
-        // swift-frontend's `EarlyPerfInliner` (Xcode 26.4.1 / Swift 6.3.1)
-        // when synthesising the implicit MainActor-isolated deinit for a
-        // generic-parameterised class. Crash hits only at -O / Release; Debug
-        // builds and tests are unaffected. Safe to remove if a future Swift
-        // version stops crashing here.
-        nonisolated deinit { /* Empty by design — see comment above. */ }
+        // Empty deinit works around a swift-frontend ICE (EarlyPerfInliner, Xcode 26.4.1 / Swift 6.3.1) on the
+        // implicit MainActor deinit of a generic class; only -O builds crash. Remove once fixed.
+        nonisolated deinit {}
 
         func numberOfRows(in _: NSTableView) -> Int { items.count }
 
@@ -243,9 +234,6 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         }
     }
 
-    /// Two-label row cell: left main label (truncating tail) + right trailing
-    /// secondary label (smaller font, secondary color). Trailing label hides
-    /// itself when empty, so single-label clients see no visual difference.
     final class TwoLabelCell: NSView {
         let mainLabel: NSTextField = {
             let f = NSTextField(labelWithString: "")
@@ -279,8 +267,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             setupSubviews()
         }
 
-        // Same EarlyPerfInliner ICE workaround as Coordinator.deinit above.
-        nonisolated deinit { /* Empty by design — see comment above. */ }
+        // Same ICE workaround as Coordinator.deinit.
+        nonisolated deinit {}
 
         private func setupSubviews() {
             mainLabel.translatesAutoresizingMaskIntoConstraints = false

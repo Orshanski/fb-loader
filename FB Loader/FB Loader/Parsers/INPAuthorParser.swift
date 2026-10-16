@@ -1,10 +1,7 @@
 import Foundation
 
-/// Parses INP `AUTHOR` field into structured triples.
-/// Format: authors separated by `:`; each is `LastName,FirstName,MiddleName`.
-/// All three components are optional (any may be empty).
+/// Format: authors separated by `:`; each is `LastName,FirstName,MiddleName`, any part may be empty.
 nonisolated enum INPAuthorParser {
-    /// `Hashable` so `INPXImporter` can dedup authors via a dictionary keyed by triple.
     struct Triple: Hashable {
         let lastName: String
         let firstName: String
@@ -22,8 +19,7 @@ nonisolated enum INPAuthorParser {
         }
     }
 
-    /// Detects records that mean "no known author".
-    /// Matches the heuristics in importthread.cpp:951-953.
+    /// Heuristics from importthread.cpp:951-953.
     static func isUnknown(lastName: String, firstName: String, middleName: String) -> Bool {
         let joined = (lastName + " " + firstName + " " + middleName).lowercased()
         if joined.contains("автор") &&

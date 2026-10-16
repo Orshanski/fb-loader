@@ -1,24 +1,16 @@
 import Foundation
 
-/// Imports an INPX archive into an in-memory `Library`.
-/// Skips records with DEL=1.
-/// Author dedup is by (lastName, firstName, middleName) tuple.
-/// Empty/unknown authors are mapped to the synthetic `Author.unknown`.
 nonisolated enum INPXImporter {
     enum ImportError: Error {
-        /// Wraps the underlying central-directory parse / decompression error.
         case cannotOpenArchive(URL, underlying: Error)
         case noVersionInfo
         case tooManyArchives(count: Int)
     }
 
-    /// Cached `CharacterSet` for the line-trim step. Built once and reused across 700k iterations.
     private static let trimSet: CharacterSet = .controlCharacters
         .subtracting(.init(charactersIn: "\u{04}"))
 
-    /// Emit a progress callback every N parsed (non-deleted) books, plus once
-    /// at the boundary between .inp files. 200 keeps the UI ticking even on
-    /// the first small .inp (which may have <1000 books).
+    /// 200 keeps the UI ticking even on the first small .inp (<1000 books).
     private static let progressEveryNBooks = 200
 
     /// Поднимать при любой правке разбора INPX (здесь, в парсерах, в синтетических
@@ -74,15 +66,13 @@ nonisolated enum INPXImporter {
             throw ImportError.cannotOpenArchive(inpxURL, underlying: error)
         }
 
-        // INPX file names are usually lowercase but some dumps use VERSION.INFO etc.
-        // Build a lowercase-keyed lookup once.
+        // Some dumps use VERSION.INFO etc., so look names up lowercased.
         var byLowercaseName: [String: ZipCentralDirectory.Entry] = [:]
         byLowercaseName.reserveCapacity(index.entries.count)
         for (name, entry) in index.entries {
             byLowercaseName[name.lowercased()] = entry
         }
 
-        // 1. version.info
         var version = ""
         if let versionEntry = byLowercaseName["version.info"] {
             let data = try ZipCentralDirectory.extract(versionEntry, from: inpxURL)
@@ -92,7 +82,6 @@ nonisolated enum INPXImporter {
             throw ImportError.noVersionInfo
         }
 
-        // 2. STRUCTURE.INFO (optional)
         var fieldIndex = INPXFieldIndex.defaults
         if let structureEntry = byLowercaseName["structure.info"] {
             let data = try ZipCentralDirectory.extract(structureEntry, from: inpxURL)
@@ -100,7 +89,6 @@ nonisolated enum INPXImporter {
                 String(decoding: data, as: UTF8.self))
         }
 
-        // 3. Iterate .inp files, build catalog.
         var archiveNames: [String] = []
         var archiveIndexByName: [String: Int16] = [:]
         var authorIDs: [INPAuthorParser.Triple: Int32] = [:]
@@ -116,7 +104,6 @@ nonisolated enum INPXImporter {
         // It may be filtered out at the end if no book actually references it.
         authors.append(Author.unknown)
 
-        // Pre-collect .inp entries so we can report "X / N" progress.
         let inpEntries: [ZipCentralDirectory.Entry] = index.entries
             .filter { $0.key.lowercased().hasSuffix(".inp") }
             .values
@@ -151,12 +138,8 @@ nonisolated enum INPXImporter {
             let text = String(decoding: inpData, as: UTF8.self)
             let booksBefore = books.count
 
-            // Records are separated by CRLF in real Flibusta INPX dumps. Swift's
-            // String treats "\r\n" as a SINGLE extended grapheme cluster, so
-            // `split(separator: "\n")` does NOT find the LF and returns the
-            // whole file as one "line" — that's how we ended up with exactly
-            // one book per .inp before this fix. Use Character.isNewline,
-            // which is true for both bare "\n" and the "\r\n" cluster.
+            // Flibusta dumps are CRLF; Swift treats "\r\n" as one grapheme, so split(separator: "\n")
+            // finds nothing. Character.isNewline matches both "\n" and the "\r\n" cluster.
             for line in text.split(omittingEmptySubsequences: true, whereSeparator: { $0.isNewline }) {
                 let trimmed = String(line).trimmingCharacters(in: trimSet)
                 guard let rec = INPRecordParser.parse(line: trimmed, fieldIndex: fieldIndex)
@@ -168,14 +151,12 @@ nonisolated enum INPXImporter {
                 }
                 guard seenLibids.insert(rec.libid).inserted else { skippedDuplicate += 1; continue }
 
-                // Genres
                 let genreCodes = rec.genreField.split(separator: ":",
                                                       omittingEmptySubsequences: true)
                 let genreIDs: [Int16] = genreCodes.compactMap { code in
                     genres.genre(forCode: String(code).trimmingCharacters(in: .whitespaces))?.id
                 }
 
-                // Authors
                 let triples = INPAuthorParser.parse(rec.authorField)
                     .filter { !($0.lastName.isEmpty && $0.firstName.isEmpty && $0.middleName.isEmpty) }
                 var bookAuthorIDs: [Int32] = []
@@ -204,7 +185,6 @@ nonisolated enum INPXImporter {
                     bookAuthorIDs = [Author.unknownID]
                 }
 
-                // Series
                 var seriesID: Int32? = nil
                 let seriesName = clamped(rec.seriesName)
                 if !seriesName.isEmpty {
@@ -238,21 +218,15 @@ nonisolated enum INPXImporter {
             let doneStatus = "[\(archCounter)/\(inpEntries.count)] done — added \(books.count - booksBefore) books, total \(books.count)"
             print("[INPXImporter] \(doneStatus)")
             onStatus?(doneStatus)
-            // Per-archive boundary emit — guarantees a UI tick even on tiny .inp files.
             onProgress?(books.count)
         }
         print("[INPXImporter] all .inp files done, total books: \(books.count); building Library…")
         print("[INPXImporter] skipped: deleted \(skippedDeleted), not FB2 \(skippedNotFB2), duplicate LIBID \(skippedDuplicate), file name too long \(skippedFileName)")
         onStatus?("all .inp files done, total books: \(books.count); building Library…")
-        // Final emit so the caller's UI ends with the actual total, not the last
-        // multiple of `progressEveryNBooks`.
+        // Final emit: the UI ends on the actual total, not the last multiple of `progressEveryNBooks`.
         onProgress?(books.count)
 
-        // Sort authors by lastName, firstName, middleName.
-        // The synthetic "(Без автора)" placeholder is included only when at least
-        // one book actually references it — clean libraries don't show an empty
-        // placeholder. When present, it always goes to the end of the list,
-        // following the standard "Other" UX pattern.
+        // The "(Без автора)" placeholder is kept only if some book references it, and always sorts last.
         let unknownReferenced = books.contains { $0.authorIDs.contains(Author.unknownID) }
         let visibleAuthors = unknownReferenced
             ? authors
