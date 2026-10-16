@@ -8,6 +8,7 @@ struct SearchAuthorBlock: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let authorIndex: Int
+    let exportSession: ExportSession
     let onRequestExport: () -> Void
 
     private let defaultBooksLimit = 10
@@ -80,10 +81,8 @@ struct SearchAuthorBlock: View {
 
     private func exportContextMenu() -> AnyView {
         AnyView(
-            Button("Выгрузить отмеченные (\(coord.checkedBookLibids.count))") {
-                onRequestExport()
-            }
-            .disabled(coord.checkedBookLibids.isEmpty)
+            SearchExportMenu(checkedCount: coord.checkedBookLibids.count,
+                             isBusy: exportSession.isBusy, onExport: onRequestExport)
         )
     }
 

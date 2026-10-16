@@ -242,10 +242,11 @@ struct BooksTableRepresentable: NSViewRepresentable {
             let count = model.checkedBookLibids.count
             let menu = NSMenu()
             menu.autoenablesItems = false
-            let item = NSMenuItem(title: "Выгрузить отмеченные (\(count))",
+            let available = exportAction.isAvailable()
+            let item = NSMenuItem(title: available ? "Выгрузить отмеченные (\(count))" : "Выгрузка ещё идёт…",
                                   action: #selector(exportChecked(_:)), keyEquivalent: "")
             item.target = self
-            item.isEnabled = count > 0
+            item.isEnabled = available && count > 0
             menu.addItem(item)
             return menu
         }

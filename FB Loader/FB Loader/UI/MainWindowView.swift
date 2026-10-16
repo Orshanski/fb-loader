@@ -55,7 +55,10 @@ struct MainWindowView: View {
             .layoutPriority(1)
         }
         .opacity(layoutReady ? 1 : 0)
-        .onAppear { exportAction.perform = { Task { await runExport() } } }
+        .onAppear {
+            exportAction.perform = { Task { await startExport() } }
+            exportAction.isAvailable = { !state.exportSession.isBusy }
+        }
         .task {
             try? await Task.sleep(for: RestoredPaneSize.revealTimeout)
             revealLayout()
@@ -67,6 +70,7 @@ struct MainWindowView: View {
             SearchWindowView(
                 library: library,
                 archivesRoot: state.userPaths.archivesDirectoryURL,
+                exportSession: state.exportSession,
                 initialLanguage: state.languageFilter,
                 preferredSize: searchSheetSize(),
                 onClose: { showSearch = false }
@@ -91,7 +95,8 @@ struct MainWindowView: View {
             }
         }
         .focusedSceneValue(\.mainWindowActions, MainWindowActions(
-            isAvailable: !showSearch && state.exportProgress == nil && !state.isSettingsPresented,
+            isAvailable: !showSearch && state.exportSession.progress(for: .main) == nil
+                && state.exportSession.phase != .choosingFolder && !state.isSettingsPresented,
             sidebarVisible: sidebarVisible,
             toggleSidebar: { sidebarVisible.toggle() },
             openSearch: { showSearch = true }))
@@ -99,18 +104,11 @@ struct MainWindowView: View {
         // содержимое, которое macOS пускает под неё.
         .toolbarBackground(.visible, for: .windowToolbar)
         .sheet(item: Binding(
-            get: { state.exportProgress.map { ProgressIdentifier(progress: $0) } },
-            set: { _ in
-                // Read-only binding — sheet dismissal is handled by
-                // ExportProgressSheet's done-closure below.
-            })) { wrapper in
-                ExportProgressSheet(progress: wrapper.progress) {
-                    state.exportProgress = nil
+            get: { state.exportSession.progress(for: .main) },
+            set: { _ in })) { progress in
+                ExportProgressSheet(progress: progress) {
+                    state.exportSession.closeProgress(origin: .main)
                 }
-        }
-        .onExportProgress(state.exportProgress) { progress in
-            state.checkedBookLibids = progress.removingSucceeded(
-                from: state.checkedBookLibids)
         }
     }
 
@@ -128,64 +126,17 @@ struct MainWindowView: View {
         return CGSize(width: 1100, height: 800)
     }
 
-    private struct ProgressIdentifier: Identifiable {
-        let progress: ExportProgress
-        var id: ObjectIdentifier { ObjectIdentifier(progress) }
-    }
-
-    private func runExport() async {
-        // Гард против двойного запуска: если предыдущий ExportRunner ещё
-        // не вернулся (sheet жив, либо last in-flight книга дописывается),
-        // повторный клик «Выгрузить» игнорируется — иначе два Task'а
-        // погонятся за общим state.checkedBookLibids.
-        guard state.exportProgress == nil else { return }
-        guard !state.checkedBookLibids.isEmpty,
-              let archives = state.userPaths.archivesDirectoryURL else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.directoryURL = state.userPaths.lastExportDirectoryURL
-            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        guard let folder = await panel.selectedDirectory() else { return }
-        state.userPaths.lastExportDirectoryURL = folder
-
+    private func startExport() async {
         let authorID: Int32?
         if case .authors(let id) = state.sidebar { authorID = id } else { authorID = nil }
         let seriesID: Int32?
         if case .series(let id) = state.sidebar { seriesID = id } else { seriesID = nil }
-        let items = ExportPlanner.plan(
-            libids: state.checkedBookLibids,
-            rootFolder: folder,
-            archivesRoot: archives,
-            selectedAuthorID: authorID,
-            selectedSeriesID: seriesID,
-            in: library)
-        let progress = ExportProgress()
-        state.exportProgress = progress
-        Task {
-            await ExportRunner.run(items: items, exportRoot: folder, progress: progress)
-            // Финальный пересчёт — страховка от любого пути, при котором
-            // последний `.onChange` не был доставлен или потерял
-            // `state.exportProgress`: пользователь закрыл sheet после
-            // «Отмена», SwiftUI переставил порядок диспатчей, runner
-            // дописал последнюю книгу после обнуления биндинга и т.п.
-            // Здесь берём полное `progress.succeeded` с захваченного
-            // объекта и снимаем оставшееся.
-            state.checkedBookLibids = progress.removingSucceeded(
-                from: state.checkedBookLibids)
-        }
-    }
-}
-
-private extension NSOpenPanel {
-    @MainActor
-    func selectedDirectory() async -> URL? {
-        await withCheckedContinuation { continuation in
-            begin { response in
-                continuation.resume(returning: response == .OK ? self.url : nil)
-            }
-        }
+        let state = state
+        await state.exportSession.start(ExportRequest(
+            libids: state.checkedBookLibids, library: library,
+            selectedAuthorID: authorID, selectedSeriesID: seriesID,
+            format: .fb2, origin: .main,
+            uncheck: { _ = state.checkedBookLibids.remove($0) }))
     }
 }
 

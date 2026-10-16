@@ -16,7 +16,6 @@ enum ExportRunner {
         progress.cancelled = false
         progress.failed = []
         progress.abortReason = nil
-        progress.succeeded = []
 
         // Отключённый том даёт EACCES от /Volumes, а не ENOENT — проверяем корень заранее.
         var isDirectory: ObjCBool = false
@@ -53,7 +52,6 @@ enum ExportRunner {
                 progress.failed.append((item.book.title, failure.reason))
                 if failure.abortsExport { progress.abortReason = failure.reason }
             } else {
-                progress.succeeded.insert(item.book.libid)
                 onExported(item.book.libid)
             }
             progress.done += 1

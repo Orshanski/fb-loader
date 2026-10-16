@@ -4,6 +4,7 @@ import SwiftUI
 /// главного окна, и таблица книг пересчитывалась бы при каждом клике по книге.
 final class ExportAction {
     var perform: () -> Void = {}
+    var isAvailable: () -> Bool = { true }
 }
 
 struct BooksTableView: View {

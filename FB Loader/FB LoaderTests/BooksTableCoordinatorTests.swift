@@ -406,6 +406,19 @@ struct BooksTableKeyboardTests {
         #expect(empty?.items.first?.isEnabled == false)
     }
 
+    @Test("выгрузка занята: один неактивный пункт «Выгрузка ещё идёт…»")
+    func contextMenuBusy() {
+        let h = BooksTableHarness(checked: [10, 20])
+        h.exportAction.isAvailable = { false }
+        var exports = 0
+        h.exportAction.perform = { exports += 1 }
+        let menu = h.coordinator.contextMenu(forRow: 0)
+        #expect(menu?.items.count == 1)
+        #expect(menu?.items.first?.title == "Выгрузка ещё идёт…")
+        #expect(menu?.items.first?.isEnabled == false)
+        #expect(exports == 0)
+    }
+
     @Test("меню на заголовке серии и пустом месте — nil")
     func noMenuOnHeader() {
         let h = BooksTableHarness()
