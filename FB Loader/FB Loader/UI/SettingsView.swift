@@ -30,7 +30,7 @@ struct SettingsView: View {
                 Spacer()
                 Button("Изменить…") {
                     let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
-                    if p.runModal() == .OK { userPaths.archivesDirectoryURL = p.url }
+                    if p.runModal() == .OK, let url = p.url { userPaths.setArchivesDirectory(url) }
                 }
             }
             Divider()

@@ -6,6 +6,7 @@ final class AppState {
     enum LoadStage {
         case starting
         case onboarding(MissingPaths)
+        case storageProblem(StorageProblem)
         case loading(progress: String)
         case ready(Library)
         case failed(String)

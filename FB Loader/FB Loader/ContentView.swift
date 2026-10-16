@@ -13,10 +13,22 @@ struct ContentView: View {
                 LoaderScreen(progress: "Подготовка…")
             case .onboarding(let missing):
                 CatalogPickerView(missing: missing, userPaths: state.userPaths) { inpx, arch in
-                    state.userPaths.inpxURL = inpx
-                    state.userPaths.archivesDirectoryURL = arch
+                    state.userPaths.setINPX(inpx)
+                    state.userPaths.setArchivesDirectory(arch)
                     startLoad()
                 }
+            case .storageProblem(let problem):
+                StorageProblemView(
+                    problem: problem,
+                    onRetry: { Task { await checkPaths() } },
+                    onRepick: { state.stage = .onboarding(problem.fallback) },
+                    onRemount: { url in
+                        Task {
+                            NSWorkspace.shared.open(url)
+                            await waitForVolumeMount(timeout: .seconds(30))
+                            await checkPaths()
+                        }
+                    })
             case .loading(let p):
                 LoaderScreen(progress: p)
                 // Disable implicit animations on rapid progress-string changes —
@@ -51,6 +63,8 @@ struct ContentView: View {
                     Button("Указать пути заново") {
                         state.userPaths.inpxURL = nil
                         state.userPaths.archivesDirectoryURL = nil
+                        state.userPaths.inpxVolume = nil
+                        state.userPaths.archivesVolume = nil
                         state.stage = .onboarding(.both)
                     }
                     .keyboardShortcut(.defaultAction)
@@ -59,16 +73,7 @@ struct ContentView: View {
                 .frame(minWidth: 600, minHeight: 350)
             }
         }
-        .task {
-            if let missing = MissingPaths.check(
-                inpx: state.userPaths.inpxURL,
-                archives: state.userPaths.archivesDirectoryURL,
-                isReachable: { FileManager.default.fileExists(atPath: $0.path) }) {
-                state.stage = .onboarding(missing)
-                return
-            }
-            startLoad()
-        }
+        .task { await checkPaths() }
         .focusedSceneValue(\.openSettings, state.isAnySheetPresented ? nil : {
             state.isSettingsPresented = true
         })
@@ -80,11 +85,40 @@ struct ContentView: View {
                 onClose: { state.isSettingsPresented = false },
                 onRebuild: rebuildCatalog,
                 onINPXChange: { url in
-                    state.userPaths.inpxURL = url
+                    state.userPaths.setINPX(url)
                     if state.canRebuildCatalog { rebuildCatalog() }
                 }
             )
         }
+    }
+
+    private func checkPaths() async {
+        let paths = state.userPaths
+        let result = await StartupCheck.run(
+            inpx: paths.inpxURL, archives: paths.archivesDirectoryURL,
+            inpxVolume: paths.inpxVolume, archivesVolume: paths.archivesVolume)
+        switch result {
+        case .ok:
+            await backfillVolumes()
+            startLoad()
+        case .missing(let missing):
+            state.stage = .onboarding(missing)
+        case .problem(let problem):
+            state.stage = .storageProblem(problem)
+        }
+    }
+
+    /// Пути, сохранённые до появления сведений о томе, дописываются при первом успешном старте.
+    private func backfillVolumes() async {
+        let paths = state.userPaths
+        let inpx = paths.inpxVolume == nil ? paths.inpxURL : nil
+        let archives = paths.archivesVolume == nil ? paths.archivesDirectoryURL : nil
+        guard inpx != nil || archives != nil else { return }
+        let detected = await Task.detached {
+            (inpx.flatMap(VolumeInfo.detect), archives.flatMap(VolumeInfo.detect))
+        }.value
+        if let v = detected.0 { paths.inpxVolume = v }
+        if let v = detected.1 { paths.archivesVolume = v }
     }
 
     private func rebuildCatalog() {

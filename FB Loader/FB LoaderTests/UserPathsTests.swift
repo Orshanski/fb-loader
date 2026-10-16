@@ -65,3 +65,51 @@ struct UserPathsTests {
 
     private final class Flag: @unchecked Sendable { var value = false }
 }
+
+@Suite("UserPaths: сведения о томе")
+@MainActor
+struct UserPathsVolumeTests {
+    private let info = VolumeInfo(name: "flibusta", isNetwork: true,
+                                  remountURL: URL(string: "smb://alexey@nas._smb._tcp.local/flibusta"))
+
+    @Test("сведения о томе хранятся отдельно для INPX и папки архивов и переживают перезапуск")
+    func roundTrip() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            #expect(paths.inpxVolume == nil)
+            #expect(paths.archivesVolume == nil)
+            paths.inpxVolume = info
+            let other = VolumeInfo(name: "USB", isNetwork: false, remountURL: nil)
+            paths.archivesVolume = other
+            let reread = UserPaths(defaults: suite)
+            #expect(reread.inpxVolume == info)
+            #expect(reread.archivesVolume == other)
+        }
+    }
+
+    @Test("nil стирает сведения")
+    func clear() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            paths.inpxVolume = info
+            paths.inpxVolume = nil
+            #expect(UserPaths(defaults: suite).inpxVolume == nil)
+        }
+    }
+
+    @Test("выбор пути записывает сведения о его томе")
+    func selectionRecordsVolume() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            let dir = FileManager.default.temporaryDirectory
+            let file = dir.appendingPathComponent("vol-\(UUID()).inpx")
+            FileManager.default.createFile(atPath: file.path, contents: Data())
+            defer { try? FileManager.default.removeItem(at: file) }
+            paths.setINPX(file)
+            paths.setArchivesDirectory(dir)
+            #expect(paths.inpxURL == file)
+            #expect(paths.inpxVolume != nil)
+            #expect(paths.archivesVolume != nil)
+        }
+    }
+}
