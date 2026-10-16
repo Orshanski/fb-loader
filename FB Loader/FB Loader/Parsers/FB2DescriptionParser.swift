@@ -10,8 +10,8 @@ struct FB2BookInfo {
 
 /// Parses the `<description>` block of an FB2 file plus the `<binary>` element
 /// referenced by `<coverpage><image l:href="#..."/>`.
-/// Reads only the prefix needed to find description+cover; the caller can pass
-/// just the first ~64 KB of the file.
+/// Takes the whole file: XMLParser sees only the prefix up to `</description>`,
+/// the cover is located by a byte search; the book text is never parsed.
 ///
 /// `nonisolated` — pure parser, no UI state. Without this it would be inferred
 /// as MainActor (project default) and reject calls from `Task.detached`.
@@ -19,26 +19,101 @@ nonisolated enum FB2DescriptionParser {
     enum ParseError: Error { case malformed }
 
     static func parse(data: Data) throws -> FB2BookInfo {
+        // The byte search below is ASCII-only, so UTF-16 needs the full XMLParser path.
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
+            return try parseFully(data)
+        }
+        guard let end = data.range(of: Data("</description>".utf8)),
+              let rootName = rootElementName(in: data, before: end.lowerBound) else {
+            throw ParseError.malformed
+        }
+        // Closing the root makes the prefix well-formed without touching the declared encoding.
+        var prefix = data.subdata(in: data.startIndex..<end.upperBound)
+        prefix.append(Data("</\(rootName)>".utf8))
+        let delegate = try run(prefix)
+        var cover: Data?
+        if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")) {
+            cover = coverBinary(id: href, in: data, after: end.upperBound)
+        }
+        return info(delegate, cover: cover)
+    }
+
+    private static func parseFully(_ data: Data) throws -> FB2BookInfo {
+        let delegate = try run(data)
+        var cover: Data?
+        if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")),
+           let b64 = delegate.binariesByID[href] {
+            cover = decodeBase64(Data(b64.utf8))
+        }
+        return info(delegate, cover: cover)
+    }
+
+    private static func run(_ data: Data) throws -> FB2Delegate {
         let delegate = FB2Delegate()
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.shouldProcessNamespaces = true
         guard parser.parse() else { throw ParseError.malformed }
-        // Resolve cover binary by id.
-        var cover: Data? = nil
-        if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")),
-           let b64 = delegate.binariesByID[href] {
-            cover = Data(base64Encoded: b64.replacingOccurrences(of: "\n", with: "")
-                                          .replacingOccurrences(of: "\r", with: "")
-                                          .trimmingCharacters(in: .whitespaces))
+        return delegate
+    }
+
+    private static func info(_ d: FB2Delegate, cover: Data?) -> FB2BookInfo {
+        FB2BookInfo(bookTitle: d.bookTitle, annotation: d.annotation, dateWritten: d.dateWritten,
+                    translators: d.translators, coverImageData: cover)
+    }
+
+    /// Qualified name of the first real element (skips `<?xml?>`, comments, DOCTYPE).
+    private static func rootElementName(in data: Data, before limit: Data.Index) -> String? {
+        var i = data.startIndex
+        while i < limit {
+            guard let lt = data[i..<limit].firstIndex(of: UInt8(ascii: "<")) else { return nil }
+            let next = lt + 1
+            guard next < limit else { return nil }
+            let c = data[next]
+            if c == UInt8(ascii: "?") || c == UInt8(ascii: "!") {
+                guard let gt = data[next..<limit].firstIndex(of: UInt8(ascii: ">")) else { return nil }
+                i = gt + 1
+                continue
+            }
+            var j = next
+            while j < limit, !isXMLSpace(data[j]), data[j] != UInt8(ascii: ">"), data[j] != UInt8(ascii: "/") { j += 1 }
+            return String(decoding: data[next..<j], as: UTF8.self)
         }
-        return FB2BookInfo(
-            bookTitle: delegate.bookTitle,
-            annotation: delegate.annotation,
-            dateWritten: delegate.dateWritten,
-            translators: delegate.translators,
-            coverImageData: cover
-        )
+        return nil
+    }
+
+    private static func coverBinary(id: String, in data: Data, after start: Data.Index) -> Data? {
+        let open = Data("<binary".utf8)
+        let close = Data("</binary>".utf8)
+        var pos = start
+        while let tag = data.range(of: open, in: pos..<data.endIndex) {
+            pos = tag.upperBound
+            guard pos < data.endIndex, isXMLSpace(data[pos]),
+                  let gt = data[pos...].firstIndex(of: UInt8(ascii: ">")) else { continue }
+            if data[gt - 1] == UInt8(ascii: "/") { continue }
+            guard binaryID(in: data[pos..<gt]) == id else { continue }
+            let bodyStart = gt + 1
+            guard let end = data.range(of: close, in: bodyStart..<data.endIndex) else { return nil }
+            return decodeBase64(data[bodyStart..<end.lowerBound])
+        }
+        return nil
+    }
+
+    private static func binaryID(in attributes: Data) -> String? {
+        let text = String(decoding: attributes, as: UTF8.self)
+        let regex = /(?:^|\s)id\s*=\s*(?:"([^"]*)"|'([^']*)')/
+        guard let m = text.firstMatch(of: regex) else { return nil }
+        return String(m.output.1 ?? m.output.2 ?? "")
+    }
+
+    private static func decodeBase64(_ raw: Data) -> Data? {
+        let cleaned = Data(raw.filter { !isXMLSpace($0) })
+        guard !cleaned.isEmpty else { return nil }
+        return Data(base64Encoded: cleaned)
+    }
+
+    private static func isXMLSpace(_ b: UInt8) -> Bool {
+        b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D
     }
 }
 
