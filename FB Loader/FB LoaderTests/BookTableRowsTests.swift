@@ -138,6 +138,14 @@ struct BookTableRowsTests {
         #expect(rowsA.resolveSelection(proposed: 99, current: 0, byKeyboard: true) == 0)
     }
 
+    @Test("selectionChangedExternally: выделение сдвинуто, только если книга есть в строках и не под выделением")
+    func externalSelection() {
+        #expect(selectionChangedExternally(currentRow: -1, targetRow: 3))
+        #expect(selectionChangedExternally(currentRow: 1, targetRow: 3))
+        #expect(!selectionChangedExternally(currentRow: 3, targetRow: 3))
+        #expect(!selectionChangedExternally(currentRow: 1, targetRow: nil))
+    }
+
     @Test("scrollTarget: нет выбранной или нет в строках — к началу; книга — строка и заголовок серии")
     func scrollTargets() {
         #expect(rowsA.scrollTarget(selectedLibid: nil) == .top)

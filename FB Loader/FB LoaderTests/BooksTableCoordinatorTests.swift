@@ -575,8 +575,6 @@ struct BooksTableScrollTests {
         h.apply(books: manyBooks(), context: .author(2))
         #expect(clipY(h) == before)
         h.apply(books: manyBooks(), context: .author(3))
-        h.model.selectedBookLibid = 101
-        h.apply(books: manyBooks(), context: .author(3))
         await drainMainQueue()
         #expect(clipY(h) == topY)
     }
@@ -603,6 +601,18 @@ struct BooksTableScrollTests {
         let visible = h.table.rows(in: h.table.visibleRect)
         #expect(NSLocationInRange(40, visible))
         #expect(NSLocationInRange(41, visible))
+    }
+
+    @Test("внешнее выделение при том же ключе: таблица прокручивается к книге и получает фокус")
+    func externalSelectionSameKeyScrolls() async {
+        let h = BooksTableHarness(books: manyBooks())
+        await drainMainQueue()
+        scrollToRow(h, 5)
+        h.model.selectedBookLibid = 125
+        h.apply(books: manyBooks(), context: .author(1))
+        await drainMainQueue()
+        #expect(NSLocationInRange(65, h.table.rows(in: h.table.visibleRect)))
+        #expect(h.window.firstResponder === h.table)
     }
 
     @Test("выбор мышью первой книги серии не двигает таблицу, стрелка ↑ подтягивает заголовок")

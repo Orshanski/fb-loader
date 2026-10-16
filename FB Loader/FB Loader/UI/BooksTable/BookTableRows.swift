@@ -77,6 +77,12 @@ nonisolated extension BookTableRows {
     }
 }
 
+/// Выделение поставлено не пользователем (карточка автора/серии, переход из поиска): к книге надо прокрутить.
+nonisolated func selectionChangedExternally(currentRow: Int, targetRow: Int?) -> Bool {
+    guard let targetRow else { return false }
+    return currentRow != targetRow
+}
+
 nonisolated enum SpaceRoute: Equatable, Sendable {
     case toggleCheck, typeSelect
 }

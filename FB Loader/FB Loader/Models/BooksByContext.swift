@@ -50,4 +50,9 @@ nonisolated enum BooksByContext {
     static func languageKey(_ language: String) -> String {
         language == unspecifiedLanguageToken ? "" : language
     }
+
+    /// Обратная `languageKey`: язык книги → значение фильтра языка.
+    static func languageToken(_ bookLanguage: String) -> String {
+        bookLanguage.isEmpty ? unspecifiedLanguageToken : bookLanguage
+    }
 }

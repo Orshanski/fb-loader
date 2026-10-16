@@ -233,6 +233,17 @@ struct AppStateTests {
         #expect(s.selectedBookLibid == 7)
     }
 
+    private func searchLibrary() -> Library {
+        Library(inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+                authors: [Author.unknown, Author(id: 42, lastName: "Иванов", firstName: "", middleName: "")],
+                series: [Series(id: 55, name: "Ахейский цикл")], genres: [], books: [])
+    }
+
+    private func searchBook(libid: Int32 = 7, language: String = "ru") -> Book {
+        Book(libid: libid, title: "t", authorIDs: [42], seriesID: 55, seriesNum: nil,
+             genreIDs: [], language: language, archiveIndex: 0, size: 0, dateAdded: nil)
+    }
+
     @Test("переход из поиска к автору: поиск закрыт, автор и фильтр выставлены, книга выделена")
     func openFromSearchAuthor() {
         let s = AppState()
@@ -240,7 +251,7 @@ struct AppStateTests {
         s.selectedBookLibid = 3
         s.checkedBookLibids = [1]
 
-        s.openFromSearch(.authors(42), name: "Иванов", libid: 7, language: "ru")
+        s.openAuthorFromSearch(42, in: searchLibrary(), book: searchBook())
 
         #expect(!s.isSearchPresented)
         #expect(s.sidebar == .authors(42))
@@ -255,7 +266,7 @@ struct AppStateTests {
         let s = AppState()
         s.isSearchPresented = true
 
-        s.openFromSearch(.series(55), name: "Ахейский цикл", libid: 7, language: "ru")
+        s.openSeriesFromSearch(55, in: searchLibrary(), book: searchBook())
 
         #expect(!s.isSearchPresented)
         #expect(s.sidebar == .series(55))
@@ -270,12 +281,46 @@ struct AppStateTests {
         s.selectedBookLibid = 3
         s.checkedBookLibids = [1]
 
-        s.openFromSearch(.authors(42), name: "Smith", libid: 7, language: "en")
+        s.openAuthorFromSearch(42, in: searchLibrary(), book: searchBook(language: "en"))
 
         #expect(s.languageFilter == "en")
         #expect(s.sidebar == .authors(42))
         #expect(s.selectedBookLibid == 7)
         #expect(s.checkedBookLibids.isEmpty)
+    }
+
+    @Test("переход из поиска: книга без языка — язык «Не указан»")
+    func openFromSearchUnspecifiedLanguage() {
+        let s = AppState()
+
+        s.openAuthorFromSearch(42, in: searchLibrary(), book: searchBook(language: ""))
+
+        #expect(s.languageFilter == BooksByContext.unspecifiedLanguageToken)
+        #expect(s.selectedBookLibid == 7)
+    }
+
+    @Test("переход из поиска: при уже выбранном «Не указан» язык не меняется, выделение остаётся")
+    func openFromSearchUnspecifiedAlreadySelected() {
+        let s = AppState()
+        s.selectLanguage(BooksByContext.unspecifiedLanguageToken)
+        s.selectedBookLibid = 7
+
+        s.openAuthorFromSearch(42, in: searchLibrary(), book: searchBook(language: ""))
+
+        #expect(s.languageFilter == BooksByContext.unspecifiedLanguageToken)
+        #expect(s.selectedBookLibid == 7)
+    }
+
+    @Test("переход из поиска: сайдбар уже на этом авторе — книга всё равно выделена")
+    func openFromSearchSameAuthor() {
+        let s = AppState()
+        s.selectAuthor(42)
+        s.selectedBookLibid = 3
+
+        s.openAuthorFromSearch(42, in: searchLibrary(), book: searchBook())
+
+        #expect(s.sidebar == .authors(42))
+        #expect(s.selectedBookLibid == 7)
     }
 
     @Test("selectGenre — без имени, как клик в списке")

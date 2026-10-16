@@ -89,13 +89,20 @@ final class AppState {
         applyEntitySelection(.genres(id), deepLinkName: nil)
     }
 
-    /// Переход из карточки окна поиска: тот же deep-link, что у карточки главного окна, плюс язык книги.
-    /// Выделение книги ставится последним — смена языка его сбрасывает.
-    func openFromSearch(_ target: SidebarSelection, name: String?, libid: Int32, language: String) {
+    func openAuthorFromSearch(_ id: Int32, in library: Library, book: Book) {
+        openFromSearch(.authors(id), name: library.author(id: id)?.displayName, book: book)
+    }
+
+    func openSeriesFromSearch(_ id: Int32, in library: Library, book: Book) {
+        openFromSearch(.series(id), name: library.series(id: id)?.name, book: book)
+    }
+
+    /// Выделение книги ставится последним: смена языка его сбрасывает.
+    private func openFromSearch(_ target: SidebarSelection, name: String?, book: Book) {
         isSearchPresented = false
-        selectLanguage(language)
+        selectLanguage(BooksByContext.languageToken(book.language))
         applyEntitySelection(target, deepLinkName: name)
-        selectedBookLibid = libid
+        selectedBookLibid = book.libid
     }
 
     private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {

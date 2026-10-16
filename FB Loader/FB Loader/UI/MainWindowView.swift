@@ -76,14 +76,8 @@ struct MainWindowView: View {
                 initialLanguage: state.languageFilter,
                 preferredSize: searchSheetSize(),
                 onClose: { state.isSearchPresented = false },
-                onOpenAuthor: { aid, book in
-                    state.openFromSearch(.authors(aid), name: library.author(id: aid)?.displayName,
-                                         libid: book.libid, language: book.language)
-                },
-                onOpenSeries: { sid, book in
-                    state.openFromSearch(.series(sid), name: library.series(id: sid)?.name,
-                                         libid: book.libid, language: book.language)
-                }
+                onOpenAuthor: { aid, book in state.openAuthorFromSearch(aid, in: library, book: book) },
+                onOpenSeries: { sid, book in state.openSeriesFromSearch(sid, in: library, book: book) }
             )
         }
         .toolbar {
