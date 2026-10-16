@@ -137,4 +137,104 @@ struct FB2DescriptionParserTests {
         #expect(info.bookTitle == "Title")
         #expect(info.coverImageData == Self.png)
     }
+
+    // MARK: - Review fixes
+
+    private static func ns(_ body: String) -> String {
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + body
+    }
+
+    @Test("non-ASCII cover id in windows-1251")
+    func cyrillicID() throws {
+        let xml = Self.fb2(encoding: "windows-1251", cover: "#обложка",
+                           binaries: Self.binary(id: "обложка", data: Self.png))
+        let info = try FB2DescriptionParser.parse(data: try #require(xml.data(using: .windowsCP1251)))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("cover id with entities")
+    func entityID() throws {
+        let xml = Self.fb2(cover: "#a&amp;b&#x31;",
+                           binaries: Self.binary(id: "a&amp;b&#49;", data: Self.png))
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("</description> inside an earlier comment")
+    func descriptionInComment() throws {
+        let xml = Self.ns("""
+        <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+        <!-- old </description> -->
+        <description><title-info><book-title>T</book-title></title-info></description><body/></FictionBook>
+        """)
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.bookTitle == "T")
+    }
+
+    @Test("DOCTYPE with internal subset and comment with markup before root")
+    func doctypeAndComment() throws {
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <!-- <fake> > -->
+        <!DOCTYPE FictionBook [ <!ENTITY e "x"> ]>
+        <FictionBook><description><title-info><book-title>T</book-title></title-info></description><body/></FictionBook>
+        """
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.bookTitle == "T")
+    }
+
+    @Test("UTF-16 without BOM")
+    func utf16NoBOM() throws {
+        let xml = Self.fb2(encoding: "utf-16", binaries: Self.binary(id: "cover", data: Self.png))
+        let data = try #require(xml.data(using: .utf16LittleEndian))
+        #expect(data.prefix(2) == Data([0x3C, 0x00]))
+        let info = try FB2DescriptionParser.parse(data: data)
+        #expect(info.bookTitle == "Title")
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("binary placed before </description> is used")
+    func binaryBeforeDescriptionEnd() throws {
+        let b64 = Self.png.base64EncodedString()
+        let xml = Self.ns("""
+        <FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><book-title>T</book-title>\
+        <coverpage><image l:href="#cover"/></coverpage></title-info></description>\
+        <body/></FictionBook>
+        """).replacingOccurrences(of: "<description>", with: "<binary id=\"cover\">\(b64)</binary><description>")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("namespace prefixes on all elements")
+    func prefixed() throws {
+        let b64 = Self.png.base64EncodedString()
+        let xml = Self.ns("""
+        <fb:FictionBook xmlns:fb="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">\
+        <fb:description><fb:title-info><fb:book-title>T</fb:book-title>\
+        <fb:coverpage><fb:image l:href="#cover"/></fb:coverpage></fb:title-info></fb:description >\
+        <fb:body><fb:p>broken</fb:body>\
+        <fb:binary id="cover" content-type="image/png">\(b64)</fb:binary ></fb:FictionBook>
+        """)
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.bookTitle == "T")
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("UTF-8 BOM")
+    func utf8BOM() throws {
+        let xml = Self.fb2(binaries: Self.binary(id: "cover", data: Self.png))
+        let info = try FB2DescriptionParser.parse(data: Data([0xEF, 0xBB, 0xBF]) + Data(xml.utf8))
+        #expect(info.bookTitle == "Title")
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("self-closed binary and xid are not the cover")
+    func decoys() throws {
+        let other = Data([7, 7, 7, 7])
+        let binaries = "<binary id=\"cover\" content-type=\"image/png\"/>"
+            + "<binary xid=\"cover\">\(other.base64EncodedString())</binary>"
+            + "<binary content-type=\"image/png\" id = 'cover' >\(Self.png.base64EncodedString())</binary>"
+        let info = try FB2DescriptionParser.parse(data: Data(Self.fb2(binaries: binaries).utf8))
+        #expect(info.coverImageData == Self.png)
+    }
 }

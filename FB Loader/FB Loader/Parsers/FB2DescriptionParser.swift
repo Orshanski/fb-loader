@@ -20,22 +20,33 @@ nonisolated enum FB2DescriptionParser {
 
     static func parse(data: Data) throws -> FB2BookInfo {
         // The byte search below is ASCII-only, so UTF-16 needs the full XMLParser path.
-        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
-            return try parseFully(data)
+        if isUTF16(data) { return try parseFully(data) }
+        let encoding = declaredEncoding(data)
+        var searchFrom = data.startIndex
+        // A "</description>" inside a comment/CDATA breaks the prefix; retry with the next one.
+        for _ in 0..<3 {
+            guard let end = closingTag("description", in: data, from: searchFrom),
+                  let rootName = rootElementName(in: data, before: end.lowerBound) else {
+                throw ParseError.malformed
+            }
+            var prefix = data.subdata(in: data.startIndex..<end.upperBound)
+            prefix.append(Data("</\(rootName)>".utf8))
+            guard let delegate = try? run(prefix) else {
+                searchFrom = end.upperBound
+                continue
+            }
+            var cover: Data?
+            if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")) {
+                cover = coverBinary(id: href, encoding: encoding, in: data, after: end.upperBound)
+                    ?? delegate.binariesByID[href].flatMap { decodeBase64(Data($0.utf8)) }
+                // Non-ASCII ids may be spelled in ways the byte search misses.
+                if cover == nil, !href.allSatisfy(\.isASCII), let full = try? parseFully(data) {
+                    cover = full.coverImageData
+                }
+            }
+            return info(delegate, cover: cover)
         }
-        guard let end = data.range(of: Data("</description>".utf8)),
-              let rootName = rootElementName(in: data, before: end.lowerBound) else {
-            throw ParseError.malformed
-        }
-        // Closing the root makes the prefix well-formed without touching the declared encoding.
-        var prefix = data.subdata(in: data.startIndex..<end.upperBound)
-        prefix.append(Data("</\(rootName)>".utf8))
-        let delegate = try run(prefix)
-        var cover: Data?
-        if let href = delegate.coverHref?.trimmingCharacters(in: .init(charactersIn: "#")) {
-            cover = coverBinary(id: href, in: data, after: end.upperBound)
-        }
-        return info(delegate, cover: cover)
+        throw ParseError.malformed
     }
 
     private static func parseFully(_ data: Data) throws -> FB2BookInfo {
@@ -62,54 +73,162 @@ nonisolated enum FB2DescriptionParser {
                     translators: d.translators, coverImageData: cover)
     }
 
-    /// Qualified name of the first real element (skips `<?xml?>`, comments, DOCTYPE).
+    private static func isUTF16(_ data: Data) -> Bool {
+        data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF])
+            || data.starts(with: [0x3C, 0x00]) || data.starts(with: [0x00, 0x3C])
+    }
+
+    private static func declaredEncoding(_ data: Data) -> String.Encoding {
+        let head = String(decoding: data.prefix(256).map { $0 < 0x80 ? $0 : 0x3F }, as: UTF8.self)
+        guard head.contains("<?xml"),
+              let m = head.firstMatch(of: /encoding\s*=\s*["']([^"']+)["']/) else { return .utf8 }
+        let cf = CFStringConvertIANACharSetNameToEncoding(String(m.output.1) as CFString)
+        guard cf != kCFStringEncodingInvalidId else { return .utf8 }
+        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
+    }
+
     private static func rootElementName(in data: Data, before limit: Data.Index) -> String? {
         var i = data.startIndex
         while i < limit {
             guard let lt = data[i..<limit].firstIndex(of: UInt8(ascii: "<")) else { return nil }
             let next = lt + 1
             guard next < limit else { return nil }
-            let c = data[next]
-            if c == UInt8(ascii: "?") || c == UInt8(ascii: "!") {
-                guard let gt = data[next..<limit].firstIndex(of: UInt8(ascii: ">")) else { return nil }
-                i = gt + 1
-                continue
+            if data[next...].starts(with: Data("!--".utf8)) {
+                guard let r = data.range(of: Data("-->".utf8), in: next..<limit) else { return nil }
+                i = r.upperBound
+            } else if data[next] == UInt8(ascii: "?") {
+                guard let r = data.range(of: Data("?>".utf8), in: next..<limit) else { return nil }
+                i = r.upperBound
+            } else if data[next] == UInt8(ascii: "!") {
+                var depth = 0
+                var j = next
+                while j < limit {
+                    let c = data[j]
+                    if c == UInt8(ascii: "[") { depth += 1 }
+                    else if c == UInt8(ascii: "]") { depth -= 1 }
+                    else if c == UInt8(ascii: ">"), depth <= 0 { break }
+                    j += 1
+                }
+                guard j < limit else { return nil }
+                i = j + 1
+            } else {
+                var j = next
+                while j < limit, isNameByte(data[j]) { j += 1 }
+                return j > next ? String(decoding: data[next..<j], as: UTF8.self) : nil
             }
-            var j = next
-            while j < limit, !isXMLSpace(data[j]), data[j] != UInt8(ascii: ">"), data[j] != UInt8(ascii: "/") { j += 1 }
-            return String(decoding: data[next..<j], as: UTF8.self)
         }
         return nil
     }
 
-    private static func coverBinary(id: String, in data: Data, after start: Data.Index) -> Data? {
-        let open = Data("<binary".utf8)
-        let close = Data("</binary>".utf8)
+    private static func closingTag(_ local: String, in data: Data, from: Data.Index) -> Range<Data.Index>? {
+        var pos = from
+        while let m = data.range(of: Data("</".utf8), in: pos..<data.endIndex) {
+            pos = m.upperBound
+            var j = pos
+            while j < data.endIndex, isNameByte(data[j]) { j += 1 }
+            guard nameMatches(data[pos..<j], local) else { continue }
+            while j < data.endIndex, isXMLSpace(data[j]) { j += 1 }
+            if j < data.endIndex, data[j] == UInt8(ascii: ">") { return m.lowerBound..<(j + 1) }
+        }
+        return nil
+    }
+
+    private static func openingTag(_ local: String, in data: Data, from: Data.Index) -> Data.Index? {
+        var pos = from
+        while let m = data.range(of: Data("<".utf8), in: pos..<data.endIndex) {
+            pos = m.upperBound
+            var j = pos
+            while j < data.endIndex, isNameByte(data[j]) { j += 1 }
+            if nameMatches(data[pos..<j], local), j < data.endIndex, isXMLSpace(data[j]) { return j }
+        }
+        return nil
+    }
+
+    private static func nameMatches(_ name: Data, _ local: String) -> Bool {
+        let s = String(decoding: name, as: UTF8.self)
+        return s == local || s.hasSuffix(":" + local)
+    }
+
+    private static func coverBinary(id: String, encoding: String.Encoding, in data: Data, after start: Data.Index) -> Data? {
         var pos = start
-        while let tag = data.range(of: open, in: pos..<data.endIndex) {
-            pos = tag.upperBound
-            guard pos < data.endIndex, isXMLSpace(data[pos]),
-                  let gt = data[pos...].firstIndex(of: UInt8(ascii: ">")) else { continue }
+        while let nameEnd = openingTag("binary", in: data, from: pos) {
+            pos = nameEnd
+            guard let gt = tagEnd(in: data, from: nameEnd) else { return nil }
+            pos = gt
             if data[gt - 1] == UInt8(ascii: "/") { continue }
-            guard binaryID(in: data[pos..<gt]) == id else { continue }
+            guard let raw = idAttribute(in: data[nameEnd..<gt]),
+                  let decoded = String(data: raw, encoding: encoding),
+                  decodeEntities(decoded) == id else { continue }
             let bodyStart = gt + 1
-            guard let end = data.range(of: close, in: bodyStart..<data.endIndex) else { return nil }
-            return decodeBase64(data[bodyStart..<end.lowerBound])
+            guard let close = closingTag("binary", in: data, from: bodyStart) else { return nil }
+            return decodeBase64(data[bodyStart..<close.lowerBound])
         }
         return nil
     }
 
-    private static func binaryID(in attributes: Data) -> String? {
-        let text = String(decoding: attributes, as: UTF8.self)
-        let regex = /(?:^|\s)id\s*=\s*(?:"([^"]*)"|'([^']*)')/
-        guard let m = text.firstMatch(of: regex) else { return nil }
-        return String(m.output.1 ?? m.output.2 ?? "")
+    private static func tagEnd(in data: Data, from: Data.Index) -> Data.Index? {
+        var quote: UInt8?
+        var i = from
+        while i < data.endIndex {
+            let b = data[i]
+            if let q = quote { if b == q { quote = nil } }
+            else if b == UInt8(ascii: "\"") || b == UInt8(ascii: "'") { quote = b }
+            else if b == UInt8(ascii: ">") { return i }
+            i += 1
+        }
+        return nil
+    }
+
+    private static func idAttribute(in tag: Data) -> Data? {
+        var i = tag.startIndex
+        let end = tag.endIndex
+        func skipSpace() { while i < end, isXMLSpace(tag[i]) { i += 1 } }
+        while i < end {
+            skipSpace()
+            let nameStart = i
+            while i < end, isNameByte(tag[i]) { i += 1 }
+            let name = tag[nameStart..<i]
+            skipSpace()
+            guard i < end, tag[i] == UInt8(ascii: "="), !name.isEmpty else { return nil }
+            i += 1
+            skipSpace()
+            guard i < end, tag[i] == UInt8(ascii: "\"") || tag[i] == UInt8(ascii: "'") else { return nil }
+            let q = tag[i]
+            i += 1
+            let valueStart = i
+            while i < end, tag[i] != q { i += 1 }
+            guard i < end else { return nil }
+            if name.elementsEqual("id".utf8) { return tag[valueStart..<i] }
+            i += 1
+        }
+        return nil
+    }
+
+    private static func decodeEntities(_ s: String) -> String {
+        s.replacing(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/) { m in
+            let body = String(m.output.1)
+            switch body {
+            case "amp": return "&"
+            case "lt": return "<"
+            case "gt": return ">"
+            case "quot": return "\""
+            case "apos": return "'"
+            default:
+                let code = body.hasPrefix("#x") ? UInt32(body.dropFirst(2), radix: 16) : UInt32(body.dropFirst())
+                return code.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? String(m.output.0)
+            }
+        }
     }
 
     private static func decodeBase64(_ raw: Data) -> Data? {
         let cleaned = Data(raw.filter { !isXMLSpace($0) })
         guard !cleaned.isEmpty else { return nil }
         return Data(base64Encoded: cleaned)
+    }
+
+    private static func isNameByte(_ b: UInt8) -> Bool {
+        (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A)
+            || b == UInt8(ascii: "_") || b == UInt8(ascii: "-") || b == UInt8(ascii: ".") || b == UInt8(ascii: ":")
     }
 
     private static func isXMLSpace(_ b: UInt8) -> Bool {
