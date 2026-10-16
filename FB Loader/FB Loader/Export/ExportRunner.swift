@@ -1,16 +1,15 @@
 import Foundation
 
 enum ExportRunner {
-    /// Runs entirely on the main actor so `progress` can be mutated without hops.
-    /// Heavy I/O (zip read + file write) is dispatched off-main via `Task.detached`.
-    /// One detached task per book — sequential to keep disk/network thrashing low and
-    /// to match freeLib's behaviour (exportthread.cpp processes books one by one).
+    /// Runs on the main actor so `progress` can be mutated without hops.
+    /// Heavy work (zip read + convert + file write) is one detached task per book — sequential to
+    /// keep disk thrashing low and to match freeLib's behaviour (exportthread.cpp processes books one by one).
     @MainActor
     static func run(items: [ExportItem],
                     exportRoot: URL,
-                    archivesRoot: URL,
-                    library: Library,
-                    progress: ExportProgress) async {
+                    progress: ExportProgress,
+                    converter: any ExportConverter = PassthroughConverter(),
+                    onExported: @escaping @MainActor (Int32) -> Void = { _ in }) async {
         progress.total = items.count
         progress.done = 0
         progress.currentTitle = ""
@@ -31,42 +30,64 @@ enum ExportRunner {
             if progress.cancelled { return }
             progress.currentTitle = item.book.title
 
-            let book = item.book
-            let dest = item.destination
-            let archives = archivesRoot
-            let archiveName = library.archives[Int(book.archiveIndex)] + ".zip"
-
-            // Off-main: open zip, extract bytes, write to disk.
-            let failure: ExportFailure? = await Task.detached(priority: .utility) { () -> ExportFailure? in
-                let archiveURL = archives.appendingPathComponent(archiveName)
-                let data: Data
-                do {
-                    data = try ZipFB2Reader.readFB2(entryName: book.archiveEntryName, archiveURL: archiveURL)
-                } catch {
-                    return ExportFailure(error, stage: .source)
+            let work = Task.detached(priority: .utility) { () throws -> ExportFailure? in
+                try await process(item, converter: converter)
+            }
+            // «Отмена» — флаг на main actor; в отменяемую задачу книги его переносит опрос.
+            let watcher = Task { @MainActor in
+                while !Task.isCancelled {
+                    if progress.cancelled { work.cancel(); return }
+                    try? await Task.sleep(for: .milliseconds(20))
                 }
-                do {
-                    try FileManager.default.createDirectory(
-                        at: dest.deletingLastPathComponent(),
-                        withIntermediateDirectories: true)
-                    try data.write(to: dest, options: .atomic)
-                    return nil
-                } catch {
-                    return ExportFailure(error, stage: .destination)
-                }
-            }.value
+            }
+            let result = await work.result
+            watcher.cancel()
 
-            // Invariant: succeeded/failed/abortReason обновляются ДО `done += 1`,
-            // чтобы `.onChange(of: progress.done)` в родительской вьюхе
-            // видел консистентное состояние при срабатывании.
+            let failure: ExportFailure?
+            switch result {
+            case .success(let value): failure = value
+            case .failure: return
+            }
+
             if let failure {
-                progress.failed.append((book.title, failure.reason))
+                progress.failed.append((item.book.title, failure.reason))
                 if failure.abortsExport { progress.abortReason = failure.reason }
             } else {
-                progress.succeeded.insert(book.libid)
+                progress.succeeded.insert(item.book.libid)
+                onExported(item.book.libid)
             }
             progress.done += 1
             if progress.abortReason != nil { return }
+        }
+    }
+
+    /// Бросает `CancellationError`, если книгу отменили; прочие ошибки возвращает как `ExportFailure`.
+    private nonisolated static func process(_ item: ExportItem,
+                                            converter: any ExportConverter) async throws -> ExportFailure? {
+        let fb2: Data
+        do {
+            fb2 = try ZipFB2Reader.readFB2(entryName: item.book.archiveEntryName, archiveURL: item.archiveURL)
+        } catch {
+            return ExportFailure(error, stage: .source)
+        }
+        try Task.checkCancellation()
+        let converted: Data
+        do {
+            converted = try await converter.convert(fb2, book: item.book)
+        } catch {
+            // Конвертер, прерванный отменой, может бросить любую ошибку.
+            try Task.checkCancellation()
+            return ExportFailure(error, stage: .conversion)
+        }
+        try Task.checkCancellation()
+        do {
+            try FileManager.default.createDirectory(
+                at: item.destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try converted.write(to: item.destination, options: .atomic)
+            return nil
+        } catch {
+            return ExportFailure(error, stage: .destination)
         }
     }
 }
