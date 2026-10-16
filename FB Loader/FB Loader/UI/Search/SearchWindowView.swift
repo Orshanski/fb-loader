@@ -7,6 +7,8 @@ struct SearchWindowView: View {
     let exportSession: ExportSession
     let initialLanguage: String
     let onClose: () -> Void
+    let onOpenAuthor: (Int32, Book) -> Void
+    let onOpenSeries: (Int32, Book) -> Void
     /// 80% главного окна; параметром, а не через `NSApp.mainWindow`: контент sheet'а не знает своего родителя.
     let preferredSize: CGSize
 
@@ -16,13 +18,17 @@ struct SearchWindowView: View {
 
     init(library: Library, archivesRoot: URL?, exportSession: ExportSession, initialLanguage: String,
          preferredSize: CGSize,
-         onClose: @escaping () -> Void) {
+         onClose: @escaping () -> Void,
+         onOpenAuthor: @escaping (Int32, Book) -> Void,
+         onOpenSeries: @escaping (Int32, Book) -> Void) {
         self.library = library
         self.archivesRoot = archivesRoot
         self.exportSession = exportSession
         self.initialLanguage = initialLanguage
         self.preferredSize = preferredSize
         self.onClose = onClose
+        self.onOpenAuthor = onOpenAuthor
+        self.onOpenSeries = onOpenSeries
         _coord = State(initialValue: SearchCoordinator(initialLanguage: initialLanguage))
     }
 
@@ -108,11 +114,8 @@ struct SearchWindowView: View {
             BookDetailView(
                 library: library, archivesRoot: archives, book: book,
                 isCurrentSelection: { coord.selectedBookLibid == book.libid },
-                onSelectAuthor: { _ in
-                    // В sheet навигации по сайдбару нет.
-                },
-                onSelectSeries: { _ in
-                }
+                onSelectAuthor: { aid in onOpenAuthor(aid, book) },
+                onSelectSeries: { sid in onOpenSeries(sid, book) }
             )
                 .frame(maxWidth: .infinity, minHeight: 380, idealHeight: 420)
         } else {

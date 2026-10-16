@@ -89,6 +89,22 @@ final class AppState {
         applyEntitySelection(.genres(id), deepLinkName: nil)
     }
 
+    func openAuthorFromSearch(_ id: Int32, in library: Library, book: Book) {
+        openFromSearch(.authors(id), name: library.author(id: id)?.displayName, book: book)
+    }
+
+    func openSeriesFromSearch(_ id: Int32, in library: Library, book: Book) {
+        openFromSearch(.series(id), name: library.series(id: id)?.name, book: book)
+    }
+
+    /// Выделение книги ставится последним: смена языка его сбрасывает.
+    private func openFromSearch(_ target: SidebarSelection, name: String?, book: Book) {
+        isSearchPresented = false
+        selectLanguage(BooksByContext.languageToken(book.language))
+        applyEntitySelection(target, deepLinkName: name)
+        selectedBookLibid = book.libid
+    }
+
     private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {
         if let name = deepLinkName {
             // Deep-link с прицельным фильтром: превью сохраняется. dateFilter гасится присваиванием, а не

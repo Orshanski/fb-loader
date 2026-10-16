@@ -148,23 +148,32 @@ struct BooksTableRepresentable: NSViewRepresentable {
             checked = newChecked
             if structural {
                 withoutWritingSelection { tableView.reloadData() }
-                syncSelection(of: tableView, to: newSelected)
-                finishStructuralChange(key: newKey, target: newRows.scrollTarget(selectedLibid: newSelected))
+                let external = syncSelection(of: tableView, to: newSelected)
+                scheduleScroll(key: newKey, target: newRows.scrollTarget(selectedLibid: newSelected),
+                               focusTable: external, structural: true)
             } else {
-                syncSelection(of: tableView, to: newSelected)
+                let external = syncSelection(of: tableView, to: newSelected)
+                if external {
+                    scheduleScroll(key: newKey, target: newRows.scrollTarget(selectedLibid: newSelected),
+                                   focusTable: true, structural: false)
+                }
                 if cellsChanged { reloadLiveTitleCells(of: tableView) }
             }
         }
 
         /// После прохода SwiftUI: прокрутка, шапка и hover внутри updateNSView (после «Найти» в поповере даты)
         /// открывали транзакцию CA во время commit. Устаревший ключ пропускается — свой проход уже запланирован.
-        private func finishStructuralChange(key expected: BooksTableKey, target: BookTableRows.ScrollTarget) {
+        private func scheduleScroll(key expected: BooksTableKey, target: BookTableRows.ScrollTarget,
+                                    focusTable: Bool, structural: Bool) {
             DispatchQueue.main.async { [weak self] in
                 guard let self, let tableView, key == expected else { return }
                 scroll(tableView, to: target)
-                if let header = tableView.headerView as? BooksHeaderView { header.dateState = dateHeaderState }
-                tableView.headerView?.needsDisplay = true
-                tableView.updateHoverFromMouse()
+                if focusTable { tableView.window?.makeFirstResponder(tableView) }
+                if structural {
+                    if let header = tableView.headerView as? BooksHeaderView { header.dateState = dateHeaderState }
+                    tableView.headerView?.needsDisplay = true
+                    tableView.updateHoverFromMouse()
+                }
             }
         }
 
@@ -197,16 +206,22 @@ struct BooksTableRepresentable: NSViewRepresentable {
             body()
         }
 
-        func syncSelection(of tableView: NSTableView, to libid: Int32?) {
+        /// Возвращает, поставило ли выделение не пользователь, а модель.
+        @discardableResult
+        func syncSelection(of tableView: NSTableView, to libid: Int32?) -> Bool {
+            var external = false
             withoutWritingSelection {
-                if let libid, let row = rows.row(ofLibid: libid) {
-                    if tableView.selectedRow != row {
+                let row = libid.flatMap { rows.row(ofLibid: $0) }
+                external = selectionChangedExternally(currentRow: tableView.selectedRow, targetRow: row)
+                if let row {
+                    if external {
                         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                     }
                 } else if tableView.selectedRow != -1 {
                     tableView.deselectAll(nil)
                 }
             }
+            return external
         }
 
         func toggleCheck(libid: Int32) {
