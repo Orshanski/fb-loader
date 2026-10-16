@@ -160,6 +160,16 @@ struct ExportFailureTests {
         #expect(!failure.abortsExport)
     }
 
+    @Test("ошибки конвертации: свои поля или общая причина без прерывания")
+    func conversionReasons() {
+        let own = ExportFailure(ExportConversionError(reason: "Нет конвертера", abortsExport: true), stage: .conversion)
+        #expect(own == ExportFailure(reason: "Нет конвертера", abortsExport: true))
+        let soft = ExportFailure(ExportConversionError(reason: "X", abortsExport: false), stage: .conversion)
+        #expect(soft == ExportFailure(reason: "X", abortsExport: false))
+        let other = ExportFailure(NSError(domain: "x", code: 1), stage: .conversion)
+        #expect(other == ExportFailure(reason: "Не удалось преобразовать книгу", abortsExport: false))
+    }
+
     @Test("POSIX-код достаётся из обёртки Cocoa")
     func cocoaWrapped() {
         let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError,
