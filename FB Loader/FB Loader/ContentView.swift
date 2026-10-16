@@ -69,7 +69,7 @@ struct ContentView: View {
             }
             startLoad()
         }
-        .focusedSceneValue(\.openSettings, state.isSettingsPresented ? nil : {
+        .focusedSceneValue(\.openSettings, state.isAnySheetPresented ? nil : {
             state.isSettingsPresented = true
         })
         .sheet(isPresented: $state.isSettingsPresented) {

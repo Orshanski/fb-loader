@@ -16,6 +16,17 @@ struct AppStateTests {
         #expect(s.languageFilter == "ru")
     }
 
+    @Test("isAnySheetPresented: настройки и поиск поднимают флаг, без sheet — ложь")
+    func anySheetPresented() {
+        let s = AppState()
+        #expect(!s.isAnySheetPresented)
+        s.isSearchPresented = true
+        #expect(s.isAnySheetPresented)
+        s.isSearchPresented = false
+        s.isSettingsPresented = true
+        #expect(s.isAnySheetPresented)
+    }
+
     @Test("selectSection — смена case'а сбрасывает per-tab")
     func selectSectionSwitchesCase() {
         let s = AppState()

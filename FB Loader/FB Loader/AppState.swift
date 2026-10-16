@@ -105,6 +105,14 @@ final class AppState {
     /// пункты меню главного окна должны быть неактивны.
     var isSettingsPresented = false
 
+    var isSearchPresented = false
+
+    /// Любой модальный sheet главного окна (настройки, поиск, выбор папки и ход выгрузки):
+    /// пока он открыт, ⌘, не должна открывать ещё один.
+    var isAnySheetPresented: Bool {
+        isSettingsPresented || isSearchPresented || exportSession.isBusy
+    }
+
     func reset() {
         sidebar = .authors(nil)
         selectedBookLibid = nil

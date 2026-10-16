@@ -44,7 +44,7 @@ struct MainWindowCommands: Commands {
                 openSettings?()
             }
             .keyboardShortcut(",", modifiers: .command)
-            .disabled(openSettings == nil || actions?.isAvailable == false)
+            .disabled(openSettings == nil)
         }
         CommandGroup(before: .toolbar) {
             Button(actions?.sidebarVisible == false
