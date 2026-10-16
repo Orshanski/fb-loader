@@ -30,17 +30,7 @@ struct SearchBooksBucketView: View {
                 let b = library.books[m.bookIndex]
                 BookRow(
                     book: b, library: library, indented: false,
-                    isChecked: Binding(
-                        get: { coord.checkedBookLibids.contains(b.libid) },
-                        set: { isOn in
-                            if isOn { coord.checkedBookLibids.insert(b.libid) }
-                            else    { coord.checkedBookLibids.remove(b.libid) }
-                        }
-                    ),
-                    isSelected: Binding(
-                        get: { coord.selectedBookLibid == b.libid },
-                        set: { newValue in if newValue { coord.selectedBookLibid = b.libid } }
-                    ),
+                    coord: coord,
                     contextMenuBuilder: {
                         AnyView(
                             SearchExportMenu(checkedCount: coord.checkedBookLibids.count,

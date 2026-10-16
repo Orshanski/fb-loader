@@ -13,6 +13,16 @@ struct BookRow: View {
     /// `AnyView`, чтобы вызывающие стирали тип своего меню; `nil` — без меню.
     var contextMenuBuilder: (() -> AnyView)? = nil
 
+    init(book: Book, library: Library, indented: Bool, coord: SearchCoordinator,
+         contextMenuBuilder: (() -> AnyView)? = nil) {
+        self.book = book
+        self.library = library
+        self.indented = indented
+        _isChecked = coord.bindingChecked(book)
+        _isSelected = coord.bindingSelected(book)
+        self.contextMenuBuilder = contextMenuBuilder
+    }
+
     @Environment(\.bookTableColumns) private var columns
     @State private var hovered = false
 

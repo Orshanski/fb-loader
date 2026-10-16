@@ -185,14 +185,7 @@ struct BookDetailView: View {
     }
 
     private func translatorsButtonLabel(count: Int) -> String {
-        let mod10 = count % 10
-        let mod100 = count % 100
-        let word: String
-        if mod100 >= 11 && mod100 <= 14 { word = "переводчиков" }
-        else if mod10 == 1 { word = "переводчик" }
-        else if mod10 >= 2 && mod10 <= 4 { word = "переводчика" }
-        else { word = "переводчиков" }
-        return "\(count) \(word)"
+        russianPlural(count, one: "переводчик", few: "переводчика", many: "переводчиков")
     }
 
     private func translatorsString(_ triples: [INPAuthorParser.Triple]) -> String {

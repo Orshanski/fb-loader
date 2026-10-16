@@ -50,12 +50,12 @@ struct SearchAuthorBlock: View {
                                             language: coord.languageFilter,
                                             in: library)
         let visibleBooks = fullyExpanded ? allBooks : Array(allBooks.prefix(defaultBooksLimit))
-        let (loose, bySeries) = groupBooks(visibleBooks)
-        ForEach(Array(loose.enumerated()), id: \.element.libid) { _, b in
+        let (loose, bySeries) = BookGrouping.group(visibleBooks, library: library)
+        ForEach(loose, id: \.libid) { b in
             row(for: b, indented: false)
         }
-        ForEach(bySeries, id: \.seriesID) { group in
-            seriesSubHeader(name: group.seriesName, count: group.books.count)
+        ForEach(bySeries, id: \.series.id) { group in
+            seriesSubHeader(name: group.series.name, count: group.books.count)
             ForEach(group.books, id: \.libid) { b in
                 row(for: b, indented: true)
             }
@@ -73,8 +73,7 @@ struct SearchAuthorBlock: View {
     private func row(for b: Book, indented: Bool) -> some View {
         BookRow(
             book: b, library: library, indented: indented,
-            isChecked: coord.bindingChecked(b),
-            isSelected: coord.bindingSelected(b),
+            coord: coord,
             contextMenuBuilder: { exportContextMenu() }
         )
     }
@@ -95,29 +94,5 @@ struct SearchAuthorBlock: View {
         .padding(.horizontal, 30)
         .padding(.top, 6)
         .padding(.bottom, 2)
-    }
-
-    private struct SeriesGroup { let seriesID: Int32; let seriesName: String; let books: [Book] }
-
-    private func groupBooks(_ books: [Book]) -> (loose: [Book], series: [SeriesGroup]) {
-        var loose: [Book] = []
-        var bySeries: [Int32: [Book]] = [:]
-        for b in books {
-            if let sid = b.seriesID { bySeries[sid, default: []].append(b) }
-            else { loose.append(b) }
-        }
-        let groups: [SeriesGroup] = bySeries
-            .sorted { (library.series(id: $0.key)?.name ?? "") < (library.series(id: $1.key)?.name ?? "") }
-            .map { (sid, items) in
-                let s = library.series(id: sid)
-                return SeriesGroup(
-                    seriesID: sid,
-                    seriesName: s?.name ?? "?",
-                    books: items.sorted {
-                        ($0.seriesNum ?? Int16.max) < ($1.seriesNum ?? Int16.max)
-                    }
-                )
-            }
-        return (loose, groups)
     }
 }

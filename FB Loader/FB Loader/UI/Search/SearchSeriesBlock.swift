@@ -68,16 +68,6 @@ struct SearchSeriesBlock: View {
         }
     }
 
-    private func booksCountLabel(_ n: Int) -> String {
-        let mod10 = n % 10
-        let mod100 = n % 100
-        let word: String
-        if mod100 >= 11 && mod100 <= 14 { word = "книг" }
-        else if mod10 == 1 { word = "книга" }
-        else if mod10 >= 2 && mod10 <= 4 { word = "книги" }
-        else { word = "книг" }
-        return "\(n) \(word)"
-    }
 
     @ViewBuilder
     private var booksList: some View {
@@ -86,8 +76,7 @@ struct SearchSeriesBlock: View {
         ForEach(visibleBooks, id: \.libid) { b in
             BookRow(
                 book: b, library: library, indented: true,
-                isChecked: coord.bindingChecked(b),
-                isSelected: coord.bindingSelected(b),
+                coord: coord,
                 contextMenuBuilder: { exportContextMenu() }
             )
         }
