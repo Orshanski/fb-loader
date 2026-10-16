@@ -67,7 +67,7 @@ cross-section и same-section.
 
 ### Не трогается ни в одном сценарии
 
-`languageFilter`, `exportProgress`, `userPaths`, `stage`.
+`languageFilter`, `exportSession`, `userPaths`, `stage`.
 
 ## API в AppState
 
