@@ -157,6 +157,7 @@ struct MainWindowView: View {
         let items = ExportPlanner.plan(
             libids: state.checkedBookLibids,
             rootFolder: folder,
+            archivesRoot: archives,
             selectedAuthorID: authorID,
             selectedSeriesID: seriesID,
             in: library)

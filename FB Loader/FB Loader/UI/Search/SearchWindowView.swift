@@ -167,6 +167,7 @@ struct SearchWindowView: View {
         let items = ExportPlanner.plan(
             libids: coord.checkedBookLibids,
             rootFolder: folder,
+            archivesRoot: archives,
             selectedAuthorID: nil,
             selectedSeriesID: nil,
             in: library

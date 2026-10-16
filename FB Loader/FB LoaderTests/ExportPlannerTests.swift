@@ -4,6 +4,8 @@ import Foundation
 
 @Suite("ExportPlanner")
 struct ExportPlannerTests {
+    private let arch = URL(fileURLWithPath: "/archives", isDirectory: true)
+
     private func miniLibrary() -> Library {
         let authors = [
             Author.unknown,
@@ -30,7 +32,7 @@ struct ExportPlannerTests {
     func selectedAuthor() {
         let lib = miniLibrary()
         let plan = ExportPlanner.plan(libids: [200], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
-                                      selectedAuthorID: 2, selectedSeriesID: nil, in: lib)
+                                      archivesRoot: arch, selectedAuthorID: 2, selectedSeriesID: nil, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("Дяченко Марина/Рубеж.fb2") ?? false)
     }
 
@@ -38,7 +40,7 @@ struct ExportPlannerTests {
     func firstAuthorFallback() {
         let lib = miniLibrary()
         let plan = ExportPlanner.plan(libids: [200], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
-                                      selectedAuthorID: nil, selectedSeriesID: 1, in: lib)
+                                      archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: 1, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("Олди Генри Лайон/Рубеж.fb2") ?? false)
     }
 
@@ -46,7 +48,7 @@ struct ExportPlannerTests {
     func unknownAuthor() {
         let lib = miniLibrary()
         let plan = ExportPlanner.plan(libids: [300], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
-                                      selectedAuthorID: nil, selectedSeriesID: nil, in: lib)
+                                      archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil, in: lib)
         #expect(plan.first?.destination.path.hasSuffix("(Без автора)/Без авторов.fb2") ?? false)
     }
 
@@ -54,7 +56,7 @@ struct ExportPlannerTests {
     func sanitization() {
         let lib = miniLibrary()
         let plan = ExportPlanner.plan(libids: [100], rootFolder: FileManager.default.temporaryDirectory.appendingPathComponent("export"),
-                                      selectedAuthorID: 1, selectedSeriesID: nil, in: lib)
+                                      archivesRoot: arch, selectedAuthorID: 1, selectedSeriesID: nil, in: lib)
         let path = plan.first!.destination.path
         let filename = (path as NSString).lastPathComponent
         #expect(!filename.contains(":"))
@@ -81,7 +83,7 @@ struct ExportPlannerTests {
     @Test("длинное кириллическое название укладывается в 255 байт без разрыва графем")
     func longCyrillicTitleFitsByteLimit() {
         let title = String(repeating: "й", count: 150) + String(repeating: "ё\u{0301}", count: 50)
-        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil,
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil,
                                       selectedSeriesID: nil, in: library(titles: [(1, title, 0)]))
         let name = plan[0].destination.lastPathComponent
         #expect(name.hasSuffix(".fb2"))
@@ -91,7 +93,7 @@ struct ExportPlannerTests {
 
     @Test("длинное имя автора укладывается в 255 байт")
     func longAuthorFitsByteLimit() {
-        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, "Т", 0)], authorName: String(repeating: "Щ", count: 300)))
         let folder = plan[0].destination.deletingLastPathComponent().lastPathComponent
         #expect(folder.decomposedStringWithCanonicalMapping.utf8.count <= 255)
@@ -103,7 +105,7 @@ struct ExportPlannerTests {
                       ("  .  ", "_.fb2"), ("../etc", "___etc.fb2"), ("a\u{0}b\nc", "a_b_c.fb2"),
                       ("a\u{202E}b\u{200B}c\u{2028}d", "a_b_c_d.fb2")])
     func hiddenAndEscapingTitles(title: String, expected: String) {
-        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil,
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil,
                                       selectedSeriesID: nil, in: library(titles: [(1, title, 0)]))
         #expect(names(plan) == [expected])
     }
@@ -111,7 +113,7 @@ struct ExportPlannerTests {
     @Test("папка «..» и пустая папка остаются внутри корня",
           arguments: [("..", "__"), ("", "(Без автора)"), (".", "_")])
     func escapingFolder(author: String, expected: String) {
-        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, "Т", 0)], authorName: author))
         let folder = plan[0].destination.deletingLastPathComponent()
         #expect(folder.lastPathComponent == expected)
@@ -123,7 +125,7 @@ struct ExportPlannerTests {
         let lib = library(titles: [(30, "Война и мир", 0), (10, "ВОЙНА И МИР", 1),
                                    (20, "война и мир", 0), (40, "Анна", 0)])
         for _ in 0..<5 {
-            let plan = ExportPlanner.plan(libids: [10, 20, 30, 40], rootFolder: root, selectedAuthorID: nil,
+            let plan = ExportPlanner.plan(libids: [10, 20, 30, 40], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil,
                                           selectedSeriesID: nil, in: lib)
             #expect(plan.map(\.book.libid) == [20, 30, 40, 10])
             #expect(names(plan) == ["война и мир.fb2", "Война и мир (2).fb2", "Анна.fb2", "ВОЙНА И МИР (3).fb2"])
@@ -132,7 +134,7 @@ struct ExportPlannerTests {
 
     @Test("суффикс не совпадает с натуральным именем другой книги")
     func suffixDoesNotOverwriteNaturalName() {
-        let plan = ExportPlanner.plan(libids: [1, 2, 3], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+        let plan = ExportPlanner.plan(libids: [1, 2, 3], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, "А", 0), (2, "А", 0), (3, "А (2)", 0)]))
         #expect(Set(plan.map(\.destination)).count == 3)
         #expect(names(plan) == ["А.fb2", "А (2).fb2", "А (2) (2).fb2"])
@@ -140,7 +142,7 @@ struct ExportPlannerTests {
 
     @Test("синглтоны вне NFD (U+212A) считаются по фактическим байтам")
     func singletonByteCount() {
-        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+        let plan = ExportPlanner.plan(libids: [1], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, String(repeating: "\u{212A}", count: 100), 0)]))
         #expect(plan[0].destination.lastPathComponent.utf8.count <= 255)
     }
@@ -148,11 +150,43 @@ struct ExportPlannerTests {
     @Test("суффикс коллизии не выводит имя за лимит байт")
     func collisionSuffixRespectsByteLimit() {
         let title = String(repeating: "ж", count: 200)
-        let plan = ExportPlanner.plan(libids: [1, 2], rootFolder: root, selectedAuthorID: nil, selectedSeriesID: nil,
+        let plan = ExportPlanner.plan(libids: [1, 2], rootFolder: root, archivesRoot: arch, selectedAuthorID: nil, selectedSeriesID: nil,
                                       in: library(titles: [(1, title, 0), (2, title, 0)]))
         let second = plan[1].destination.lastPathComponent
         #expect(second.hasSuffix(" (2).fb2"))
         #expect(second.utf8.count <= 255)
         #expect(plan[0].destination != plan[1].destination)
+    }
+
+    @Test("формат задаёт расширение и суффиксы коллизий; archiveURL — архив книги")
+    func formatExtension() {
+        let lib = library(titles: [(1, "А", 0), (2, "А", 0), (3, "Рубеж", 1)])
+        let plan = ExportPlanner.plan(libids: [1, 2, 3], rootFolder: root, archivesRoot: arch,
+                                      selectedAuthorID: nil, selectedSeriesID: nil,
+                                      format: ExportFormat(fileExtension: "epub"), in: lib)
+        #expect(names(plan) == ["А.epub", "А (2).epub", "Рубеж.epub"])
+        #expect(plan.map(\.archiveURL) == [arch.appendingPathComponent("a.zip"),
+                                           arch.appendingPathComponent("a.zip"),
+                                           arch.appendingPathComponent("b.zip")])
+    }
+
+    @Test("101 книга с одним длинным названием: у сотой суффикс (100), имена до 255 байт")
+    func manyCollisionsLongTitle() {
+        let title = String(repeating: "ж", count: 200)
+        let lib = library(titles: (1...101).map { (Int32($0), title, 0) })
+        let plan = ExportPlanner.plan(libids: Set(lib.books.map(\.libid)), rootFolder: root, archivesRoot: arch,
+                                      selectedAuthorID: nil, selectedSeriesID: nil,
+                                      format: ExportFormat(fileExtension: "epub"), in: lib)
+        #expect(plan[99].destination.lastPathComponent.hasSuffix(" (100).epub"))
+        #expect(Set(plan.map(\.destination)).count == 101)
+        for item in plan {
+            #expect(item.destination.lastPathComponent.decomposedStringWithCanonicalMapping.utf8.count <= 255)
+        }
+    }
+
+    @Test("лимит имени зависит от расширения; для fb2 — 240")
+    func limitByExtension() {
+        #expect(ExportPlanner.limit("fb2") == 240)
+        #expect(ExportPlanner.limit("epub") == 239)
     }
 }

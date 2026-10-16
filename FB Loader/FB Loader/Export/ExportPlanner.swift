@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated struct ExportItem {
     let book: Book
-    let archiveURL: URL?       // nil if archivesRoot not provided yet (UI sets later)
+    let archiveURL: URL
     let destination: URL
 }
 
@@ -11,12 +11,18 @@ nonisolated enum ExportPlanner {
     private static let forbidden: Set<Character> = [":", "/", "\\", "?", "*", "<", ">", "|", "\""]
     /// APFS NAME_MAX — 255 байт UTF-8; запас под « (NN)» и «.fb2».
     static let nameByteLimit = 240
-    private static let fileExtension = ".fb2"
+
+    /// 11 — запас под « (NN…)»; остальное — точка и расширение.
+    static func limit(_ fileExtension: String) -> Int {
+        255 - 11 - (1 + fileExtension.utf8.count)
+    }
 
     static func plan(libids: Set<Int32>,
                      rootFolder: URL,
+                     archivesRoot: URL,
                      selectedAuthorID: Int32?,
                      selectedSeriesID: Int32?,
+                     format: ExportFormat = .fb2,
                      in library: Library) -> [ExportItem] {
         // Use the precomputed indices on Library — building a fresh
         // 700k-entry Dictionary on every export was the original cost here.
@@ -27,6 +33,8 @@ nonisolated enum ExportPlanner {
         _ = selectedSeriesID
         let books = libids.compactMap { library.book(libid: $0) }
             .sorted { ($0.archiveIndex, $0.libid) < ($1.archiveIndex, $1.libid) }
+        let ext = "." + format.fileExtension
+        let titleLimit = limit(format.fileExtension)
         var used: Set<String> = []
         return books.map { book in
             let folderName = folderName(for: book,
@@ -34,18 +42,20 @@ nonisolated enum ExportPlanner {
                                         library: library)
             let folder = rootFolder.appendingPathComponent(
                 sanitized(folderName, fallback: Author.unknown.displayName), isDirectory: true)
-            let title = sanitized(book.title)
-            var dest = folder.appendingPathComponent(title + fileExtension)
+            let title = sanitized(book.title, limit: titleLimit)
+            var dest = folder.appendingPathComponent(title + ext)
             var n = 2
             // APFS по умолчанию не различает регистр и форму нормализации.
             while !used.insert(dest.path.decomposedStringWithCanonicalMapping
                 .folding(options: [.caseInsensitive], locale: nil)).inserted {
                 let suffix = " (\(n))"
-                let base = truncated(title, toBytes: nameByteLimit - byteCount(suffix))
-                dest = folder.appendingPathComponent(base + suffix + fileExtension)
+                let base = truncated(title, toBytes: titleLimit - byteCount(suffix))
+                dest = folder.appendingPathComponent(base + suffix + ext)
                 n += 1
             }
-            return ExportItem(book: book, archiveURL: nil, destination: dest)
+            return ExportItem(book: book,
+                              archiveURL: archivesRoot.appendingPathComponent(library.archives[Int(book.archiveIndex)] + ".zip"),
+                              destination: dest)
         }
     }
 
@@ -68,7 +78,7 @@ nonisolated enum ExportPlanner {
     private static let replacedCategories: Set<Unicode.GeneralCategory> =
         [.control, .format, .lineSeparator, .paragraphSeparator]
 
-    static func sanitized(_ name: String, fallback: String = "_") -> String {
+    static func sanitized(_ name: String, fallback: String = "_", limit: Int = nameByteLimit) -> String {
         let replaced = String(name.map { ch in
             forbidden.contains(ch)
                 || ch.unicodeScalars.contains { replacedCategories.contains($0.properties.generalCategory) }
@@ -77,7 +87,7 @@ nonisolated enum ExportPlanner {
         var s = Substring(replaced.trimmingCharacters(in: .whitespacesAndNewlines))
         let dots = s.prefix { $0 == "." }.count
         s = String(repeating: "_", count: dots) + s.dropFirst(dots)
-        let result = truncated(String(s), toBytes: nameByteLimit)
+        let result = truncated(String(s), toBytes: limit)
         return result.isEmpty ? fallback : result
     }
 
