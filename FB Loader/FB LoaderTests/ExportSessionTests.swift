@@ -8,12 +8,14 @@ final class ExportSessionTests {
     private let dir: URL
     private let archivesRoot: URL
     private let paths: UserPaths
+    private let suiteName = "FB_Loader.test.\(UUID())"
     private let library: Library
 
     private struct RunCall {
         let items: [ExportItem]
         let root: URL
         let progress: ExportProgress
+        let converter: any ExportConverter
         let onExported: @MainActor (Int32) -> Void
     }
 
@@ -22,6 +24,7 @@ final class ExportSessionTests {
         var chosen: URL?
         var runCalls: [RunCall] = []
         var madeFormats: [ExportFormat] = []
+        let marker = MarkerConverter()
         var released = false
         var continuation: CheckedContinuation<Void, Never>?
         func release() { released = true; continuation?.resume(); continuation = nil }
@@ -33,9 +36,18 @@ final class ExportSessionTests {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         archivesRoot = dir.appendingPathComponent("archives", isDirectory: true)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("out"), withIntermediateDirectories: true)
-        paths = UserPaths(defaults: UserDefaults(suiteName: "FB_Loader.test.\(UUID())")!)
+        paths = UserPaths(defaults: UserDefaults(suiteName: suiteName)!)
         paths.archivesDirectoryURL = archivesRoot
         h.chosen = dir.appendingPathComponent("out")
+        library = Self.makeLibrary()
+    }
+
+    deinit {
+        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    private static func makeLibrary() -> Library {
         let authors = [Author.unknown, Author(id: 1, lastName: "Толстой", firstName: "Лев", middleName: ""),
                        Author(id: 2, lastName: "Дяченко", firstName: "Марина", middleName: "")]
         let books = [
@@ -44,20 +56,19 @@ final class ExportSessionTests {
             Book(libid: 2, title: "Мир", authorIDs: [1, 2], seriesID: nil, seriesNum: nil, genreIDs: [],
                  language: "ru", archiveIndex: 1, size: 0, dateAdded: nil),
         ]
-        library = Library(inpxHash: Data(count: 32), inpxVersion: "v", archives: ["fb2-001", "fb2-002"],
+        return Library(inpxHash: Data(count: 32), inpxVersion: "v", archives: ["fb2-001", "fb2-002"],
                           authors: authors, series: [], genres: [], books: books)
     }
-
-    deinit { try? FileManager.default.removeItem(at: dir) }
 
     private func makeSession() -> ExportSession {
         let h = h
         return ExportSession(
             userPaths: paths,
             chooseFolder: { initial in h.chooseCalls.append(initial); return h.chosen },
-            makeConverter: { format in h.madeFormats.append(format); return PassthroughConverter() },
-            run: { items, root, progress, _, onExported in
-                h.runCalls.append(RunCall(items: items, root: root, progress: progress, onExported: onExported))
+            makeConverter: { format in h.madeFormats.append(format); return h.marker },
+            run: { items, root, progress, converter, onExported in
+                h.runCalls.append(RunCall(items: items, root: root, progress: progress,
+                                          converter: converter, onExported: onExported))
                 if !h.released { await withCheckedContinuation { h.continuation = $0 } }
             })
     }
@@ -163,7 +174,25 @@ final class ExportSessionTests {
         let task = await s.start(request([1], format: epub))
         while h.runCalls.isEmpty { await Task.yield() }
         #expect(h.madeFormats == [epub])
+        #expect((h.runCalls[0].converter as? MarkerConverter) === h.marker)
         #expect(h.runCalls[0].items[0].destination.pathExtension == "epub")
+        await finish(task)
+    }
+
+    @Test("после планирования сессия не держит Library")
+    func doesNotRetainLibrary() async {
+        let s = makeSession()
+        weak var weakLibrary: Library?
+        var task: Task<Void, Never>?
+        do {
+            let lib = Self.makeLibrary()
+            weakLibrary = lib
+            task = await s.start(ExportRequest(libids: [1], library: lib, selectedAuthorID: nil,
+                                               selectedSeriesID: nil, format: .fb2, origin: .main,
+                                               uncheck: { _ in }))
+        }
+        while h.runCalls.isEmpty { await Task.yield() }
+        #expect(weakLibrary == nil)
         await finish(task)
     }
 
@@ -256,4 +285,8 @@ final class ExportSessionTests {
         #expect(unchecked == [7])
         await finish(task)
     }
+}
+
+final class MarkerConverter: ExportConverter {
+    @concurrent func convert(_ fb2: Data, book: Book) async throws -> Data { fb2 }
 }

@@ -33,6 +33,7 @@
 | `UI/Search/SearchWindowView.swift` | параметр `exportSession`; `runExport`, `@State exportProgress`, `ProgressIdentifier`, `.onExportProgress` удаляются; sheet прогресса — через сессию |
 | `UI/Search/SearchResultListView.swift` | параметр `exportSession`, передаётся в три блока |
 | `UI/Search/SearchAuthorBlock.swift`, `SearchSeriesBlock.swift`, `SearchBooksBucketView.swift` | параметр `exportSession`; пункт меню учитывает `isBusy` |
+| `UI/Search/SearchExportMenu.swift` (новый) | общий пункт меню «Выгрузить отмеченные (N)» / неактивный «Выгрузка ещё идёт…» для трёх блоков |
 | `UI/BooksTable/BooksTableView.swift` | `ExportAction.isAvailable` |
 | `UI/BooksTable/BooksTableRepresentable.swift` | пункт меню учитывает `isAvailable` |
 

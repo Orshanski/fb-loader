@@ -13,7 +13,6 @@ struct ExportRequest {
     let uncheck: @MainActor (Int32) -> Void
 }
 
-/// Одна выгрузка на приложение: выбор папки, планирование и запуск runner'а.
 @MainActor @Observable
 final class ExportSession {
     enum Phase: Equatable { case idle, choosingFolder, running }

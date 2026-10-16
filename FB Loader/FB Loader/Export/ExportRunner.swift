@@ -32,15 +32,9 @@ enum ExportRunner {
             let work = Task.detached(priority: .utility) { () throws -> ExportFailure? in
                 try await process(item, converter: converter)
             }
-            // «Отмена» — флаг на main actor; в отменяемую задачу книги его переносит опрос.
-            let watcher = Task { @MainActor in
-                while !Task.isCancelled {
-                    if progress.cancelled { work.cancel(); return }
-                    try? await Task.sleep(for: .milliseconds(20))
-                }
-            }
+            progress.currentWork = work
             let result = await work.result
-            watcher.cancel()
+            progress.currentWork = nil
 
             let failure: ExportFailure?
             switch result {
@@ -60,7 +54,7 @@ enum ExportRunner {
     }
 
     /// Бросает `CancellationError`, если книгу отменили; прочие ошибки возвращает как `ExportFailure`.
-    private nonisolated static func process(_ item: ExportItem,
+    @concurrent private static func process(_ item: ExportItem,
                                             converter: any ExportConverter) async throws -> ExportFailure? {
         let fb2: Data
         do {

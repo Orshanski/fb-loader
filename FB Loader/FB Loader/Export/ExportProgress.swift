@@ -10,7 +10,11 @@ final class ExportProgress: Identifiable {
     var total: Int = 0
     var done: Int = 0
     var currentTitle: String = ""
-    var cancelled: Bool = false
+    /// Отмена должна дойти до задачи текущей книги сразу, а не на следующем тике.
+    var cancelled: Bool = false {
+        didSet { if cancelled { currentWork?.cancel() } }
+    }
+    @ObservationIgnored var currentWork: Task<ExportFailure?, any Error>?
     var failed: [(title: String, error: String)] = []
     var abortReason: String? = nil
 }

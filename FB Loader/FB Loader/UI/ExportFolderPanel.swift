@@ -1,7 +1,6 @@
 import AppKit
 
 enum ExportFolderPanel {
-    /// Панель — sheet ключевого окна; без ключевого окна — отдельное окно.
     @MainActor
     static func choose(initial: URL?) async -> URL? {
         let panel = NSOpenPanel()

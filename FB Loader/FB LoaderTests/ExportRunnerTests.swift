@@ -181,7 +181,7 @@ final class ExportRunnerTests {
         let progress = ExportProgress()
         let lib = try library([(1, "a", 0)])
         let task = Task { await run(lib, converter: stub, progress: progress) }
-        while stub.callCount == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        for await _ in stub.entered { break }
         progress.cancelled = true
         let (_, exported) = await task.value
         #expect(stub.sawCancellation)
@@ -265,8 +265,15 @@ nonisolated final class StubConverter: ExportConverter, @unchecked Sendable {
     private let lock = NSLock()
     private var _inputs: [Data] = []
     private var _sawCancellation = false
+    private var cancelFlag = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    let entered: AsyncStream<Void>
+    private let enteredContinuation: AsyncStream<Void>.Continuation
 
-    init(_ mode: Mode) { self.mode = mode }
+    init(_ mode: Mode) {
+        self.mode = mode
+        (entered, enteredContinuation) = AsyncStream.makeStream()
+    }
 
     var inputs: [Data] { lock.withLock { _inputs } }
     var callCount: Int { inputs.count }
@@ -274,6 +281,7 @@ nonisolated final class StubConverter: ExportConverter, @unchecked Sendable {
 
     @concurrent func convert(_ fb2: Data, book: Book) async throws -> Data {
         let n = lock.withLock { _inputs.append(fb2); return _inputs.count }
+        enteredContinuation.yield()
         switch mode {
         case .data(let d): return d
         case .fail(let e): throw e
@@ -281,8 +289,24 @@ nonisolated final class StubConverter: ExportConverter, @unchecked Sendable {
             if n == 1 { throw e }
             return fb2
         case .waitForCancel:
-            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
-            lock.withLock { _sawCancellation = true }
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    let resumeNow = lock.withLock {
+                        if cancelFlag { return true }
+                        waiter = c
+                        return false
+                    }
+                    if resumeNow { c.resume() }
+                }
+            } onCancel: {
+                let c = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                    cancelFlag = true
+                    defer { waiter = nil }
+                    return waiter
+                }
+                c?.resume()
+            }
+            lock.withLock { _sawCancellation = Task.isCancelled }
             throw CancellationError()
         }
     }

@@ -9,7 +9,7 @@ nonisolated struct ExportItem {
 nonisolated enum ExportPlanner {
     /// Forbidden in HFS+/APFS filenames or commonly problematic across tools.
     private static let forbidden: Set<Character> = [":", "/", "\\", "?", "*", "<", ">", "|", "\""]
-    /// APFS NAME_MAX — 255 байт UTF-8; запас под « (NN)» и «.fb2».
+    /// Лимит имени папки; для файла — `limit(_:)`.
     static let nameByteLimit = 240
 
     /// 11 — запас под « (NN…)»; остальное — точка и расширение.
