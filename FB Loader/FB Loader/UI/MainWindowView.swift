@@ -75,7 +75,15 @@ struct MainWindowView: View {
                 exportSession: state.exportSession,
                 initialLanguage: state.languageFilter,
                 preferredSize: searchSheetSize(),
-                onClose: { state.isSearchPresented = false }
+                onClose: { state.isSearchPresented = false },
+                onOpenAuthor: { aid, book in
+                    state.openFromSearch(.authors(aid), name: library.author(id: aid)?.displayName,
+                                         libid: book.libid, language: book.language)
+                },
+                onOpenSeries: { sid, book in
+                    state.openFromSearch(.series(sid), name: library.series(id: sid)?.name,
+                                         libid: book.libid, language: book.language)
+                }
             )
         }
         .toolbar {

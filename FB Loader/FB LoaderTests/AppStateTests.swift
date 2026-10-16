@@ -233,6 +233,51 @@ struct AppStateTests {
         #expect(s.selectedBookLibid == 7)
     }
 
+    @Test("переход из поиска к автору: поиск закрыт, автор и фильтр выставлены, книга выделена")
+    func openFromSearchAuthor() {
+        let s = AppState()
+        s.isSearchPresented = true
+        s.selectedBookLibid = 3
+        s.checkedBookLibids = [1]
+
+        s.openFromSearch(.authors(42), name: "Иванов", libid: 7, language: "ru")
+
+        #expect(!s.isSearchPresented)
+        #expect(s.sidebar == .authors(42))
+        #expect(s.sidebarFilter == "Иванов")
+        #expect(s.selectedBookLibid == 7)
+        #expect(s.checkedBookLibids.isEmpty)
+        #expect(s.languageFilter == "ru")
+    }
+
+    @Test("переход из поиска к серии: серия и фильтр выставлены, книга выделена")
+    func openFromSearchSeries() {
+        let s = AppState()
+        s.isSearchPresented = true
+
+        s.openFromSearch(.series(55), name: "Ахейский цикл", libid: 7, language: "ru")
+
+        #expect(!s.isSearchPresented)
+        #expect(s.sidebar == .series(55))
+        #expect(s.sidebarFilter == "Ахейский цикл")
+        #expect(s.selectedBookLibid == 7)
+    }
+
+    @Test("переход из поиска: другой язык книги переключает язык главного окна, выделение переживает")
+    func openFromSearchSwitchesLanguage() {
+        let s = AppState()
+        s.isSearchPresented = true
+        s.selectedBookLibid = 3
+        s.checkedBookLibids = [1]
+
+        s.openFromSearch(.authors(42), name: "Smith", libid: 7, language: "en")
+
+        #expect(s.languageFilter == "en")
+        #expect(s.sidebar == .authors(42))
+        #expect(s.selectedBookLibid == 7)
+        #expect(s.checkedBookLibids.isEmpty)
+    }
+
     @Test("selectGenre — без имени, как клик в списке")
     func selectGenreClickInList() {
         let s = AppState()

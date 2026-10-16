@@ -89,6 +89,15 @@ final class AppState {
         applyEntitySelection(.genres(id), deepLinkName: nil)
     }
 
+    /// Переход из карточки окна поиска: тот же deep-link, что у карточки главного окна, плюс язык книги.
+    /// Выделение книги ставится последним — смена языка его сбрасывает.
+    func openFromSearch(_ target: SidebarSelection, name: String?, libid: Int32, language: String) {
+        isSearchPresented = false
+        selectLanguage(language)
+        applyEntitySelection(target, deepLinkName: name)
+        selectedBookLibid = libid
+    }
+
     private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {
         if let name = deepLinkName {
             // Deep-link с прицельным фильтром: превью сохраняется. dateFilter гасится присваиванием, а не
