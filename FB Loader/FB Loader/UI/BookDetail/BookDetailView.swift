@@ -68,17 +68,19 @@ struct BookDetailView: View {
     private var cover: some View {
         Group {
             if let img = coverImage {
+                // Вписывается целиком: обрезка под рамку срезала имя автора и подзаголовок.
                 Image(nsImage: img)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
             } else {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.secondary.opacity(0.15))
+                    .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
             }
         }
-        .frame(width: 150, height: 218)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
+        .frame(width: 150, height: 218, alignment: .top)
     }
 
     private var titleAndMeta: some View {
