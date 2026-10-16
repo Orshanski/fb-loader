@@ -255,7 +255,7 @@ struct BookDetailView: View {
         let lib = library
         let root = archivesRoot
         let b = book
-        let cache = try? CoverCache()
+        let cache = CoverCache.shared
         await runDetachedCancellable(priority: .utility) {
             let t0 = ContinuousClock.now
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
