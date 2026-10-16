@@ -32,6 +32,7 @@ where Item.ID: Hashable & Sendable {
     @Environment(\.sidebarMemory) private var memory
     @State private var filtered: [Item] = []
     @State private var computedKey: String?
+    @State private var started = false
 
     var body: some View {
         LazyListTable(
@@ -41,22 +42,23 @@ where Item.ID: Hashable & Sendable {
             trailingLabelFor: trailingLabelFor,
             rowStyleFor: rowStyleFor,
             scrollMemory: memory,
-            scrollKey: memoryKey
+            scrollKey: memoryKey,
+            scrollFilterKey: filterKey
         )
         .task(id: filterKey) { await reloadFilter() }
     }
 
-    /// 150 ms quiet window before scanning so rapid typing doesn't spawn
-    /// N concurrent filter tasks; `.task(id:)` already handles cancel-and-
-    /// restart on input change.
+    /// Первый расчёт идёт без паузы, чтобы список не был пуст при показе раздела. Все следующие ждут 150 мс:
+    /// `.task(id:)` отменяет предыдущую задачу, а отмена доходит и до фонового скана, так что сканы не копятся.
     private func reloadFilter() async {
+        let first = !started
+        started = true
         if computedKey == nil, let cached = memory?.items(Item.self, filterKey: filterKey, for: memoryKey) {
             filtered = cached
             computedKey = filterKey
             return
         }
-        // Первый расчёт без паузы: иначе список пуст 150 мс при каждом показе раздела.
-        if computedKey != nil {
+        if !first {
             try? await Task.sleep(for: .milliseconds(150))
             if Task.isCancelled { return }
         }
@@ -66,10 +68,11 @@ where Item.ID: Hashable & Sendable {
         let names = lowercasedNames
         let count = countFor
         let includeZeroCountItem = includeZeroCountItem
-        let result: [Item] = await Task.detached(priority: .userInitiated) {
+        let scan = Task.detached(priority: .userInitiated) { () -> [Item]? in
             var out: [Item] = []
             out.reserveCapacity(64)
             for i in items.indices {
+                if i & 0xFFF == 0, Task.isCancelled { return nil }
                 let item = items[i]
                 let itemCount = count(item)
                 if itemCount > 0 && pattern.matches(names[i]) {
@@ -82,8 +85,9 @@ where Item.ID: Hashable & Sendable {
                 out.append(item)
             }
             return out
-        }.value
-        if Task.isCancelled { return }
+        }
+        let scanned = await withTaskCancellationHandler { await scan.value } onCancel: { scan.cancel() }
+        guard let result = scanned, !Task.isCancelled else { return }
         filtered = result
         computedKey = filterKey
         memory?.store(result, filterKey: filterKey, for: memoryKey)

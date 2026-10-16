@@ -262,6 +262,20 @@ final class ExportSessionTests {
         #expect(s.progress === p)
     }
 
+    @Test("isPresentingUI: выбор папки, выгрузка и показанный итог — да; после закрытия итога — нет")
+    func presentingUI() async {
+        let s = makeSession()
+        #expect(!s.isPresentingUI)
+        let task = await s.start(request())
+        #expect(s.isPresentingUI)
+        h.release()
+        await task?.value
+        #expect(s.phase == .idle)
+        #expect(s.isPresentingUI)
+        s.closeProgress(origin: .main)
+        #expect(!s.isPresentingUI)
+    }
+
     @Test("start при показанном итоге заменяет прогресс")
     func startReplacesProgress() async {
         let s = makeSession()

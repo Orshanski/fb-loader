@@ -6,9 +6,9 @@ import AppKit
 /// bytes from an already-parsed `FB2BookInfo` and calls `store(_:for:)`;
 /// next visit hits `cachedImage(for:)` directly.
 ///
-/// `nonisolated final class`: only state is the immutable `cacheDir` URL,
-/// disk writes go through `Data.write(options: .atomic)`, and concurrent
-/// reads of a cached file are safe at the OS level.
+/// `nonisolated final class` + `Sendable`: единственное изменяемое состояние — суммарный размер
+/// и вытеснение — спрятано в `Accounting` под одной блокировкой, `cacheDir` и лимит неизменны;
+/// чтение готового файла безопасно на уровне ОС.
 nonisolated final class CoverCache: Sendable {
     static let defaultLimitBytes = 200 * 1024 * 1024
 
@@ -24,6 +24,15 @@ nonisolated final class CoverCache: Sendable {
 
     private let cacheDir: URL
     private let limitBytes: Int
+    private let accounting = Accounting()
+
+    /// Запись, подсчёт размера и вытеснение идут под одной блокировкой: параллельные `store` не
+    /// считают размер дважды и не удаляют файлы друг у друга.
+    private final class Accounting: @unchecked Sendable {
+        let lock = NSLock()
+        /// nil до первого обхода каталога; дальше размер ведётся приращениями, без обхода на каждой записи.
+        var total: Int?
+    }
 
     init(directory: URL, limitBytes: Int = CoverCache.defaultLimitBytes) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -42,32 +51,48 @@ nonisolated final class CoverCache: Sendable {
         return NSImage(contentsOf: url)
     }
 
-    /// Writes cover bytes to the disk cache and returns an NSImage for them.
+    /// Writes cover bytes to the disk cache and returns an NSImage for them. Вызывать вне main actor.
     func store(_ coverBytes: Data, for book: Book) -> NSImage? {
         let url = cacheURL(for: book)
-        try? coverBytes.write(to: url, options: .atomic)
-        trimToLimit(keeping: url)
+        accounting.lock.withLock {
+            let fm = FileManager.default
+            let oldSize = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            guard (try? coverBytes.write(to: url, options: .atomic)) != nil else { return }
+            if let total = accounting.total {
+                accounting.total = total - oldSize + coverBytes.count
+            } else {
+                accounting.total = scan(fm).reduce(0) { $0 + $1.size }
+            }
+            if let total = accounting.total, total > limitBytes { trim(keeping: url, fm) }
+        }
         return NSImage(data: coverBytes)
     }
 
-    /// Удаляет самые давно использованные файлы, пока размер не опустится до 90% лимита:
-    /// запас избавляет от обхода каталога на каждой следующей записи. Вызывать вне main actor.
-    func trimToLimit(keeping keep: URL? = nil) {
-        let fm = FileManager.default
+    private typealias Entry = (url: URL, size: Int, date: Date)
+
+    /// Только готовые `.jpg`: временные файлы атомарной записи (в том числе чужого процесса) не учитываются и не удаляются.
+    private func scan(_ fm: FileManager) -> [Entry] {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        guard let urls = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: keys) else { return }
-        var files: [(url: URL, size: Int, date: Date)] = urls.compactMap { u in
-            guard let v = try? u.resourceValues(forKeys: Set(keys)), let size = v.fileSize else { return nil }
+        guard let urls = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: keys) else { return [] }
+        return urls.compactMap { u in
+            guard u.pathExtension == "jpg",
+                  let v = try? u.resourceValues(forKeys: Set(keys)), let size = v.fileSize else { return nil }
             return (u, size, v.contentModificationDate ?? .distantPast)
         }
+    }
+
+    /// Удаляет самые давно использованные файлы, пока размер не опустится до 90% лимита:
+    /// запас, чтобы следующая же запись не запускала вытеснение снова. Вызывать под блокировкой.
+    private func trim(keeping keep: URL, _ fm: FileManager) {
+        var files = scan(fm)
         var total = files.reduce(0) { $0 + $1.size }
-        guard total > limitBytes else { return }
         let target = limitBytes / 10 * 9
         files.sort { $0.date < $1.date }
         for f in files where total > target {
-            if f.url.standardizedFileURL == keep?.standardizedFileURL { continue }
+            if f.url.standardizedFileURL == keep.standardizedFileURL { continue }
             if (try? fm.removeItem(at: f.url)) != nil { total -= f.size }
         }
+        accounting.total = total
     }
 
     private func cacheURL(for book: Book) -> URL {

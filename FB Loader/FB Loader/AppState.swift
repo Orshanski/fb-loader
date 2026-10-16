@@ -99,7 +99,12 @@ final class AppState {
         dateFilter = nil
     }
 
-    let exportSession = ExportSession(userPaths: UserPaths.shared, chooseFolder: ExportFolderPanel.choose)
+    let exportSession: ExportSession
+
+    init(exportSession: ExportSession? = nil) {
+        self.exportSession = exportSession
+            ?? ExportSession(userPaths: UserPaths.shared, chooseFolder: ExportFolderPanel.choose)
+    }
 
     /// Sheet настроек открыт. Живёт здесь, а не в ContentView: пока он открыт,
     /// пункты меню главного окна должны быть неактивны.
@@ -107,10 +112,10 @@ final class AppState {
 
     var isSearchPresented = false
 
-    /// Любой модальный sheet главного окна (настройки, поиск, выбор папки и ход выгрузки):
+    /// Любой модальный sheet главного окна (настройки, поиск, выбор папки, ход и итог выгрузки):
     /// пока он открыт, ⌘, не должна открывать ещё один.
     var isAnySheetPresented: Bool {
-        isSettingsPresented || isSearchPresented || exportSession.isBusy
+        isSettingsPresented || isSearchPresented || exportSession.isPresentingUI
     }
 
     func reset() {

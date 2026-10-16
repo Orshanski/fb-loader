@@ -27,6 +27,60 @@ struct AppStateTests {
         #expect(s.isAnySheetPresented)
     }
 
+    @Test("isAnySheetPresented следует за выгрузкой: выбор папки, ход, итог, закрыт")
+    func sheetFollowsExport() async throws {
+        let box = TestDefaults()
+        defer { box.cleanUp() }
+        let paths = UserPaths(defaults: box.defaults)
+        paths.archivesDirectoryURL = FileManager.default.temporaryDirectory
+        let gate = Gate()
+        let session = ExportSession(
+            userPaths: paths,
+            chooseFolder: { _ in await gate.waitFolder(); return FileManager.default.temporaryDirectory },
+            makeConverter: { _ in PassthroughConverter() },
+            run: { _, _, _, _, _ in await gate.waitRun() })
+        let s = AppState(exportSession: session)
+        let library = Library(inpxHash: Data(count: 32), inpxVersion: "v", archives: ["a"],
+                              authors: [Author.unknown], series: [], genres: [], books: [])
+        let request = ExportRequest(libids: [1], library: library, selectedAuthorID: nil, selectedSeriesID: nil,
+                                    format: .fb2, origin: .main, uncheck: { _ in })
+        #expect(!s.isAnySheetPresented)
+
+        let starting = Task { await session.start(request) }
+        while session.phase != .choosingFolder { await Task.yield() }
+        #expect(s.isAnySheetPresented)
+
+        await gate.releaseFolder()
+        let run = try #require(await starting.value)
+        #expect(session.phase == .running)
+        #expect(s.isAnySheetPresented)
+
+        await gate.releaseRun()
+        await run.value
+        #expect(session.phase == .idle)
+        #expect(s.isAnySheetPresented)
+
+        session.closeProgress(origin: .main)
+        #expect(!s.isAnySheetPresented)
+    }
+
+    private actor Gate {
+        private var folder: CheckedContinuation<Void, Never>?
+        private var run: CheckedContinuation<Void, Never>?
+        private var folderOpen = false
+        private var runOpen = false
+        func waitFolder() async {
+            if folderOpen { return }
+            await withCheckedContinuation { folder = $0 }
+        }
+        func waitRun() async {
+            if runOpen { return }
+            await withCheckedContinuation { run = $0 }
+        }
+        func releaseFolder() { folderOpen = true; folder?.resume(); folder = nil }
+        func releaseRun() { runOpen = true; run?.resume(); run = nil }
+    }
+
     @Test("selectSection — смена case'а сбрасывает per-tab")
     func selectSectionSwitchesCase() {
         let s = AppState()

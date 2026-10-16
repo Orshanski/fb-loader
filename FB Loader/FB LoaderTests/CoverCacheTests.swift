@@ -56,6 +56,29 @@ struct CoverCacheTests {
         }
     }
 
+    @Test("перезапись той же обложки не удваивает учтённый размер")
+    func overwriteNotDoubleCounted() throws {
+        try withCache(limit: 600) { cache, dir in
+            _ = cache.store(Data(count: 300), for: book(1))
+            _ = cache.store(Data(count: 300), for: book(1))
+            _ = cache.store(Data(count: 200), for: book(2))
+            let n = try names(dir)
+            #expect(n == ["1.jpg", "2.jpg"])
+        }
+    }
+
+    @Test("временные файлы чужой атомарной записи не удаляются")
+    func ignoresForeignTempFiles() throws {
+        try withCache(limit: 100) { cache, dir in
+            let temp = dir.appendingPathComponent("1.jpg.sb-1234")
+            try Data(count: 500).write(to: temp)
+            _ = cache.store(Data(count: 80), for: book(1))
+            _ = cache.store(Data(count: 80), for: book(2))
+            let n = try names(dir)
+            #expect(n.contains("1.jpg.sb-1234"))
+        }
+    }
+
     @Test("записанная только что книга остаётся, даже если она одна больше лимита")
     func keepsFresh() throws {
         try withCache(limit: 100) { cache, dir in

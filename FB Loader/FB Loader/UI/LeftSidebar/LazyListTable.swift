@@ -20,6 +20,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
     var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
     var scrollMemory: SidebarMemory? = nil
     var scrollKey = ""
+    var scrollFilterKey = ""
 
     private static var cellIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("LazyListTable.cell")
@@ -50,6 +51,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
 
         scrollView.documentView = tableView
         scrollView.contentView.postsBoundsChangedNotifications = true
+        scrollView.postsFrameChangedNotifications = true
         context.coordinator.observeScroll(of: scrollView)
         return scrollView
     }
@@ -64,6 +66,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.binding = $selectedID
         coordinator.scrollMemory = scrollMemory
         coordinator.scrollKey = scrollKey
+        coordinator.scrollFilterKey = scrollFilterKey
 
         // Cheap structural-change check: count + first/last IDs is enough to
         // tell apart the transitions we care about (166k → 500 → 40 etc).
@@ -93,6 +96,10 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.restoreScrollOnce(in: scrollView)
     }
 
+    static func dismantleNSView(_: NSScrollView, coordinator: Coordinator) {
+        coordinator.stopObserving()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(items: items, labelFor: labelFor,
                     trailingLabelFor: trailingLabelFor,
@@ -116,27 +123,46 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         private var isUpdatingSelection = false
         var scrollMemory: SidebarMemory?
         var scrollKey = ""
+        var scrollFilterKey = ""
         /// Пока сохранённая прокрутка не применена, события границ (стартовые y = 0) её не затирают.
         private var scrollRestored = false
-        private var scrollObserver: NSObjectProtocol?
+        private var observers: [NSObjectProtocol] = []
 
         func observeScroll(of scrollView: NSScrollView) {
-            scrollObserver = NotificationCenter.default.addObserver(
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(
                 forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
                 queue: .main) { [weak self, weak scrollView] _ in
                     MainActor.assumeIsolated {
                         guard let self, self.scrollRestored, let scrollView else { return }
-                        self.scrollMemory?.setScroll(scrollView.contentView.bounds.origin.y, for: self.scrollKey)
+                        self.scrollMemory?.setScroll(scrollView.contentView.bounds.origin.y,
+                                                     filterKey: self.scrollFilterKey, for: self.scrollKey)
                     }
-                }
+                })
+            // Первый updateNSView приходит до раскладки (нулевой фрейм): восстанавливаем, когда размер появился.
+            observers.append(center.addObserver(
+                forName: NSView.frameDidChangeNotification, object: scrollView,
+                queue: .main) { [weak self, weak scrollView] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let scrollView else { return }
+                        self.restoreScrollOnce(in: scrollView)
+                    }
+                })
+        }
+
+        func stopObserving() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
         }
 
         func restoreScrollOnce(in scrollView: NSScrollView) {
-            guard !scrollRestored, !items.isEmpty else { return }
+            guard !scrollRestored, !items.isEmpty, scrollView.frame.height > 0 else { return }
             scrollRestored = true
-            guard let y = scrollMemory?.scroll(for: scrollKey) else { return }
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
+            guard let y = scrollMemory?.scroll(filterKey: scrollFilterKey, for: scrollKey) else { return }
+            let clip = scrollView.contentView
+            let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: y), size: clip.bounds.size))
+            clip.scroll(to: target.origin)
+            scrollView.reflectScrolledClipView(clip)
         }
 
         init(items: [Item], labelFor: @escaping (Item) -> String,
