@@ -40,7 +40,8 @@ struct GenresListView: View {
             },
             selectedID: $selectedGenreID,
             filterText: filterText,
-            filterKey: "\(languageFilter)|\(filterText)"
+            filterKey: "\(languageFilter)|\(filterText)",
+            memoryKey: "genres"
         )
     }
 }

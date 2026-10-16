@@ -10,6 +10,7 @@ struct MainWindowView: View {
     /// месте: иначе зоны на глазах прыгают из положения по умолчанию.
     @State private var layoutReady = false
     @State private var exportAction = ExportAction()
+    @State private var sidebarMemory = SidebarMemory()
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
@@ -18,6 +19,7 @@ struct MainWindowView: View {
         HSplitView {
             if sidebarVisible {
                 LeftSidebarView(library: library, onOpenSearch: { showSearch = true })
+                    .environment(\.sidebarMemory, sidebarMemory)
                     .modifier(RestoredPaneSize(axis: .horizontal, dimension: .sidebarWidth) {
                         revealLayout()
                     })

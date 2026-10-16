@@ -18,6 +18,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
     /// Optional right-aligned secondary label (e.g. count).
     var trailingLabelFor: ((Item) -> String)? = nil
     var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
+    var scrollMemory: SidebarMemory? = nil
+    var scrollKey = ""
 
     private static var cellIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("LazyListTable.cell")
@@ -47,6 +49,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         tableView.delegate = context.coordinator
 
         scrollView.documentView = tableView
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        context.coordinator.observeScroll(of: scrollView)
         return scrollView
     }
 
@@ -58,6 +62,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.trailingLabelFor = trailingLabelFor
         coordinator.rowStyleFor = rowStyleFor
         coordinator.binding = $selectedID
+        coordinator.scrollMemory = scrollMemory
+        coordinator.scrollKey = scrollKey
 
         // Cheap structural-change check: count + first/last IDs is enough to
         // tell apart the transitions we care about (166k → 500 → 40 etc).
@@ -84,6 +90,7 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             }
         }
         coordinator.syncSelection(of: tableView, to: selectedID)
+        coordinator.restoreScrollOnce(in: scrollView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -107,6 +114,30 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         /// а не пользователь — в модель не пишем. Иначе выбранный автор, скрытый
         /// фильтром сайдбара, сбрасывался бы в `nil` вместе с превью и галочками.
         private var isUpdatingSelection = false
+        var scrollMemory: SidebarMemory?
+        var scrollKey = ""
+        /// Пока сохранённая прокрутка не применена, события границ (стартовые y = 0) её не затирают.
+        private var scrollRestored = false
+        private var scrollObserver: NSObjectProtocol?
+
+        func observeScroll(of scrollView: NSScrollView) {
+            scrollObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
+                queue: .main) { [weak self, weak scrollView] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, self.scrollRestored, let scrollView else { return }
+                        self.scrollMemory?.setScroll(scrollView.contentView.bounds.origin.y, for: self.scrollKey)
+                    }
+                }
+        }
+
+        func restoreScrollOnce(in scrollView: NSScrollView) {
+            guard !scrollRestored, !items.isEmpty else { return }
+            scrollRestored = true
+            guard let y = scrollMemory?.scroll(for: scrollKey) else { return }
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
 
         init(items: [Item], labelFor: @escaping (Item) -> String,
              trailingLabelFor: ((Item) -> String)?,

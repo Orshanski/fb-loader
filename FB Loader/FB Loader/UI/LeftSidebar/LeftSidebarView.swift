@@ -5,9 +5,11 @@ struct LeftSidebarView: View {
     let library: Library
     let onOpenSearch: () -> Void
     @Environment(AppState.self) private var state
+    @Environment(\.sidebarMemory) private var memory
 
     var body: some View {
         @Bindable var s = state
+        let _ = memory?.bind(library)
         VStack(spacing: 0) {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {

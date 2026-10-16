@@ -27,16 +27,21 @@ where Item.ID: Hashable & Sendable {
     @Binding var selectedID: Item.ID?
     let filterText: String
     let filterKey: String
+    let memoryKey: String
 
+    @Environment(\.sidebarMemory) private var memory
     @State private var filtered: [Item] = []
+    @State private var computedKey: String?
 
     var body: some View {
         LazyListTable(
-            items: filtered,
+            items: computedKey == nil ? (memory?.items(Item.self, filterKey: filterKey, for: memoryKey) ?? []) : filtered,
             selectedID: $selectedID,
             labelFor: labelFor,
             trailingLabelFor: trailingLabelFor,
-            rowStyleFor: rowStyleFor
+            rowStyleFor: rowStyleFor,
+            scrollMemory: memory,
+            scrollKey: memoryKey
         )
         .task(id: filterKey) { await reloadFilter() }
     }
@@ -45,8 +50,16 @@ where Item.ID: Hashable & Sendable {
     /// N concurrent filter tasks; `.task(id:)` already handles cancel-and-
     /// restart on input change.
     private func reloadFilter() async {
-        try? await Task.sleep(for: .milliseconds(150))
-        if Task.isCancelled { return }
+        if computedKey == nil, let cached = memory?.items(Item.self, filterKey: filterKey, for: memoryKey) {
+            filtered = cached
+            computedKey = filterKey
+            return
+        }
+        // Первый расчёт без паузы: иначе список пуст 150 мс при каждом показе раздела.
+        if computedKey != nil {
+            try? await Task.sleep(for: .milliseconds(150))
+            if Task.isCancelled { return }
+        }
 
         let pattern = NamePattern(query: filterText)
         let items = items
@@ -72,5 +85,7 @@ where Item.ID: Hashable & Sendable {
         }.value
         if Task.isCancelled { return }
         filtered = result
+        computedKey = filterKey
+        memory?.store(result, filterKey: filterKey, for: memoryKey)
     }
 }
