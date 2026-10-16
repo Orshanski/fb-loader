@@ -16,7 +16,8 @@ struct SeriesListView: View {
             trailingLabelFor: { s in "\(library.bookCount(seriesID: s.id, language: langKey))" },
             selectedID: $selectedSeriesID,
             filterText: filterText,
-            filterKey: "\(languageFilter)|\(filterText)"
+            filterKey: "\(languageFilter)|\(filterText)",
+            memoryKey: "series"
         )
     }
 }

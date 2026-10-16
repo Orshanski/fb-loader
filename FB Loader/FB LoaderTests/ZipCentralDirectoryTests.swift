@@ -5,7 +5,6 @@ import Compression
 
 private let book = Data(String(repeating: "<FictionBook>текст</FictionBook>", count: 50).utf8)
 
-/// Проверяет, что `body` бросает `ZipError` нужного вида.
 private func expectZipError(_ matches: (ZipCentralDirectory.ZipError) -> Bool,
                             sourceLocation: SourceLocation = #_sourceLocation,
                             _ body: () throws -> Void) {

@@ -39,27 +39,13 @@ nonisolated struct BookTableRows: Sendable {
     func libid(at row: Int) -> Int32? { book(at: row)?.libid }
 
     static func build(books: [Book], library: Library) -> BookTableRows {
+        let (loose, groups) = BookGrouping.group(books, library: library)
         var result: [BookTableRow] = []
-        result.reserveCapacity(books.count)
-        var bySeries: [Int32: [(offset: Int, book: Book)]] = [:]
-        for (offset, b) in books.enumerated() {
-            if let sid = b.seriesID {
-                bySeries[sid, default: []].append((offset, b))
-            } else {
-                result.append(.book(b, inSeries: false))
-            }
-        }
-        let series = bySeries.keys
-            .map { library.series(id: $0) ?? Series(id: $0, name: "?") }
-            .sorted { $0.name != $1.name ? $0.name < $1.name : $0.id < $1.id }
-        for s in series {
-            let items = (bySeries[s.id] ?? []).sorted { a, b in
-                let na = a.book.seriesNum ?? .max
-                let nb = b.book.seriesNum ?? .max
-                return na != nb ? na < nb : a.offset < b.offset
-            }
-            result.append(.seriesHeader(s, count: items.count))
-            result.append(contentsOf: items.map { .book($0.book, inSeries: true) })
+        result.reserveCapacity(books.count + groups.count)
+        result.append(contentsOf: loose.map { .book($0, inSeries: false) })
+        for g in groups {
+            result.append(.seriesHeader(g.series, count: g.books.count))
+            result.append(contentsOf: g.books.map { .book($0, inSeries: true) })
         }
         return BookTableRows(rows: result)
     }

@@ -1,13 +1,7 @@
 import Foundation
 
-/// Параллельный fuzzy-скан по `Library`. `nonisolated` чтобы можно было
-/// вызывать с любого actor'а (в т.ч. из `Task.detached` фоновой задачи).
-///
-/// Engine не вводит каких-либо собственных лимитов на количество matches —
-/// возвращает всё, что прошло `FuzzyScorer.scoreCutoff`. Пагинация и
-/// cap-логика — чисто UI-уровня (см. `SearchCoordinator` /
-/// `SearchResultListView`). Это прямо соответствует спеке (§ Группы —
-/// «по умолчанию топ-10 + Показать всех»; cap живёт в UI, не в engine).
+/// Параллельный fuzzy-скан по `Library`. Возвращает все matches выше `FuzzyScorer.scoreCutoff`:
+/// ограничение показа и пагинация — только в UI (`SearchCoordinator`, `SearchResultListView`).
 nonisolated enum SearchEngine {
     nonisolated static func run(query: String, language: String, in lib: Library) -> SearchResults {
         var qStore = TokenStore()
@@ -32,9 +26,7 @@ nonisolated enum SearchEngine {
             .filter { lib.bookCount(authorID: lib.authors[$0.index].id, language: langKey) > 0 }
         let authors = authorHits.map { AuthorMatch(authorIndex: $0.index, score: $0.score) }
 
-        // 2. Series — uses extended key (series name + author tokens) so
-        // cross-token queries like «сандерсон мстители» match series whose
-        // author is Сандерсон.
+        // 2. Series use the extended key (name + author tokens) so «сандерсон мстители» matches.
         let seriesHits = parallelScan(qTokens: qToks, keys: lib.searchKeySeriesExt,
                                       cutoff: FuzzyScorer.scoreCutoff)
             .filter { lib.bookCount(seriesID: lib.series[$0.index].id, language: langKey) > 0 }
@@ -68,19 +60,12 @@ nonisolated enum SearchEngine {
         4 * max(2, ProcessInfo.processInfo.activeProcessorCount)
     }
 
-    /// Internal scoring hit — индекс в исходном массиве + скор.
-    /// `Sendable`: пересекает actor boundary внутри `concurrentPerform`.
     nonisolated private struct Hit: Sendable {
         let index: Int
         let score: Double
     }
 
-    /// `@unchecked Sendable` обёртка над `UnsafeMutableBufferPointer`. Каждый
-    /// поток `concurrentPerform` пишет в свой непересекающийся слот `buf[c]`
-    /// — алгоритм безопасен, но компилятор не может это доказать (структура
-    /// `UnsafeMutableBufferPointer` не Sendable). Эта обёртка явно говорит
-    /// «trust me, я знаю, что делаю» — стандартный idiom при использовании
-    /// сырых указателей внутри @Sendable-замыканий.
+    /// Каждый воркер `concurrentPerform` пишет в свой слот `buf[c]`; компилятор этого доказать не может.
     nonisolated private struct SendableBuf<T>: @unchecked Sendable {
         let buf: UnsafeMutableBufferPointer<T>
     }
@@ -95,9 +80,7 @@ nonisolated enum SearchEngine {
         let tokens: [SearchToken]
     }
 
-    /// Generic параллельный скан: choice — единый массив токенов на индекс
-    /// (авторы и серии). Книги используют отдельный путь
-    /// `parallelScanBooks` с объединением title+author+series tokens.
+    /// Авторы и серии; книги идут через `parallelScanBooks`.
     nonisolated private static func parallelScan(
         qTokens: [SearchToken],
         keys: TokenStore,
@@ -135,14 +118,9 @@ nonisolated enum SearchEngine {
         return hits
     }
 
-    /// Книжный скан с объединением title + author tokens + series tokens.
-    /// Combined key нужен, чтобы запросы вроде «Толстой Война» находили
-    /// «Войну и мир»: ни автор «Толстой Лев Николаевич» (нет токена «война»),
-    /// ни заголовок «Война и мир» (нет токена «толстой») не пройдут по
-    /// отдельности — а combined ключ книги [война, и, мир, толстой, лев,
-    /// николаевич] матчит оба query-токена идеально. Дополнительно
-    /// фильтрует по языку. Дедуп с авторско-серийными бакетами делается
-    /// постфактум в `run` через `filterBookHitsAgainstMatched`.
+    /// Ключ книги — токены title + author + series: «Толстой Война» находит «Войну и мир», хотя ни автор,
+    /// ни заголовок по отдельности не содержат оба токена. Фильтрует по языку; дедуп с блоками авторов/серий —
+    /// в `run` через `filterBookHitsAgainstMatched`.
     nonisolated private static func parallelScanBooks(
         qTokens: [SearchToken],
         language: String,
@@ -197,12 +175,7 @@ nonisolated enum SearchEngine {
         return hits
     }
 
-    /// Убирает из book-bucket'а книги, чей автор уже сматчился отдельно в
-    /// authors-bucket или серия — в series-bucket. Такие книги остаются
-    /// видимыми внутри блока соответствующего автора/серии — нет смысла
-    /// дублировать их в bucket'е книг. Стоимость: O(books) с O(1)
-    /// hash-lookup на каждую (Set<Int32>.contains), вне зависимости от
-    /// размера matched-сетов.
+    /// Убирает из бакета книг те, чей автор или серия уже сматчились: они видны в своих блоках.
     nonisolated private static func filterBookHitsAgainstMatched(
         _ hits: [Hit],
         in lib: Library,

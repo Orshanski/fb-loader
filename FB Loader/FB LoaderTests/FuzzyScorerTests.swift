@@ -4,12 +4,9 @@ import Foundation
 
 @Suite("FuzzyScorer corpus")
 struct FuzzyScorerCorpusTests {
-    /// Эталонные пары: librarium-py corpus + edge-кейсы по нормализации +
-    /// false-positive'ы из реальной библиотеки на 167k авторов, отловленные
-    /// при ручной проверке (см. spike4 в `~/code/fb-loader-search-spike`).
-    /// Любая регрессия здесь — баг.
+    /// Эталон: librarium-py corpus, edge-кейсы нормализации и ложные срабатывания на реальной
+    /// библиотеке (spike4 в `~/code/fb-loader-search-spike`). Любая регрессия здесь — баг.
     static let corpus: [(q: String, c: String, pass: Bool, label: String)] = [
-        // librarium corpus
         ("прошивка", "прошивки", true, "склонение"),
         ("достоевск", "достоевский", true, "префикс"),
         ("короли", "королей", true, "склонение-окончания"),
@@ -58,13 +55,10 @@ struct FuzzyScorerCorpusTests {
 
     @Test("Идентичные одинаковые входы дают 100.0")
     func identicalInputsScore100() {
-        // ASCII single-token
         let asciiTok = SearchPreprocess.tokens("hello")
         #expect(FuzzyScorer.tokenMinRatio(qTokens: asciiTok, cTokens: asciiTok) == 100.0)
-        // Cyrillic single-token
         let cyrTok = SearchPreprocess.tokens("сандерсон")
         #expect(FuzzyScorer.tokenMinRatio(qTokens: cyrTok, cTokens: cyrTok) == 100.0)
-        // Multi-token, same tokens, same order
         let multi = SearchPreprocess.tokens("война и мир")
         #expect(FuzzyScorer.tokenMinRatio(qTokens: multi, cTokens: multi) == 100.0)
     }
@@ -74,19 +68,15 @@ struct FuzzyScorerCorpusTests {
         let q = SearchPreprocess.tokens("сандерсон")
         let c = SearchPreprocess.tokens("брэндон сандерсон писатель")
         let score = FuzzyScorer.tokenMinRatio(qTokens: q, cTokens: c)
-        // q.first matches c.second perfectly → 100.0
         #expect(score == 100.0)
     }
 
     @Test("Многотокенный query против одного choice-токена — оба должны найтись или score падает")
     func multiQueryVsSingleChoice() {
-        // Choice — одно слово; query — два. Оба query-токена ищут лучший
-        // матч в одном-единственном c-токене. Один совпадёт идеально,
-        // другой даст слабый — итоговый min будет слабым.
+        // Слабый матч второго query-токена тянет итоговый min вниз.
         let q = SearchPreprocess.tokens("сандерсон писатель")
         let c = SearchPreprocess.tokens("сандерсон")
         let score = FuzzyScorer.tokenMinRatio(qTokens: q, cTokens: c)
-        // «писатель» против «сандерсон» — низкий скор → итоговый min < cutoff
         #expect(score < FuzzyScorer.scoreCutoff,
                 "score=\(score), expected below cutoff \(FuzzyScorer.scoreCutoff)")
     }
@@ -95,17 +85,14 @@ struct FuzzyScorerCorpusTests {
     func transpositionCountsAsSingleOp() {
         // ОSA Damerau-Levenshtein учитывает adjacent-транспозицию как 1 op,
         // а не 2 substitution. «ab» ↔ «ba» имеет distance 1, а не 2.
-        let q: [UInt32] = [97, 98]              // "ab"
-        let c: [UInt32] = [98, 97]              // "ba"
+        let q: [UInt32] = [97, 98]
+        let c: [UInt32] = [98, 97]
         let d = FuzzyScorer.damerauLevenshteinOSA(q, c)
         #expect(d == 1, "DL(ab, ba) = \(d), expected 1 (transposition)")
     }
 
     @Test("Cutoff-pruning возвращает 0 если хоть один qt не дотягивает до cutoff")
     func cutoffPruningEarlyExit() {
-        // q = ["сандерсон", "хххх"] — второй токен не имеет хорошего матча
-        // нигде в c. Финальный min будет ниже cutoff, метод должен вернуть 0
-        // не дойдя до конца.
         let q = SearchPreprocess.tokens("сандерсон хххх")
         let c = SearchPreprocess.tokens("брэндон сандерсон писатель")
         let pruned = FuzzyScorer.tokenMinRatioCut(

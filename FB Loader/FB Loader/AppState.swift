@@ -1,8 +1,6 @@
 import Foundation
 import Observation
 
-/// Top-level observable state. Owns the loaded `Library` and selection state.
-/// Recreated by the app on launch.
 @Observable
 final class AppState {
     enum LoadStage {
@@ -20,10 +18,9 @@ final class AppState {
     var canRebuildCatalog: Bool {
         if case .ready = stage { true } else { false }
     }
-    /// Shared single source of truth — same instance is read by SettingsView (§14).
     let userPaths = UserPaths.shared
 
-    // UI selection state — explicitly NOT persisted (per spec §4 "Состояние между запусками").
+    // UI selection state is not persisted between launches.
     enum SidebarSelection: Equatable {
         case authors(Int32?)
         case series(Int32?)
@@ -82,16 +79,14 @@ final class AppState {
 
     private func applyEntitySelection(_ next: SidebarSelection, deepLinkName: String?) {
         if let name = deepLinkName {
-            // Сценарий 2: deep-link с прицельным фильтром, preview сохраняется.
-            // dateFilter гасится присваиванием, а не applyDateFilter — тот
-            // обнулил бы selectedBookLibid, который здесь обязан выжить.
+            // Deep-link с прицельным фильтром: превью сохраняется. dateFilter гасится присваиванием, а не
+            // applyDateFilter — тот обнулил бы selectedBookLibid, который здесь обязан выжить.
             sidebar = next
             sidebarFilter = name
             checkedBookLibids.removeAll()
             dateFilter = nil
             return
         }
-        // Сценарий 3: клик в списке.
         guard sidebar != next else { return }
         sidebar = next
         selectedBookLibid = nil
@@ -99,11 +94,24 @@ final class AppState {
         dateFilter = nil
     }
 
-    let exportSession = ExportSession(userPaths: UserPaths.shared, chooseFolder: ExportFolderPanel.choose)
+    let exportSession: ExportSession
+
+    init(exportSession: ExportSession? = nil) {
+        self.exportSession = exportSession
+            ?? ExportSession(userPaths: UserPaths.shared, chooseFolder: ExportFolderPanel.choose)
+    }
 
     /// Sheet настроек открыт. Живёт здесь, а не в ContentView: пока он открыт,
     /// пункты меню главного окна должны быть неактивны.
     var isSettingsPresented = false
+
+    var isSearchPresented = false
+
+    /// Любой модальный sheet главного окна (настройки, поиск, выбор папки, ход и итог выгрузки):
+    /// пока он открыт, ⌘, не должна открывать ещё один.
+    var isAnySheetPresented: Bool {
+        isSettingsPresented || isSearchPresented || exportSession.isPresentingUI
+    }
 
     func reset() {
         sidebar = .authors(nil)

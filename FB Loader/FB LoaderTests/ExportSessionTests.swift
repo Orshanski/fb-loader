@@ -8,7 +8,7 @@ final class ExportSessionTests {
     private let dir: URL
     private let archivesRoot: URL
     private let paths: UserPaths
-    private let suiteName = "FB_Loader.test.\(UUID())"
+    private let defaults: TestDefaults
     private let library: Library
 
     private struct RunCall {
@@ -36,14 +36,15 @@ final class ExportSessionTests {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         archivesRoot = dir.appendingPathComponent("archives", isDirectory: true)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("out"), withIntermediateDirectories: true)
-        paths = UserPaths(defaults: UserDefaults(suiteName: suiteName)!)
+        defaults = TestDefaults()
+        paths = UserPaths(defaults: defaults.defaults)
         paths.archivesDirectoryURL = archivesRoot
         h.chosen = dir.appendingPathComponent("out")
         library = Self.makeLibrary()
     }
 
     deinit {
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+        defaults.cleanUp()
         try? FileManager.default.removeItem(at: dir)
     }
 
@@ -259,6 +260,20 @@ final class ExportSessionTests {
         await finish(task)
         #expect(s.phase == .idle)
         #expect(s.progress === p)
+    }
+
+    @Test("isPresentingUI: выбор папки, выгрузка и показанный итог — да; после закрытия итога — нет")
+    func presentingUI() async {
+        let s = makeSession()
+        #expect(!s.isPresentingUI)
+        let task = await s.start(request())
+        #expect(s.isPresentingUI)
+        h.release()
+        await task?.value
+        #expect(s.phase == .idle)
+        #expect(s.isPresentingUI)
+        s.closeProgress(origin: .main)
+        #expect(!s.isPresentingUI)
     }
 
     @Test("start при показанном итоге заменяет прогресс")

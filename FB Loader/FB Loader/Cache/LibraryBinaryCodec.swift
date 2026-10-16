@@ -30,9 +30,7 @@ nonisolated enum LibraryBinaryCodec {
         case inconsistent(String)
     }
     enum EncodeError: Error {
-        /// Signalled instead of `precondition` to avoid crashing the whole process
-        /// if a single book's title (or other length-prefixed string) exceeds
-        /// the on-disk format's length encoding capacity.
+        /// Thrown instead of `precondition`: one oversized string must not crash the process.
         case stringTooLong(field: String, length: Int, max: Int)
         case tooManyItems(field: String, count: Int, max: Int)
         case invalidHashSize(Int)
@@ -46,14 +44,7 @@ nonisolated enum LibraryBinaryCodec {
     }
 
     private static let magic: [UInt8] = Array("FBLC".utf8)
-    /// Bumped from 1 → 2 to invalidate caches built before the CRLF parser
-    /// fix (262e3bf), which silently produced 1-book-per-.inp catalogs.
-    /// Bumped 2 → 3, когда дата книги перестала быть числом дней от
-    /// 2000-01-01 и стала настоящим `Date`: изменились и размер поля, и
-    /// смысл, старый кэш нечитаем.
-    /// Bumped 3 → 4: ключ источника в заголовке и имя файла в архиве у книги.
-    /// Old caches decode → `unsupportedVersion` → `LibraryCacheStore`
-    /// falls through to reparse on the next launch.
+    /// Bump on any layout change: old caches throw `unsupportedVersion` and `LibraryCacheStore` reparses.
     private static let formatVersion: UInt16 = 4
 
     static func encode(_ lib: Library, sourceKey: Data) throws -> Data {

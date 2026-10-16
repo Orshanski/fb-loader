@@ -120,16 +120,6 @@ private struct BooksTableContent: View {
         }
     }
 
-    private func booksCountLabel(_ n: Int) -> String {
-        let mod10 = n % 10
-        let mod100 = n % 100
-        let word: String
-        if mod100 >= 11 && mod100 <= 14 { word = "книг" }
-        else if mod10 == 1 { word = "книга" }
-        else if mod10 >= 2 && mod10 <= 4 { word = "книги" }
-        else { word = "книг" }
-        return "\(n) \(word)"
-    }
 }
 
 // MARK: - Language picker (used from MainWindow toolbar)
@@ -155,7 +145,6 @@ struct LanguageFilterPicker: View {
 
     private func displayLanguages() -> [String] {
         var langs = library.languages
-        // Replace empty string with our sentinel for the picker.
         langs.removeAll { $0.isEmpty }
         if library.languages.contains("") {
             langs.append(BooksByContext.unspecifiedLanguageToken)

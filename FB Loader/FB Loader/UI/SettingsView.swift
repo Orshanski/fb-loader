@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers   // for UTType(filenameExtension:)
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     let userPaths: UserPaths

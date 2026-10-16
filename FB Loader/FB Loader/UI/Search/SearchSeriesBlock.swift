@@ -1,8 +1,6 @@
 import SwiftUI
 
-/// One «серия <имя>» result block. Header includes a right-side
-/// subtitle with the series's «основной» author + book count
-/// (per spec § Серии). Header click toggles collapse.
+/// Header subtitle: the series' «основной» author and book count.
 struct SearchSeriesBlock: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
@@ -16,9 +14,6 @@ struct SearchSeriesBlock: View {
     private var collapsed: Bool { coord.collapsedSeries.contains(seriesIndex) }
     private var fullyExpanded: Bool { coord.fullyExpandedSeries.contains(seriesIndex) }
 
-    /// Books of the series in current language, sorted by `seriesNum`.
-    /// Computed once and shared between header (count + primary author)
-    /// and body (rows).
     private var booksInLanguage: [Book] {
         BooksByContext.books(for: .series(series.id),
                              language: coord.languageFilter,
@@ -50,8 +45,6 @@ struct SearchSeriesBlock: View {
             Text("серия").foregroundStyle(.secondary)
             Text(series.name).fontWeight(.semibold)
             Spacer()
-            // Spec § Серии: «Справа от заголовка — короткая контекстная
-            // строка (имя «основного» автора серии + счётчик «N книг»)».
             if let author = primaryAuthor {
                 Text("\(author.displayName) — \(booksCountLabel(booksInLanguage.count))")
                     .font(.caption)
@@ -68,16 +61,6 @@ struct SearchSeriesBlock: View {
         }
     }
 
-    private func booksCountLabel(_ n: Int) -> String {
-        let mod10 = n % 10
-        let mod100 = n % 100
-        let word: String
-        if mod100 >= 11 && mod100 <= 14 { word = "книг" }
-        else if mod10 == 1 { word = "книга" }
-        else if mod10 >= 2 && mod10 <= 4 { word = "книги" }
-        else { word = "книг" }
-        return "\(n) \(word)"
-    }
 
     @ViewBuilder
     private var booksList: some View {
@@ -86,8 +69,7 @@ struct SearchSeriesBlock: View {
         ForEach(visibleBooks, id: \.libid) { b in
             BookRow(
                 book: b, library: library, indented: true,
-                isChecked: coord.bindingChecked(b),
-                isSelected: coord.bindingSelected(b),
+                coord: coord,
                 contextMenuBuilder: { exportContextMenu() }
             )
         }

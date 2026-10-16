@@ -1,10 +1,3 @@
-//
-//  FB_LoaderUITestsLaunchTests.swift
-//  FB LoaderUITests
-//
-//  Created by Orshanski Alexey on 01.05.2026.
-//
-
 import XCTest
 
 final class FBLoaderUITestsLaunchTests: XCTestCase {

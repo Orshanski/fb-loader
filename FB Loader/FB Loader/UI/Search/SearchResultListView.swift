@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Sectioned scroll layout for search results: Авторы / Серии / Совпадения по книгам.
-/// Routes per-group rendering to dedicated block views.
 struct SearchResultListView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
@@ -12,7 +10,6 @@ struct SearchResultListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                // Authors group
                 if !results.authors.isEmpty {
                     Text("Авторы")
                         .font(.system(size: 11, weight: .semibold))
@@ -42,7 +39,6 @@ struct SearchResultListView: View {
                     Divider().padding(.vertical, 6)
                 }
 
-                // Series group
                 if !results.series.isEmpty {
                     Text("Серии")
                         .font(.system(size: 11, weight: .semibold))
@@ -72,7 +68,6 @@ struct SearchResultListView: View {
                     Divider().padding(.vertical, 6)
                 }
 
-                // Books bucket
                 if !results.books.isEmpty {
                     SearchBooksBucketView(
                         coord: coord,

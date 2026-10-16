@@ -6,19 +6,12 @@ struct BookDetailView: View {
     let archivesRoot: URL
     let book: Book
 
-    /// Returns true if the current `book` is still the user's active
-    /// selection. Used to discard stale `loadDetail` results when the user
-    /// has clicked another book mid-load. Owner provides the closure
-    /// (main window: AppState's selected libid == book.libid; search sheet:
-    /// `coord.selectedBookLibid == book.libid`).
+    /// Guards `loadDetail` against stale results when the user selects another book mid-load.
     let isCurrentSelection: () -> Bool
 
-    /// Called when the user taps an author chip in the detail card. Owner
-    /// decides what to do (main window: navigate to author tab; search
-    /// sheet: no-op for v1).
+    /// Main window navigates to the author tab; the search sheet ignores it.
     let onSelectAuthor: (Int32) -> Void
 
-    /// Called when the user taps the series chip.
     let onSelectSeries: (Int32) -> Void
 
     @State private var coverImage: NSImage?
@@ -185,14 +178,7 @@ struct BookDetailView: View {
     }
 
     private func translatorsButtonLabel(count: Int) -> String {
-        let mod10 = count % 10
-        let mod100 = count % 100
-        let word: String
-        if mod100 >= 11 && mod100 <= 14 { word = "переводчиков" }
-        else if mod10 == 1 { word = "переводчик" }
-        else if mod10 >= 2 && mod10 <= 4 { word = "переводчика" }
-        else { word = "переводчиков" }
-        return "\(count) \(word)"
+        russianPlural(count, one: "переводчик", few: "переводчика", many: "переводчиков")
     }
 
     private func translatorsString(_ triples: [INPAuthorParser.Triple]) -> String {
@@ -262,13 +248,11 @@ struct BookDetailView: View {
         let lib = library
         let root = archivesRoot
         let b = book
-        let cache = try? CoverCache()
+        let cache = CoverCache.shared
         await runDetachedCancellable(priority: .utility) {
-            let t0 = ContinuousClock.now
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
 
-            // Fast path: cover image already cached on disk from a prior visit.
             let cachedCover = cache?.cachedImage(for: b)
             if cachedCover != nil, !Task.isCancelled {
                 let img = cachedCover
@@ -276,18 +260,13 @@ struct BookDetailView: View {
                     guard isCurrentSelection() else { return }
                     self.coverImage = img
                 }
-                print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
             }
 
             do {
-                let tRead = ContinuousClock.now
                 let fb2 = try ZipFB2Reader.readFB2(entryName: b.archiveEntryName, archiveURL: url)
-                print("[BookDetail] read \(fb2.count)B in \(ContinuousClock.now - tRead)")
                 if Task.isCancelled { return }
 
-                let tParse = ContinuousClock.now
                 let parsed = try FB2DescriptionParser.parse(data: Data(fb2))
-                print("[BookDetail] parse in \(ContinuousClock.now - tParse): title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
                 if Task.isCancelled { return }
 
                 let img: NSImage? = cachedCover ?? {
@@ -295,14 +274,12 @@ struct BookDetailView: View {
                     return cache?.store(bytes, for: b)
                 }()
 
-                print("[BookDetail] total \(ContinuousClock.now - t0)")
                 await MainActor.run {
                     guard isCurrentSelection() else { return }
                     self.info = parsed
                     self.coverImage = img
                 }
             } catch {
-                print("[BookDetail] ERROR in \(ContinuousClock.now - t0): \(error)")
                 if Task.isCancelled { return }
                 let message = BookReadFailure.message(for: error)
                 await MainActor.run {

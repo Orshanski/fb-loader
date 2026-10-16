@@ -37,7 +37,6 @@ struct LibrarySearchIndexTests {
         #expect(lib.bookAuthorStarts.count == lib.books.count + 1)
         #expect(lib.searchSeriesIdx.count == lib.books.count)
 
-        // Сандерсон → автор index 1 → токены ["сандерсон", "брэндон"]
         let sandersonTokens = lib.searchKeyAuthors[1]
         #expect(sandersonTokens.count == 2)
 
@@ -45,7 +44,6 @@ struct LibrarySearchIndexTests {
         #expect(authorIndices(ofBook: 0, in: lib) == [1])
         #expect(lib.searchSeriesIdx[0] == 0)
 
-        // Title key токенизирован
         #expect(lib.searchKeyTitle[0].count == 1)  // одно слово "элантрис"
     }
 

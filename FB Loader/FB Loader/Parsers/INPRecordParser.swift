@@ -1,7 +1,5 @@
 import Foundation
 
-/// Structured representation of one INP record (one book).
-/// Field references match the order in `INPXFieldIndex`.
 nonisolated struct INPRecord {
     let authorField: String
     let genreField: String
@@ -14,8 +12,6 @@ nonisolated struct INPRecord {
     let deleted: Bool
     let format: String
     var isFB2: Bool { format.isEmpty || format.lowercased() == "fb2" }
-    /// Полночь дня, записанного в INPX строкой `YYYY-MM-DD`; `nil`, если
-    /// поля не было или оно не разобралось.
     let dateAdded: Date?
     let language: String
 }
@@ -67,9 +63,7 @@ nonisolated enum INPRecordParser {
         )
     }
 
-    /// `YYYY-MM-DD` → полночь этого дня в календаре пользователя.
-    /// Тот же календарь потом строит границы фильтра, поэтому книга
-    /// граничного дня попадает в диапазон точно.
+    /// Календарь пользователя — тот же, что строит границы фильтра: книга граничного дня попадает в диапазон точно.
     private static func parseDate(_ s: String) -> Date? {
         guard s.count == 10 else { return nil }
         let comps = s.split(separator: "-")

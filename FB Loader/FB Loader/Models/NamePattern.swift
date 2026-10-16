@@ -1,23 +1,12 @@
 import Foundation
 
-/// Filter query for sidebar lists (authors, series).
+/// Filter query for sidebar lists, in two modes chosen by whether the raw query contains `*`:
+/// - Plain word: any word of the name starts with the query. "Олди" matches "Олдисс" but not "Болдин";
+///   word boundaries are the string start or any non-letter, non-digit character.
+/// - Glob: segments split by `*` must occur in order; a leading/trailing `*` un-anchors that end
+///   (`пет*` prefix, `*пет` suffix, `*пет*` substring, `пет*ров` anchored on both).
 ///
-/// Two modes, chosen by whether the raw query contains `*`:
-///
-/// 1. Plain word — no `*`. Matches when any word inside the candidate name
-///    starts with the query. "Олди" matches "Олди" and "Олдисс" but NOT
-///    "Болдин", because in "болдин" no word boundary precedes "олди".
-///    Word boundaries are the start of the string or any non-letter,
-///    non-digit character.
-///
-/// 2. Glob — at least one `*`. Segments split by `*` must occur in order.
-///    A leading `*` un-anchors the start, a trailing `*` un-anchors the end:
-///    `пет*` = prefix, `*пет` = suffix, `*пет*` = substring,
-///    `пет*ров` = starts with "пет" and ends with "ров".
-///
-/// Inputs are matched against pre-lowercased candidate names; the pattern
-/// itself is lowercased once at construction time. Empty / whitespace-only
-/// queries collapse to `.all`.
+/// Candidates are pre-lowercased, the pattern is lowercased once. Blank queries collapse to `.all`.
 nonisolated enum NamePattern: Sendable, Equatable {
     case all
     case wordPrefix(String)
@@ -38,9 +27,8 @@ nonisolated enum NamePattern: Sendable, Equatable {
         self = .wordPrefix(trimmed)
     }
 
-    /// Caller MUST pass a name that is already lowercased — the sidebar
-    /// pre-computes these (`Library.lowercasedAuthorNames` etc.) to avoid
-    /// re-allocating on every keystroke across 100k+ candidates.
+    /// `lowercasedName` must already be lowercased (`Library.lowercasedAuthorNames` etc.): the sidebar
+    /// precomputes them to avoid allocating on every keystroke.
     func matches(_ lowercasedName: String) -> Bool {
         switch self {
         case .all:

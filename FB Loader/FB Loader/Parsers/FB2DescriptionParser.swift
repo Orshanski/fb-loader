@@ -8,13 +8,8 @@ struct FB2BookInfo {
     let coverImageData: Data?
 }
 
-/// Parses the `<description>` block of an FB2 file plus the `<binary>` element
-/// referenced by `<coverpage><image l:href="#..."/>`.
 /// Takes the whole file: XMLParser sees only the prefix up to `</description>`,
 /// the cover is located by a byte search; the book text is never parsed.
-///
-/// `nonisolated` — pure parser, no UI state. Without this it would be inferred
-/// as MainActor (project default) and reject calls from `Task.detached`.
 nonisolated enum FB2DescriptionParser {
     enum ParseError: Error { case malformed }
 
@@ -236,17 +231,14 @@ nonisolated enum FB2DescriptionParser {
     }
 }
 
-/// Internal SAX state machine. `nonisolated` so XMLParser can drive it from
-/// `parse(data:)` (which is itself nonisolated). Not Sendable: it's owned by
-/// a single `parse(data:)` invocation and never escapes.
+/// Owned by a single `parse(data:)` call and never escapes, hence not Sendable.
 private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
-    // State machine
     private enum Section { case none, titleInfo, author, translator, annotation, coverpage, binary }
     private var section: Section = .none
     private var inDescription = false
     private var currentBinaryID: String?
     private var currentBinaryBuffer = ""
-    private var currentTextField: String = "" // accumulator for text() inside small fields
+    private var currentTextField: String = ""
 
     var bookTitle: String?
     var annotation: String?
@@ -256,15 +248,11 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     var binariesByID: [String: String] = [:]
 
     private var translatorBuilder: (last: String, first: String, middle: String) = ("", "", "")
-    /// `true` while we're inside one of the leaf text fields we care about
-    /// (first-name / last-name / middle-name / book-title / date). These never
-    /// nest in valid FB2, so a Bool is enough.
+    /// Leaf text fields (names, title, date) never nest in valid FB2, so a Bool is enough.
     private var inSmallField = false
     private var annotationBuffer = ""
     private var inAnnotationDepth = 0
-    /// `true` while we're inside `<p>` (or other text-bearing element we treat
-    /// as a paragraph) within `<annotation>`. Off → `foundCharacters` skips
-    /// inter-tag whitespace from pretty-printing instead of accumulating it.
+    /// Off → `foundCharacters` skips inter-tag whitespace from pretty-printing.
     private var inAnnotationParagraph = false
 
     func parser(_ _: XMLParser,
@@ -314,8 +302,6 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     func parser(_ _: XMLParser, foundCharacters string: String) {
         if section == .binary { currentBinaryBuffer += string; return }
         if section == .annotation {
-            // Skip inter-tag whitespace from FB2 pretty-printing — only keep
-            // characters that live inside an actual `<p>` (or similar).
             if inAnnotationParagraph { annotationBuffer += string }
             return
         }

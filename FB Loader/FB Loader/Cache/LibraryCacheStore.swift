@@ -1,9 +1,6 @@
 import Foundation
 
-/// Caches the parsed Library on disk and decides whether to reparse.
-/// Cache is invalidated when the SHA-256 of the INPX content changes
-/// (path is not a factor — same INPX moved elsewhere does not invalidate)
-/// or when the importer or genres.json change.
+/// Invalidated by a change of the INPX content hash (not its path), the importer or genres.json.
 nonisolated final class LibraryCacheStore {
     static let fileName = "library-cache.bin"
 

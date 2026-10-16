@@ -1,23 +1,21 @@
 import SwiftUI
 import AppKit
 
-/// `NSTableView`-backed lazy list, used in place of SwiftUI `Table` when the
-/// item count is large (100k+). SwiftUI Table on macOS 26 spends ~20 seconds
-/// diffing transitions like 166k → 500; `NSTableView.reloadData()` is O(1)
-/// at the API level and lazily fetches rows for the visible viewport via
-/// the data-source protocol — millions of rows are routine for it.
+/// `NSTableView`-backed list used instead of SwiftUI `Table` for 100k+ items: Table spends ~20 s diffing
+/// transitions like 166k → 500, while `reloadData()` is O(1) and rows load lazily.
 ///
-/// Single-column, no header. Selection is single, bound externally.
-/// `trailingLabelFor` is optional — when set, each row renders a secondary
-/// right-aligned text (used for per-row book counts in author/series lists).
+/// Single column, no header, single selection bound externally; `trailingLabelFor` adds a right-aligned
+/// secondary label (book counts).
 struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Hashable {
     let items: [Item]
     @Binding var selectedID: Item.ID?
     /// Pure label producer. Called per visible row, so it must be cheap.
     let labelFor: (Item) -> String
-    /// Optional right-aligned secondary label (e.g. count).
     var trailingLabelFor: ((Item) -> String)? = nil
     var rowStyleFor: (Item) -> SidebarRowStyle = { _ in SidebarRowStyle() }
+    var scrollMemory: SidebarMemory? = nil
+    var scrollKey = ""
+    var scrollFilterKey = ""
 
     private static var cellIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("LazyListTable.cell")
@@ -47,6 +45,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         tableView.delegate = context.coordinator
 
         scrollView.documentView = tableView
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        scrollView.postsFrameChangedNotifications = true
+        context.coordinator.observeScroll(of: scrollView)
         return scrollView
     }
 
@@ -58,6 +59,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         coordinator.trailingLabelFor = trailingLabelFor
         coordinator.rowStyleFor = rowStyleFor
         coordinator.binding = $selectedID
+        coordinator.scrollMemory = scrollMemory
+        coordinator.scrollKey = scrollKey
+        coordinator.scrollFilterKey = scrollFilterKey
 
         // Cheap structural-change check: count + first/last IDs is enough to
         // tell apart the transitions we care about (166k → 500 → 40 etc).
@@ -84,6 +88,11 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             }
         }
         coordinator.syncSelection(of: tableView, to: selectedID)
+        coordinator.restoreScrollOnce(in: scrollView)
+    }
+
+    static func dismantleNSView(_: NSScrollView, coordinator: Coordinator) {
+        coordinator.stopObserving()
     }
 
     func makeCoordinator() -> Coordinator {
@@ -107,6 +116,49 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         /// а не пользователь — в модель не пишем. Иначе выбранный автор, скрытый
         /// фильтром сайдбара, сбрасывался бы в `nil` вместе с превью и галочками.
         private var isUpdatingSelection = false
+        var scrollMemory: SidebarMemory?
+        var scrollKey = ""
+        var scrollFilterKey = ""
+        /// Пока сохранённая прокрутка не применена, события границ (стартовые y = 0) её не затирают.
+        private var scrollRestored = false
+        private var observers: [NSObjectProtocol] = []
+
+        func observeScroll(of scrollView: NSScrollView) {
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
+                queue: .main) { [weak self, weak scrollView] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, self.scrollRestored, let scrollView else { return }
+                        self.scrollMemory?.setScroll(scrollView.contentView.bounds.origin.y,
+                                                     filterKey: self.scrollFilterKey, for: self.scrollKey)
+                    }
+                })
+            // Первый updateNSView приходит до раскладки (нулевой фрейм): восстанавливаем, когда размер появился.
+            observers.append(center.addObserver(
+                forName: NSView.frameDidChangeNotification, object: scrollView,
+                queue: .main) { [weak self, weak scrollView] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let scrollView else { return }
+                        self.restoreScrollOnce(in: scrollView)
+                    }
+                })
+        }
+
+        func stopObserving() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
+
+        func restoreScrollOnce(in scrollView: NSScrollView) {
+            guard !scrollRestored, !items.isEmpty, scrollView.frame.height > 0 else { return }
+            scrollRestored = true
+            guard let y = scrollMemory?.scroll(filterKey: scrollFilterKey, for: scrollKey) else { return }
+            let clip = scrollView.contentView
+            let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: y), size: clip.bounds.size))
+            clip.scroll(to: target.origin)
+            scrollView.reflectScrolledClipView(clip)
+        }
 
         init(items: [Item], labelFor: @escaping (Item) -> String,
              trailingLabelFor: ((Item) -> String)?,
@@ -122,13 +174,9 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             self.binding = binding
         }
 
-        // Explicit empty `nonisolated deinit` — workaround for an ICE in
-        // swift-frontend's `EarlyPerfInliner` (Xcode 26.4.1 / Swift 6.3.1)
-        // when synthesising the implicit MainActor-isolated deinit for a
-        // generic-parameterised class. Crash hits only at -O / Release; Debug
-        // builds and tests are unaffected. Safe to remove if a future Swift
-        // version stops crashing here.
-        nonisolated deinit { /* Empty by design — see comment above. */ }
+        // Empty deinit works around a swift-frontend ICE (EarlyPerfInliner, Xcode 26.4.1 / Swift 6.3.1) on the
+        // implicit MainActor deinit of a generic class; only -O builds crash. Remove once fixed.
+        nonisolated deinit {}
 
         func numberOfRows(in _: NSTableView) -> Int { items.count }
 
@@ -186,9 +234,6 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
         }
     }
 
-    /// Two-label row cell: left main label (truncating tail) + right trailing
-    /// secondary label (smaller font, secondary color). Trailing label hides
-    /// itself when empty, so single-label clients see no visual difference.
     final class TwoLabelCell: NSView {
         let mainLabel: NSTextField = {
             let f = NSTextField(labelWithString: "")
@@ -222,8 +267,8 @@ struct LazyListTable<Item: Identifiable>: NSViewRepresentable where Item.ID: Has
             setupSubviews()
         }
 
-        // Same EarlyPerfInliner ICE workaround as Coordinator.deinit above.
-        nonisolated deinit { /* Empty by design — see comment above. */ }
+        // Same ICE workaround as Coordinator.deinit.
+        nonisolated deinit {}
 
         private func setupSubviews() {
             mainLabel.translatesAutoresizingMaskIntoConstraints = false

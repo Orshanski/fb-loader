@@ -1,9 +1,7 @@
 import Foundation
 
 enum ExportRunner {
-    /// Runs on the main actor so `progress` can be mutated without hops.
-    /// Heavy work (zip read + convert + file write) is one detached task per book — sequential to
-    /// keep disk thrashing low and to match freeLib's behaviour (exportthread.cpp processes books one by one).
+    /// One detached task per book, sequentially: keeps disk thrashing low and matches freeLib (exportthread.cpp).
     @MainActor
     static func run(items: [ExportItem],
                     exportRoot: URL,

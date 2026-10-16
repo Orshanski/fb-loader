@@ -5,19 +5,21 @@ struct MainWindowView: View {
     let library: Library
     @Environment(AppState.self) private var state
     @State private var sidebarVisible = true
-    @State private var showSearch = false
     /// Окно показывается, когда разделитель сайдбара уже стоит на сохранённом
     /// месте: иначе зоны на глазах прыгают из положения по умолчанию.
     @State private var layoutReady = false
     @State private var exportAction = ExportAction()
+    @State private var sidebarMemory = SidebarMemory()
 
     private let booksTableMinHeight: CGFloat = 240
     private let booksTableIdealHeight: CGFloat = 300
 
     var body: some View {
+        @Bindable var state = state
         HSplitView {
             if sidebarVisible {
-                LeftSidebarView(library: library, onOpenSearch: { showSearch = true })
+                LeftSidebarView(library: library, onOpenSearch: { state.isSearchPresented = true })
+                    .environment(\.sidebarMemory, sidebarMemory)
                     .modifier(RestoredPaneSize(axis: .horizontal, dimension: .sidebarWidth) {
                         revealLayout()
                     })
@@ -66,14 +68,14 @@ struct MainWindowView: View {
         // Без minWidth: минимум ширины окна — сумма минимумов зон, иначе узкая
         // правая панель (без «Жанров» и «Размера») недостижима.
         .frame(minHeight: 640)
-        .sheet(isPresented: $showSearch) {
+        .sheet(isPresented: $state.isSearchPresented) {
             SearchWindowView(
                 library: library,
                 archivesRoot: state.userPaths.archivesDirectoryURL,
                 exportSession: state.exportSession,
                 initialLanguage: state.languageFilter,
                 preferredSize: searchSheetSize(),
-                onClose: { showSearch = false }
+                onClose: { state.isSearchPresented = false }
             )
         }
         .toolbar {
@@ -87,7 +89,7 @@ struct MainWindowView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showSearch = true
+                    state.isSearchPresented = true
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
@@ -95,11 +97,11 @@ struct MainWindowView: View {
             }
         }
         .focusedSceneValue(\.mainWindowActions, MainWindowActions(
-            isAvailable: !showSearch && state.exportSession.progress(for: .main) == nil
+            isAvailable: !state.isSearchPresented && state.exportSession.progress(for: .main) == nil
                 && state.exportSession.phase != .choosingFolder && !state.isSettingsPresented,
             sidebarVisible: sidebarVisible,
             toggleSidebar: { sidebarVisible.toggle() },
-            openSearch: { showSearch = true }))
+            openSearch: { state.isSearchPresented = true }))
         // Непрозрачная панель окна: под прозрачной просвечивает прокручиваемое
         // содержимое, которое macOS пускает под неё.
         .toolbarBackground(.visible, for: .windowToolbar)

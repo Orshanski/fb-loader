@@ -183,7 +183,7 @@ struct LibraryBinaryCodecTests {
     @Test("non-32-byte inpxHash throws EncodeError.invalidHashSize")
     func invalidHashSize() throws {
         let lib = Library(
-            inpxHash: Data(repeating: 0xAB, count: 16),     // wrong size
+            inpxHash: Data(repeating: 0xAB, count: 16),
             inpxVersion: "v",
             archives: [], authors: [], series: [], genres: [], books: []
         )
@@ -227,7 +227,6 @@ struct LibraryBinaryCodecTests {
         )
         let data = try LibraryBinaryCodec.encode(original, sourceKey: testKey)
 
-        // Collect status messages fired during decode → Library.init.
         let statuses = ThreadSafeBox<[String]>([])
         _ = try LibraryBinaryCodec.decode(data, onStatus: { msg in
             statuses.mutate { $0.append(msg) }
@@ -242,10 +241,7 @@ struct LibraryBinaryCodecTests {
     }
 }
 
-/// Test helper — thread-safe box for collecting messages fired from
-/// non-MainActor contexts. `Library.init`'s `onStatus` is `@Sendable`, so
-/// the closure can be called from any actor; we need a safe place to
-/// accumulate.
+/// `Library.init`'s `onStatus` is `@Sendable` and may fire from any actor.
 final class ThreadSafeBox<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: Value

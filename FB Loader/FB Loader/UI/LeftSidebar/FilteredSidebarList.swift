@@ -5,16 +5,10 @@ struct SidebarRowStyle {
     var fontWeight: NSFont.Weight = .regular
 }
 
-/// Sidebar list with a debounced, off-main name filter. Generic over the
-/// item type so authors and series share one implementation.
+/// Sidebar list with a debounced, off-main name filter, shared by authors and series.
 ///
-/// `lowercasedNames` is a parallel array to `items` — the same length, the
-/// same order. The Library pre-computes both so we can scan 100k+ entries
-/// without re-allocating lowercased strings per keystroke.
-///
-/// `filterKey` lets the caller invalidate the filter task when an external
-/// dependency (e.g. language filter) changes; whenever it differs from the
-/// previous render, `.task(id:)` cancels the in-flight scan and starts over.
+/// `lowercasedNames` parallels `items` (same length and order); `Library` precomputes it so a keystroke
+/// doesn't re-lowercase 100k+ names. A changed `filterKey` restarts the in-flight scan via `.task(id:)`.
 struct FilteredSidebarList<Item: Identifiable & Sendable>: View
 where Item.ID: Hashable & Sendable {
     let items: [Item]
@@ -27,36 +21,52 @@ where Item.ID: Hashable & Sendable {
     @Binding var selectedID: Item.ID?
     let filterText: String
     let filterKey: String
+    let memoryKey: String
 
+    @Environment(\.sidebarMemory) private var memory
     @State private var filtered: [Item] = []
+    @State private var computedKey: String?
+    @State private var started = false
 
     var body: some View {
         LazyListTable(
-            items: filtered,
+            items: computedKey == nil ? (memory?.items(Item.self, filterKey: filterKey, for: memoryKey) ?? []) : filtered,
             selectedID: $selectedID,
             labelFor: labelFor,
             trailingLabelFor: trailingLabelFor,
-            rowStyleFor: rowStyleFor
+            rowStyleFor: rowStyleFor,
+            scrollMemory: memory,
+            scrollKey: memoryKey,
+            scrollFilterKey: filterKey
         )
         .task(id: filterKey) { await reloadFilter() }
     }
 
-    /// 150 ms quiet window before scanning so rapid typing doesn't spawn
-    /// N concurrent filter tasks; `.task(id:)` already handles cancel-and-
-    /// restart on input change.
+    /// Первый расчёт идёт без паузы, чтобы список не был пуст при показе раздела. Все следующие ждут 150 мс:
+    /// `.task(id:)` отменяет предыдущую задачу, а отмена доходит и до фонового скана, так что сканы не копятся.
     private func reloadFilter() async {
-        try? await Task.sleep(for: .milliseconds(150))
-        if Task.isCancelled { return }
+        let first = !started
+        started = true
+        if computedKey == nil, let cached = memory?.items(Item.self, filterKey: filterKey, for: memoryKey) {
+            filtered = cached
+            computedKey = filterKey
+            return
+        }
+        if !first {
+            try? await Task.sleep(for: .milliseconds(150))
+            if Task.isCancelled { return }
+        }
 
         let pattern = NamePattern(query: filterText)
         let items = items
         let names = lowercasedNames
         let count = countFor
         let includeZeroCountItem = includeZeroCountItem
-        let result: [Item] = await Task.detached(priority: .userInitiated) {
+        let scan = Task.detached(priority: .userInitiated) { () -> [Item]? in
             var out: [Item] = []
             out.reserveCapacity(64)
             for i in items.indices {
+                if i & 0xFFF == 0, Task.isCancelled { return nil }
                 let item = items[i]
                 let itemCount = count(item)
                 if itemCount > 0 && pattern.matches(names[i]) {
@@ -69,8 +79,11 @@ where Item.ID: Hashable & Sendable {
                 out.append(item)
             }
             return out
-        }.value
-        if Task.isCancelled { return }
+        }
+        let scanned = await withTaskCancellationHandler { await scan.value } onCancel: { scan.cancel() }
+        guard let result = scanned, !Task.isCancelled else { return }
         filtered = result
+        computedKey = filterKey
+        memory?.store(result, filterKey: filterKey, for: memoryKey)
     }
 }

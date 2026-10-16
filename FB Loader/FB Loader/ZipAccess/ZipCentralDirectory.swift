@@ -1,13 +1,8 @@
 import Foundation
 import Compression
 
-/// Minimal ZIP reader optimized for the Flibusta case: 1–2 GB archives with
-/// thousands of entries on slow external storage. ZIPFoundation 0.9.20's
-/// `Archive.makeIterator` reads each central-directory record with a separate
-/// disk seek, so finding one entry by name in such an archive takes ~20 s.
-/// Here we read the *entire* central directory in one big chunk at archive
-/// open (typically a few MB), build an in-memory `[name: Entry]` dict, and
-/// extract entries by seeking directly to their local-file-header offset.
+/// Minimal ZIP reader for Flibusta: 1–2 GB archives with thousands of entries on slow external storage.
+/// ZIPFoundation's iterator seeks per central-directory record (~20 s per lookup), so the whole CD is read in one chunk.
 nonisolated enum ZipCentralDirectory {
     enum ZipError: Error {
         case eocdNotFound(URL)
@@ -39,8 +34,6 @@ nonisolated enum ZipCentralDirectory {
         let crc32: UInt32
     }
 
-    /// In-memory snapshot of an archive's central directory.
-    /// Cheap to keep around; one per zip file the user touches per session.
     struct Index: Sendable {
         let archiveURL: URL
         let entries: [String: Entry]
@@ -48,18 +41,14 @@ nonisolated enum ZipCentralDirectory {
 
     // MARK: - Index
 
-    /// Reads central directory from the end of the zip and builds a name→entry map.
-    /// O(CD size); for Flibusta archives this is one read of a few MB.
     static func readIndex(of url: URL) throws -> Index {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 
         let fileSize = (try handle.seekToEnd())
         guard fileSize >= 22 else { throw ZipError.eocdNotFound(url) }
-        // EOCD record is variable-length (because of optional zip comment up to
-        // 65535 bytes). It lives at the very end of the file. Read up to 64 KB
-        // + the 22-byte EOCD header from the tail and scan back for the
-        // signature 0x06054b50.
+        // EOCD sits at the end, after an optional comment of up to 65535 bytes: read that window plus the
+        // 22-byte header and scan back for 0x06054b50.
         let scanWindow: UInt64 = min(fileSize, 65557)
         try handle.seek(toOffset: fileSize - scanWindow)
         let tail = try readExactly(handle, Int(scanWindow), url)
@@ -212,8 +201,6 @@ nonisolated enum ZipCentralDirectory {
 
     // MARK: - Extract
 
-    /// Reads and decompresses a single entry. Caller already has the index
-    /// from `readIndex(of:)` and looked up the desired entry by name.
     static func extract(_ entry: Entry, from url: URL) throws -> Data {
         guard !entry.isEncrypted else { throw ZipError.encrypted(name: entry.name) }
         guard entry.uncompressedSize <= maxEntrySize, entry.compressedSize <= maxEntrySize else {

@@ -22,6 +22,8 @@ final class ExportSession {
     private(set) var progress: ExportProgress?
     private(set) var origin: ExportOrigin?
     var isBusy: Bool { phase != .idle }
+    /// Выбор папки, ход выгрузки или показанный итог: пока истинно, на экране модальное окно выгрузки.
+    var isPresentingUI: Bool { isBusy || progress != nil }
 
     typealias ChooseFolder = @MainActor (_ initial: URL?) async -> URL?
     typealias MakeConverter = (ExportFormat) -> any ExportConverter

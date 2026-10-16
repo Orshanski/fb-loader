@@ -1,14 +1,9 @@
 import Foundation
 
-/// Loads and queries the FB2 genre dictionary embedded in the app bundle.
-/// Source: extracted from freeLib.sqlite `genre` table, plus Flibusta genres
-/// freeLib lacks (names and sections from flibusta.is/g, 2026-10-15).
+/// Source: freeLib.sqlite `genre` table plus Flibusta genres freeLib lacks (flibusta.is/g, 2026-10-15).
 ///
-/// **Concurrency:** not Sendable. `genre(forCode:)` mutates internal caches
-/// (`syntheticByCode`, `nextSyntheticID`) when synthesizing entries for unknown
-/// codes. Callers must access a single instance from one isolation domain.
-/// In FB Loader, `INPXImporter` uses it during INPX parse and then discards it —
-/// only the resolved `Genre` values flow into the `Sendable` `Library` snapshot.
+/// Not Sendable: `genre(forCode:)` mutates synthetic-genre caches, so use one instance per isolation
+/// domain. `INPXImporter` discards it after parsing; only resolved `Genre` values reach `Library`.
 nonisolated final class GenreDictionary {
     private struct RawEntry: Decodable {
         let id: Int16
@@ -31,8 +26,7 @@ nonisolated final class GenreDictionary {
     let allGenres: [Genre]
     let fingerprint: Data
     private let byCode: [String: Genre]
-    /// Synthetic genres created on demand for unknown FB2 codes.
-    /// Negative IDs to avoid collision with real ones.
+    /// Synthetic genres for unknown FB2 codes; negative IDs cannot collide with real ones.
     private var syntheticByCode: [String: Genre] = [:]
     private var nextSyntheticID: Int16? = -1
 
@@ -55,12 +49,8 @@ nonisolated final class GenreDictionary {
                 .map(String.init)
             for code in keys {
                 let g = Genre(id: r.id, code: code, name: name, parentID: parent)
-                // Last entry wins on collisions. Source data has 4 codes that
-                // appear twice (adv_animal, adv_geo, child_adv, drama_antique);
-                // three are same-name duplicates from twin subtrees. `child_adv`
-                // is the only true conflict — it always resolves to id=1012
-                // ("Приключения для детей и подростков"). Matches freeLib's
-                // QHash insertion semantics in importthread.cpp:613.
+                // Last entry wins, as in freeLib's QHash insertion (importthread.cpp:613). Of the 4 duplicated
+                // codes only `child_adv` truly conflicts; it resolves to id=1012.
                 byCode[code] = g
             }
             // Also keep one entry per `id` for navigation. Top-level categories
@@ -81,11 +71,7 @@ nonisolated final class GenreDictionary {
         return GenreDictionary(rawEntries: raw, fingerprint: SHA256.hash(of: data))
     }
 
-    /// Returns a genre for the given FB2 code. For unknown non-empty codes,
-    /// synthesizes a `Genre` whose `name` equals the code itself (per spec §7)
-    /// and caches it so repeated lookups are stable. Returns `nil` for the
-    /// empty string — there are no "" keys in the source dictionary, and a
-    /// synthetic genre with empty code/name is never useful.
+    /// Unknown non-empty codes get a cached synthetic `Genre` named after the code; `nil` for the empty string.
     func genre(forCode code: String) -> Genre? {
         guard !code.isEmpty else { return nil }
         if let g = byCode[code] { return g }

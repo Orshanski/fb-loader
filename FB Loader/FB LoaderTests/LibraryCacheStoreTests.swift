@@ -26,7 +26,6 @@ final class LibraryCacheStoreTests {
 
     private var cachePath: URL { LibraryCacheStore.cacheURL(in: tmp) }
 
-    /// Загрузка с отметкой, понадобилась ли пересборка.
     private func load(sourceKey: Data? = nil) throws -> (Library, rebuilt: Bool) {
         var rebuilt = false
         let lib = try store.loadOrRebuild(inpxURL: inpx, sourceKey: sourceKey ?? key) { hash in

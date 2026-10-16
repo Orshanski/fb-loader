@@ -1,20 +1,14 @@
 import Foundation
 import Observation
 
-/// The only state persisted between app launches:
-/// - inpxURL: path to the INPX file
-/// - archivesDirectoryURL: directory containing the .zip archives
-/// - lastExportDirectoryURL: pre-fill for the next export-folder dialog
-///
-/// All other UI state (window size, selection, filters) is intentionally NOT persisted.
+/// UI state (window size, selection, filters) is intentionally not persisted.
 ///
 /// Значения хранятся копией в свойствах, а не читаются из `UserDefaults` на лету:
 /// `@Observable` отслеживает только хранимые свойства, иначе открытые
 /// Настройки не видели бы смену пути.
 @Observable
 final class UserPaths {
-    /// The single shared instance used by AppState and SettingsView.
-    /// Production code uses `.shared`; tests instantiate with a custom UserDefaults suite.
+    /// Tests instantiate their own instance with a custom UserDefaults suite.
     static let shared = UserPaths()
 
     @ObservationIgnored private let defaults: UserDefaults
