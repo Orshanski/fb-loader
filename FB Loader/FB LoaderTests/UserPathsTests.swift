@@ -65,3 +65,93 @@ struct UserPathsTests {
 
     private final class Flag: @unchecked Sendable { var value = false }
 }
+
+@Suite("UserPaths: сведения о томе")
+@MainActor
+struct UserPathsVolumeTests {
+    private let info = VolumeInfo(name: "flibusta", isNetwork: true,
+                                  remountURL: URL(string: "smb://alexey@nas._smb._tcp.local/flibusta"))
+
+    @Test("сведения о томе хранятся отдельно для INPX и папки архивов и переживают перезапуск")
+    func roundTrip() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            #expect(paths.inpxVolume == nil)
+            #expect(paths.archivesVolume == nil)
+            paths.inpxVolume = info
+            let other = VolumeInfo(name: "USB", isNetwork: false, remountURL: nil)
+            paths.archivesVolume = other
+            let reread = UserPaths(defaults: suite)
+            #expect(reread.inpxVolume == info)
+            #expect(reread.archivesVolume == other)
+        }
+    }
+
+    @Test("nil стирает сведения")
+    func clear() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            paths.inpxVolume = info
+            paths.inpxVolume = nil
+            #expect(UserPaths(defaults: suite).inpxVolume == nil)
+        }
+    }
+
+    @Test("выбор пути записывает сведения о его томе")
+    func selectionRecordsVolume() async {
+        let box = TestDefaults()
+        defer { box.cleanUp() }
+        do {
+            let suite = box.defaults
+            let paths = UserPaths(defaults: suite)
+            let dir = FileManager.default.temporaryDirectory
+            let file = dir.appendingPathComponent("vol-\(UUID()).inpx")
+            FileManager.default.createFile(atPath: file.path, contents: Data())
+            defer { try? FileManager.default.removeItem(at: file) }
+            await paths.setINPX(file).value
+            await paths.setArchivesDirectory(dir).value
+            #expect(paths.inpxURL == file)
+            #expect(paths.inpxVolume != nil)
+            #expect(paths.archivesVolume != nil)
+        }
+    }
+}
+
+extension UserPathsVolumeTests {
+    @Test("смена пути сбрасывает сведения о прежнем томе")
+    func changingURLClearsVolume() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            paths.inpxVolume = info
+            paths.archivesVolume = info
+            paths.inpxURL = URL(fileURLWithPath: "/x/y.inpx")
+            paths.archivesDirectoryURL = URL(fileURLWithPath: "/x")
+            #expect(paths.inpxVolume == nil)
+            #expect(paths.archivesVolume == nil)
+        }
+    }
+}
+
+extension UserPathsVolumeTests {
+    @Test("подмена на запуск не меняет сохранённые пути и сбрасывается выбором нового")
+    func sessionOverrides() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            let saved = URL(fileURLWithPath: "/Volumes/flibusta/lib.inpx")
+            let savedArch = URL(fileURLWithPath: "/Volumes/flibusta/archives")
+            paths.inpxURL = saved
+            paths.archivesDirectoryURL = savedArch
+            paths.inpxVolume = info
+            let moved = URL(fileURLWithPath: "/Volumes/flibusta-1/lib.inpx")
+            paths.applySessionOverrides(PathOverrides(inpx: moved, archives: nil))
+            #expect(paths.effectiveINPXURL == moved)
+            #expect(paths.effectiveArchivesURL == savedArch)
+            #expect(paths.inpxURL == saved)
+            #expect(paths.inpxVolume == info)
+            #expect(UserPaths(defaults: suite).inpxURL == saved)
+
+            paths.inpxURL = URL(fileURLWithPath: "/new/lib.inpx")
+            #expect(paths.effectiveINPXURL?.path == "/new/lib.inpx")
+        }
+    }
+}

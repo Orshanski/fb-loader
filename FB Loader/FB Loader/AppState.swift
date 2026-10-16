@@ -6,12 +6,24 @@ final class AppState {
     enum LoadStage {
         case starting
         case onboarding(MissingPaths)
+        case storageProblem(StorageProblem)
         case loading(progress: String)
         case ready(Library)
         case failed(String)
     }
 
     var stage: LoadStage = .starting
+
+    /// Стадии, где путей ещё нет и результат проверки может их заменить; на остальных он устарел.
+    var isAwaitingPaths: Bool {
+        switch stage {
+        case .starting, .onboarding, .storageProblem: true
+        case .loading, .ready, .failed: false
+        }
+    }
+    var isStorageProblem: Bool {
+        if case .storageProblem = stage { true } else { false }
+    }
 
     /// Пересборка нужна, когда INPX подменили при открытом каталоге; на
     /// онбординге, во время загрузки и на экране ошибки её нет.

@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var settingsRebuildProgress: String?
     @State private var loadGate = LoadSessionGate()
     @State private var loadTask: Task<Void, Never>?
+    @State private var problemTask: Task<Void, Never>?
+    @State private var problemBusy: String?
 
     var body: some View {
         Group {
@@ -13,10 +15,24 @@ struct ContentView: View {
                 LoaderScreen(progress: "Подготовка…")
             case .onboarding(let missing):
                 CatalogPickerView(missing: missing, userPaths: state.userPaths) { inpx, arch in
-                    state.userPaths.inpxURL = inpx
-                    state.userPaths.archivesDirectoryURL = arch
+                    state.userPaths.setINPX(inpx)
+                    state.userPaths.setArchivesDirectory(arch)
                     startLoad()
                 }
+            case .storageProblem(let problem):
+                StorageProblemView(
+                    problem: problem,
+                    busy: problemBusy,
+                    onRetry: { runProblemTask("Проверка…") {} },
+                    onRepick: { state.stage = .onboarding(problem.fallback) },
+                    onRemount: { url in
+                        runProblemTask("Подключение…") {
+                            NSWorkspace.shared.open(url)
+                            // Шара уже могла быть смонтирована под другим именем: тогда уведомления не будет.
+                            if case .ok = await evaluatePaths() { return }
+                            await waitForVolumeMount(timeout: .seconds(30))
+                        }
+                    })
             case .loading(let p):
                 LoaderScreen(progress: p)
                 // Disable implicit animations on rapid progress-string changes —
@@ -59,15 +75,13 @@ struct ContentView: View {
                 .frame(minWidth: 600, minHeight: 350)
             }
         }
-        .task {
-            if let missing = MissingPaths.check(
-                inpx: state.userPaths.inpxURL,
-                archives: state.userPaths.archivesDirectoryURL,
-                isReachable: { FileManager.default.fileExists(atPath: $0.path) }) {
-                state.stage = .onboarding(missing)
-                return
+        .task { await checkPaths() }
+        .onChange(of: state.isStorageProblem) { _, isProblem in
+            if !isProblem {
+                problemTask?.cancel()
+                problemTask = nil
+                problemBusy = nil
             }
-            startLoad()
         }
         .focusedSceneValue(\.openSettings, state.isAnySheetPresented ? nil : {
             state.isSettingsPresented = true
@@ -77,14 +91,66 @@ struct ContentView: View {
                 userPaths: state.userPaths,
                 rebuildProgress: settingsRebuildProgress,
                 canRebuild: state.canRebuildCatalog,
-                onClose: { state.isSettingsPresented = false },
+                onClose: {
+                    state.isSettingsPresented = false
+                    switch state.stage {
+                    case .onboarding, .storageProblem: Task { await checkPaths() }
+                    default: break
+                    }
+                },
                 onRebuild: rebuildCatalog,
                 onINPXChange: { url in
-                    state.userPaths.inpxURL = url
+                    state.userPaths.setINPX(url)
                     if state.canRebuildCatalog { rebuildCatalog() }
                 }
             )
         }
+    }
+
+    private func runProblemTask(_ busy: String, before: @escaping () async -> Void) {
+        problemTask?.cancel()
+        problemBusy = busy
+        problemTask = Task {
+            await before()
+            if !Task.isCancelled { await checkPaths() }
+            if !Task.isCancelled { problemBusy = nil }
+        }
+    }
+
+    private func evaluatePaths() async -> StartupCheck {
+        let paths = state.userPaths
+        return await StartupCheck.run(
+            inpx: paths.inpxURL, archives: paths.archivesDirectoryURL,
+            inpxVolume: paths.inpxVolume, archivesVolume: paths.archivesVolume)
+    }
+
+    private func checkPaths() async {
+        let result = await evaluatePaths()
+        // За время проверки пользователь мог уйти с этой стадии: устаревший результат её не перезаписывает.
+        guard state.isAwaitingPaths, !Task.isCancelled else { return }
+        switch result {
+        case .ok(let overrides):
+            state.userPaths.applySessionOverrides(overrides)
+            startLoad()
+            Task { await refreshVolumes() }
+        case .missing(let missing):
+            state.stage = .onboarding(missing)
+        case .problem(let problem):
+            state.stage = .storageProblem(problem)
+        }
+    }
+
+    /// Не задерживает загрузку; удачное определение перезаписывает прежние сведения (шара могла сменить адрес).
+    private func refreshVolumes() async {
+        let paths = state.userPaths
+        // Под подменой сведения остаются прежними: это тот же том, смонтированный иначе.
+        guard let inpx = paths.inpxURL, let arch = paths.archivesDirectoryURL,
+              !paths.hasINPXOverride, !paths.hasArchivesOverride else { return }
+        async let i = VolumeInfo.detectOffMain(inpx)
+        async let a = VolumeInfo.detectOffMain(arch)
+        let (iv, av) = await (i, a)
+        if paths.inpxURL == inpx, let iv { paths.inpxVolume = iv }
+        if paths.archivesDirectoryURL == arch, let av { paths.archivesVolume = av }
     }
 
     private func rebuildCatalog() {
@@ -99,7 +165,7 @@ struct ContentView: View {
     private func startLoad(forceRebuild: Bool = false,
                            onProgressText: ((String) -> Void)? = nil,
                            onFinish: (() -> Void)? = nil) {
-        guard let inpx = state.userPaths.inpxURL else {
+        guard let inpx = state.userPaths.effectiveINPXURL else {
             onFinish?()
             return
         }
