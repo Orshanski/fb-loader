@@ -67,7 +67,7 @@ cross-section и same-section.
 
 ### Не трогается ни в одном сценарии
 
-`languageFilter`, `exportProgress`, `userPaths`, `stage`.
+`languageFilter`, `exportSession`, `userPaths`, `stage`.
 
 ## API в AppState
 
@@ -110,7 +110,7 @@ preview нет, Сценарий 2 для жанров недостижим.
   `onSelectSeries` резолвят имя через `library` и зовут
   `state.selectAuthor(aid, deepLinkName: library.authorByID[aid]?.displayName)`
   / `state.selectSeries(sid, deepLinkName: library.seriesByID[sid]?.name)`.
-  `runExport` достаёт `selectedAuthorID` / `selectedSeriesID`
+  `startExport` достаёт `selectedAuthorID` / `selectedSeriesID`
   через pattern-match по `state.sidebar`.
 - **`UI/BooksTable/BooksTableView.swift`** — `visibleBooks` и
   `breadcrumbLabel` на pattern-match.

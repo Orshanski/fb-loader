@@ -195,7 +195,7 @@ func tokenMinRatio(query qTokens: [Token], choice cTokens: [Token]) -> Double {
 
 ### Чекбоксы и экспорт
 
-**Окно поиска самодостаточно по чекбоксам и экспорту.** Локальный `Set<Int32>` checked libids живёт в стейте окна, в основной `state.checkedBookLibids` ничего не пишется. У окна — собственная кнопка «Экспорт» (или контекстное меню на строке), запускающая существующий `ExportPlanner`/`ExportRunner` со своими libids.
+**Окно поиска самодостаточно по чекбоксам и экспорту.** Локальный `Set<Int32>` checked libids живёт в стейте окна, в основной `state.checkedBookLibids` ничего не пишется. У окна — собственная кнопка «Экспорт» (или контекстное меню на строке), запускающая выгрузку через `ExportSession.start` со своими libids. Блокировка «одна выгрузка» общая на приложение: пока идёт выгрузка из любого окна, пункт меню неактивен («Выгрузка ещё идёт…»).
 
 Это даёт чёткую изоляцию: пользователь работает в окне поиска как в самостоятельной выгрузке, не влияя на состояние главного окна. Закрытие окна сбрасывает локальные отметки (см. «без персиста»).
 
@@ -235,7 +235,7 @@ FB Loader/FB Loader/UI/Search/
 - **`UI/BooksTable/BookRow`** (приватный структ внутри `BooksTableView.swift`) — выделить в самостоятельный файл/публичный тип с инжектируемыми bindings (`isChecked: Binding<Bool>`, `isSelected: Binding<Bool>` или `onSelect: () -> Void`), чтобы строка работала и с `AppState` основного окна, и с локальным стейтом окна поиска.
 - **`LanguageFilterPicker`** (там же, `BooksTableView.swift:276-305`) — сейчас читает/пишет `state.languageFilter` через `@Environment(AppState.self)`. Рефакторим: принимает `Binding<String>` явным параметром. Существующий вызов в `LeftSidebarView` и в окне поиска — оба передают своё binding (один — `$s.languageFilter`, второй — локальный `@State`).
 - **`UI/BookDetail/BookDetailView`** — переиспользуем как есть. Параметры `library`/`archivesRoot`/`book` приходят из родителя; внутри использует `@Environment(AppState.self)` для второстепенных вещей (translator-state и т.п.), поиск не мешает. Но: в окне поиска «выбранная книга» — локальный `@State<Int32?>`, не `state.selectedBookLibid`.
-- **Экспорт.** Реюзим `ExportPlanner.plan(...)` и `ExportRunner.run(...)` как есть. Окно поиска вызывает `ExportPlanner.plan(libids: localChecked, rootFolder: …, selectedAuthorID: nil, selectedSeriesID: nil, in: library)` — `nil`/`nil` означают «папки по первому автору каждой книги», что для микса книг из разных авторов/серий — естественное поведение.
+- **Экспорт.** Выгрузка идёт через `ExportSession.start` с `origin: .search`, `selectedAuthorID/SeriesID: nil`. `nil`/`nil` означают «папки по первому автору каждой книги», что для микса книг из разных авторов/серий — естественное поведение.
 
 ### Тесты
 

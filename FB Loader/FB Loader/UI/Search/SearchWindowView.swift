@@ -4,6 +4,7 @@ import SwiftUI
 struct SearchWindowView: View {
     let library: Library
     let archivesRoot: URL?
+    let exportSession: ExportSession
     /// Initial language inherited from main window at sheet-open time.
     let initialLanguage: String
     /// Closure to dismiss the sheet — provided by the parent (MainWindowView).
@@ -18,13 +19,13 @@ struct SearchWindowView: View {
     /// Search trigger token for SwiftUI `.task(id:)` — flipping it kicks
     /// off a search. Initial nil → no search until the user clicks «Поиск».
     @State private var pendingSearchToken: UUID? = nil
-    @State private var exportProgress: ExportProgress? = nil
 
-    init(library: Library, archivesRoot: URL?, initialLanguage: String,
+    init(library: Library, archivesRoot: URL?, exportSession: ExportSession, initialLanguage: String,
          preferredSize: CGSize,
          onClose: @escaping () -> Void) {
         self.library = library
         self.archivesRoot = archivesRoot
+        self.exportSession = exportSession
         self.initialLanguage = initialLanguage
         self.preferredSize = preferredSize
         self.onClose = onClose
@@ -50,16 +51,12 @@ struct SearchWindowView: View {
             await coord.runSearch(in: library)
         }
         .sheet(item: Binding(
-            get: { exportProgress.map { ProgressIdentifier(progress: $0) } },
-            set: { _ in
-                // Read-only — ExportProgressSheet's done-closure clears exportProgress.
-            })) { wrapper in
-            ExportProgressSheet(progress: wrapper.progress) { exportProgress = nil }
+            get: { exportSession.progress(for: .search) },
+            set: { _ in })) { progress in
+            ExportProgressSheet(progress: progress) { exportSession.closeProgress(origin: .search) }
         }
-        .onExportProgress(exportProgress) { progress in
-            coord.checkedBookLibids = progress.removingSucceeded(
-                from: coord.checkedBookLibids)
-        }
+        // Страховка от устаревшего итога при следующем открытии поиска.
+        .onDisappear { exportSession.closeProgress(origin: .search) }
     }
 
     @ViewBuilder
@@ -106,8 +103,8 @@ struct SearchWindowView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 SearchResultListView(
-                    coord: coord, library: library, results: r,
-                    onRequestExport: { Task { await runExport() } }
+                    coord: coord, library: library, results: r, exportSession: exportSession,
+                    onRequestExport: { Task { await startExport() } }
                 )
             }
         } else {
@@ -147,52 +144,12 @@ struct SearchWindowView: View {
     }
 
     @MainActor
-    private func runExport() async {
-        // Гард против двойного запуска (см. MainWindowView.runExport).
-        guard exportProgress == nil else { return }
-        guard !coord.checkedBookLibids.isEmpty,
-              let archives = archivesRoot else { return }
-        let userPaths = UserPaths.shared
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        // Pre-fill последней папкой экспорта, как в MainWindowView.runExport.
-        panel.directoryURL = userPaths.lastExportDirectoryURL
-            ?? FileManager.default.urls(for: .downloadsDirectory,
-                                        in: .userDomainMask).first
-        guard let folder = await panel.selectedDirectory() else { return }
-        userPaths.lastExportDirectoryURL = folder
-
-        let items = ExportPlanner.plan(
-            libids: coord.checkedBookLibids,
-            rootFolder: folder,
-            selectedAuthorID: nil,
-            selectedSeriesID: nil,
-            in: library
-        )
-        let progress = ExportProgress()
-        exportProgress = progress
-        Task {
-            await ExportRunner.run(items: items, exportRoot: folder, archivesRoot: archives,
-                                   library: library, progress: progress)
-            // Финальный пересчёт (см. MainWindowView.runExport).
-            coord.checkedBookLibids = progress.removingSucceeded(
-                from: coord.checkedBookLibids)
-        }
-    }
-}
-
-private struct ProgressIdentifier: Identifiable {
-    let progress: ExportProgress
-    var id: ObjectIdentifier { ObjectIdentifier(progress) }
-}
-
-private extension NSOpenPanel {
-    @MainActor
-    func selectedDirectory() async -> URL? {
-        await withCheckedContinuation { c in
-            begin { r in c.resume(returning: r == .OK ? self.url : nil) }
-        }
+    private func startExport() async {
+        let coord = coord
+        await exportSession.start(ExportRequest(
+            libids: coord.checkedBookLibids, library: library,
+            selectedAuthorID: nil, selectedSeriesID: nil,
+            format: .fb2, origin: .search,
+            uncheck: { _ = coord.checkedBookLibids.remove($0) }))
     }
 }

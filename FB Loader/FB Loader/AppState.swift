@@ -99,8 +99,7 @@ final class AppState {
         dateFilter = nil
     }
 
-    /// Active export progress, if any. Drives the modal sheet.
-    var exportProgress: ExportProgress? = nil
+    let exportSession = ExportSession(userPaths: UserPaths.shared, chooseFolder: ExportFolderPanel.choose)
 
     /// Sheet настроек открыт. Живёт здесь, а не в ContentView: пока он открыт,
     /// пункты меню главного окна должны быть неактивны.

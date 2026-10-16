@@ -1,7 +1,7 @@
 import Foundation
 
 nonisolated struct ExportFailure: Equatable, Sendable {
-    enum Stage { case source, destination }
+    enum Stage { case source, conversion, destination }
 
     let reason: String
     /// Ошибка папки назначения повторится на каждой следующей книге.
@@ -16,6 +16,12 @@ nonisolated struct ExportFailure: Equatable, Sendable {
         switch stage {
         case .source:
             self.init(reason: Self.sourceReason(error), abortsExport: false)
+        case .conversion:
+            if let error = error as? ExportConversionError {
+                self.init(reason: error.reason, abortsExport: error.abortsExport)
+            } else {
+                self.init(reason: "Не удалось преобразовать книгу", abortsExport: false)
+            }
         case .destination:
             switch Self.posixCode(of: error) {
             case ENOSPC, EDQUOT:

@@ -6,6 +6,7 @@ struct SearchResultListView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let results: SearchResults
+    let exportSession: ExportSession
     let onRequestExport: () -> Void
 
     var body: some View {
@@ -26,6 +27,7 @@ struct SearchResultListView: View {
                             coord: coord,
                             library: library,
                             authorIndex: m.authorIndex,
+                            exportSession: exportSession,
                             onRequestExport: onRequestExport
                         )
                     }
@@ -55,6 +57,7 @@ struct SearchResultListView: View {
                             coord: coord,
                             library: library,
                             seriesIndex: m.seriesIndex,
+                            exportSession: exportSession,
                             onRequestExport: onRequestExport
                         )
                     }
@@ -75,6 +78,7 @@ struct SearchResultListView: View {
                         coord: coord,
                         library: library,
                         bookHits: results.books,
+                        exportSession: exportSession,
                         onRequestExport: onRequestExport
                     )
                 }

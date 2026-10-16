@@ -41,21 +41,31 @@ final class ExportRunnerTests {
                        authors: authors, series: [], genres: [], books: list)
     }
 
-    private func run(_ lib: Library, items: [ExportItem]? = nil, root: URL? = nil) async -> ExportProgress {
+    private func run(_ lib: Library, items: [ExportItem]? = nil, root: URL? = nil,
+                     converter: any ExportConverter = PassthroughConverter(),
+                     progress progressIn: ExportProgress? = nil,
+                     onExported: (@MainActor (Int32) -> Void)? = nil)
+        async -> (progress: ExportProgress, exported: [Int32]) {
         let plan = items ?? ExportPlanner.plan(libids: Set(lib.books.map(\.libid)), rootFolder: out,
-                                               selectedAuthorID: nil, selectedSeriesID: nil, in: lib)
-        let progress = ExportProgress()
-        await ExportRunner.run(items: plan, exportRoot: root ?? out, archivesRoot: archives,
-                               library: lib, progress: progress)
-        return progress
+                                               archivesRoot: archives, selectedAuthorID: nil,
+                                               selectedSeriesID: nil, in: lib)
+        let progress = progressIn ?? ExportProgress()
+        let recorder = Recorder()
+        await ExportRunner.run(items: plan, exportRoot: root ?? out, progress: progress, converter: converter) {
+            recorder.libids.append($0)
+            onExported?($0)
+        }
+        return (progress, recorder.libids)
     }
+
+    @MainActor final class Recorder { var libids: [Int32] = [] }
 
     @Test("книга с названием в 200 кириллических символов записывается")
     func longCyrillicTitleIsWritten() async throws {
         let title = String(repeating: "й", count: 200)
-        let progress = await run(try library([(1, title, 0)]))
+        let (progress, exported) = await run(try library([(1, title, 0)]))
         #expect(progress.failed.isEmpty)
-        #expect(progress.succeeded == [1])
+        #expect(exported == [1])
         let files = try FileManager.default.contentsOfDirectory(
             at: out.appendingPathComponent("Толстой Лев"), includingPropertiesForKeys: nil)
         #expect(files.count == 1)
@@ -64,11 +74,11 @@ final class ExportRunnerTests {
 
     @Test("ошибка источника не прерывает выгрузку")
     func sourceErrorContinues() async throws {
-        let progress = await run(try library([(1, "Есть", 0), (2, "Нет архива", 1), (3, "Нет в архиве", 0)],
-                                             absent: [3]))
+        let (progress, exported) = await run(try library([(1, "Есть", 0), (2, "Нет архива", 1), (3, "Нет в архиве", 0)],
+                                                          absent: [3]))
         #expect(progress.abortReason == nil)
         #expect(progress.done == 3)
-        #expect(progress.succeeded == [1])
+        #expect(exported == [1])
         #expect(progress.failed.map { $0.error } == ["Книга не найдена в архиве present.zip",
                                                      "Архив не найден — missing.zip"])
     }
@@ -77,12 +87,12 @@ final class ExportRunnerTests {
     func nonFatalWriteErrorContinues() async throws {
         let lib = try library([(1, "a", 0), (2, "b", 0)])
         let tooLong = out.appendingPathComponent(String(repeating: "x", count: 300) + ".fb2")
-        let items = [ExportItem(book: lib.books[0], archiveURL: nil, destination: tooLong),
-                     ExportItem(book: lib.books[1], archiveURL: nil, destination: out.appendingPathComponent("b.fb2"))]
-        let progress = await run(lib, items: items)
+        let items = [ExportItem(book: lib.books[0], archiveURL: archives.appendingPathComponent("present.zip"), destination: tooLong),
+                     ExportItem(book: lib.books[1], archiveURL: archives.appendingPathComponent("present.zip"), destination: out.appendingPathComponent("b.fb2"))]
+        let (progress, exported) = await run(lib, items: items)
         #expect(progress.abortReason == nil)
         #expect(progress.failed.map { $0.error } == ["Слишком длинное имя файла"])
-        #expect(progress.succeeded == [2])
+        #expect(exported == [2])
         #expect(progress.done == 2)
     }
 
@@ -91,12 +101,12 @@ final class ExportRunnerTests {
     func destinationErrorAborts() async throws {
         let lib = try library([(1, "a", 0), (2, "b", 0), (3, "c", 0)])
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: out.path)
-        let progress = await run(lib)
+        let (progress, exported) = await run(lib)
         #expect(progress.abortReason == "Нет доступа к папке")
         #expect(progress.failed.count == 1)
         #expect(progress.failed.first?.title == "a")
         #expect(progress.failed.first?.error == "Нет доступа к папке")
-        #expect(progress.succeeded.isEmpty)
+        #expect(exported.isEmpty)
         #expect(progress.done == 1)
         #expect(progress.total == 3)
     }
@@ -105,13 +115,80 @@ final class ExportRunnerTests {
     func missingRootAborts() async throws {
         let lib = try library([(1, "a", 0)])
         let gone = dir.appendingPathComponent("gone", isDirectory: true)
-        let items = ExportPlanner.plan(libids: [1], rootFolder: gone, selectedAuthorID: nil,
+        let items = ExportPlanner.plan(libids: [1], rootFolder: gone, archivesRoot: archives, selectedAuthorID: nil,
                                        selectedSeriesID: nil, in: lib)
-        let progress = await run(lib, items: items, root: gone)
+        let (progress, exported) = await run(lib, items: items, root: gone)
         #expect(progress.abortReason == "Диск недоступен")
-        #expect(progress.succeeded.isEmpty)
+        #expect(exported.isEmpty)
         #expect(progress.done == 0)
         #expect(!FileManager.default.fileExists(atPath: gone.path))
+    }
+
+    @Test("onExported — только успешные книги, в порядке выгрузки")
+    func onExportedOrder() async throws {
+        let (_, exported) = await run(try library([(3, "c", 0), (1, "a", 0), (2, "b", 1)]))
+        #expect(exported == [1, 3])
+    }
+
+    @Test("результат конвертера пишется по пути .epub; конвертер получает FB2 из архива")
+    func converterOutput() async throws {
+        let lib = try library([(1, "Рубеж", 0)])
+        let stub = StubConverter(.data(Data("EPUB".utf8)))
+        let items = ExportPlanner.plan(libids: [1], rootFolder: out, archivesRoot: archives, selectedAuthorID: nil,
+                                       selectedSeriesID: nil, format: ExportFormat(fileExtension: "epub"), in: lib)
+        let (_, exported) = await run(lib, items: items, converter: stub)
+        let file = out.appendingPathComponent("Толстой Лев/Рубеж.epub")
+        #expect(try Data(contentsOf: file) == Data("EPUB".utf8))
+        #expect(stub.inputs == [payload(1)])
+        #expect(exported == [1])
+    }
+
+    @Test("ошибка конвертации: книга в failed, следующая выгружена")
+    func conversionErrorContinues() async throws {
+        let stub = StubConverter(.failFirst(ExportConversionError(reason: "X", abortsExport: false)))
+        let (progress, exported) = await run(try library([(1, "a", 0), (2, "b", 0)]), converter: stub)
+        #expect(progress.failed.map(\.title) == ["a"])
+        #expect(progress.failed.map(\.error) == ["X"])
+        #expect(progress.abortReason == nil)
+        #expect(exported == [2])
+        #expect(progress.done == 2)
+    }
+
+    @Test("прерывающая ошибка конвертации останавливает выгрузку")
+    func conversionErrorAborts() async throws {
+        let stub = StubConverter(.fail(ExportConversionError(reason: "X", abortsExport: true)))
+        let (progress, exported) = await run(try library([(1, "a", 0), (2, "b", 0)]), converter: stub)
+        #expect(progress.abortReason == "X")
+        #expect(stub.callCount == 1)
+        #expect(exported.isEmpty)
+        #expect(progress.done == 1)
+    }
+
+    @Test("отмена между книгами: вторая не тронута")
+    func cancelBetweenBooks() async throws {
+        let stub = StubConverter(.data(Data("x".utf8)))
+        let progress = ExportProgress()
+        let (_, exported) = await run(try library([(1, "a", 0), (2, "b", 0)]), converter: stub,
+                                      progress: progress) { _ in progress.cancelled = true }
+        #expect(stub.callCount == 1)
+        #expect(exported == [1])
+        #expect(progress.done == 1)
+    }
+
+    @Test("отмена во время конвертации: конвертер получает отмену, файла и ошибок нет")
+    func cancelDuringConversion() async throws {
+        let stub = StubConverter(.waitForCancel)
+        let progress = ExportProgress()
+        let lib = try library([(1, "a", 0)])
+        let task = Task { await run(lib, converter: stub, progress: progress) }
+        for await _ in stub.entered { break }
+        progress.cancelled = true
+        let (_, exported) = await task.value
+        #expect(stub.sawCancellation)
+        #expect(progress.failed.isEmpty)
+        #expect(exported.isEmpty)
+        #expect(progress.done == 0)
+        #expect(!FileManager.default.fileExists(atPath: out.appendingPathComponent("Толстой Лев/a.fb2").path))
     }
 }
 
@@ -160,6 +237,16 @@ struct ExportFailureTests {
         #expect(!failure.abortsExport)
     }
 
+    @Test("ошибки конвертации: свои поля или общая причина без прерывания")
+    func conversionReasons() {
+        let own = ExportFailure(ExportConversionError(reason: "Нет конвертера", abortsExport: true), stage: .conversion)
+        #expect(own == ExportFailure(reason: "Нет конвертера", abortsExport: true))
+        let soft = ExportFailure(ExportConversionError(reason: "X", abortsExport: false), stage: .conversion)
+        #expect(soft == ExportFailure(reason: "X", abortsExport: false))
+        let other = ExportFailure(NSError(domain: "x", code: 1), stage: .conversion)
+        #expect(other == ExportFailure(reason: "Не удалось преобразовать книгу", abortsExport: false))
+    }
+
     @Test("POSIX-код достаётся из обёртки Cocoa")
     func cocoaWrapped() {
         let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError,
@@ -169,5 +256,58 @@ struct ExportFailureTests {
         #expect(ExportFailure(bare, stage: .destination).reason == "Нет места на диске")
         let unknown = NSError(domain: "x", code: 1)
         #expect(ExportFailure(unknown, stage: .destination) == ExportFailure(reason: "Не удалось записать файл", abortsExport: false))
+    }
+}
+
+nonisolated final class StubConverter: ExportConverter, @unchecked Sendable {
+    enum Mode { case data(Data), fail(Error), failFirst(Error), waitForCancel }
+    private let mode: Mode
+    private let lock = NSLock()
+    private var _inputs: [Data] = []
+    private var _sawCancellation = false
+    private var cancelFlag = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    let entered: AsyncStream<Void>
+    private let enteredContinuation: AsyncStream<Void>.Continuation
+
+    init(_ mode: Mode) {
+        self.mode = mode
+        (entered, enteredContinuation) = AsyncStream.makeStream()
+    }
+
+    var inputs: [Data] { lock.withLock { _inputs } }
+    var callCount: Int { inputs.count }
+    var sawCancellation: Bool { lock.withLock { _sawCancellation } }
+
+    @concurrent func convert(_ fb2: Data, book: Book) async throws -> Data {
+        let n = lock.withLock { _inputs.append(fb2); return _inputs.count }
+        enteredContinuation.yield()
+        switch mode {
+        case .data(let d): return d
+        case .fail(let e): throw e
+        case .failFirst(let e):
+            if n == 1 { throw e }
+            return fb2
+        case .waitForCancel:
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    let resumeNow = lock.withLock {
+                        if cancelFlag { return true }
+                        waiter = c
+                        return false
+                    }
+                    if resumeNow { c.resume() }
+                }
+            } onCancel: {
+                let c = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                    cancelFlag = true
+                    defer { waiter = nil }
+                    return waiter
+                }
+                c?.resume()
+            }
+            lock.withLock { _sawCancellation = Task.isCancelled }
+            throw CancellationError()
+        }
     }
 }

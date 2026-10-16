@@ -6,6 +6,7 @@ struct SearchBooksBucketView: View {
     @Bindable var coord: SearchCoordinator
     let library: Library
     let bookHits: [BookMatch]
+    let exportSession: ExportSession
     let onRequestExport: () -> Void
 
     var body: some View {
@@ -42,10 +43,8 @@ struct SearchBooksBucketView: View {
                     ),
                     contextMenuBuilder: {
                         AnyView(
-                            Button("Выгрузить отмеченные (\(coord.checkedBookLibids.count))") {
-                                onRequestExport()
-                            }
-                            .disabled(coord.checkedBookLibids.isEmpty)
+                            SearchExportMenu(checkedCount: coord.checkedBookLibids.count,
+                                             isBusy: exportSession.isBusy, onExport: onRequestExport)
                         )
                     }
                 )
