@@ -257,7 +257,6 @@ struct BookDetailView: View {
         let b = book
         let cache = CoverCache.shared
         await runDetachedCancellable(priority: .utility) {
-            let t0 = ContinuousClock.now
             let archiveName = lib.archives[Int(b.archiveIndex)] + ".zip"
             let url = root.appendingPathComponent(archiveName)
 
@@ -269,18 +268,13 @@ struct BookDetailView: View {
                     guard isCurrentSelection() else { return }
                     self.coverImage = img
                 }
-                print("[BookDetail] cover cache hit in \(ContinuousClock.now - t0)")
             }
 
             do {
-                let tRead = ContinuousClock.now
                 let fb2 = try ZipFB2Reader.readFB2(entryName: b.archiveEntryName, archiveURL: url)
-                print("[BookDetail] read \(fb2.count)B in \(ContinuousClock.now - tRead)")
                 if Task.isCancelled { return }
 
-                let tParse = ContinuousClock.now
                 let parsed = try FB2DescriptionParser.parse(data: Data(fb2))
-                print("[BookDetail] parse in \(ContinuousClock.now - tParse): title=\(parsed.bookTitle ?? "nil") date=\(parsed.dateWritten ?? "nil") cover=\(parsed.coverImageData?.count ?? 0)B")
                 if Task.isCancelled { return }
 
                 let img: NSImage? = cachedCover ?? {
@@ -288,14 +282,12 @@ struct BookDetailView: View {
                     return cache?.store(bytes, for: b)
                 }()
 
-                print("[BookDetail] total \(ContinuousClock.now - t0)")
                 await MainActor.run {
                     guard isCurrentSelection() else { return }
                     self.info = parsed
                     self.coverImage = img
                 }
             } catch {
-                print("[BookDetail] ERROR in \(ContinuousClock.now - t0): \(error)")
                 if Task.isCancelled { return }
                 let message = BookReadFailure.message(for: error)
                 await MainActor.run {

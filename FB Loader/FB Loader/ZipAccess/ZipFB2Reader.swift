@@ -51,10 +51,7 @@ nonisolated final class ZipFB2Reader {
         // неотменяемой задаче, его это не задевает.
         try Task.checkCancellation()
         do {
-            let tExtract = ContinuousClock.now
-            let data = try ZipCentralDirectory.extract(entry, from: archiveURL)
-            print("[ZipFB2Reader] extract \(name): \(ContinuousClock.now - tExtract)")
-            return data
+            return try ZipCentralDirectory.extract(entry, from: archiveURL)
         } catch {
             throw ReaderError.archiveCorrupt(archiveURL, underlying: error)
         }
@@ -67,14 +64,12 @@ nonisolated final class ZipFB2Reader {
             return hit.index
         }
         cacheLock.unlock()
-        let tBuild = ContinuousClock.now
         let index: ZipCentralDirectory.Index
         do {
             index = try ZipCentralDirectory.readIndex(of: archiveURL)
         } catch {
             throw ReaderError.archiveCorrupt(archiveURL, underlying: error)
         }
-        print("[ZipFB2Reader] index built for \(archiveURL.lastPathComponent) (\(index.entries.count) entries) in \(ContinuousClock.now - tBuild)")
         cacheLock.lock()
         indexCache[archiveURL] = (stamp, index)
         cacheLock.unlock()
