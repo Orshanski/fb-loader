@@ -98,18 +98,36 @@ struct UserPathsVolumeTests {
     }
 
     @Test("выбор пути записывает сведения о его томе")
-    func selectionRecordsVolume() {
-        withTestDefaults { suite in
+    func selectionRecordsVolume() async {
+        let box = TestDefaults()
+        defer { box.cleanUp() }
+        do {
+            let suite = box.defaults
             let paths = UserPaths(defaults: suite)
             let dir = FileManager.default.temporaryDirectory
             let file = dir.appendingPathComponent("vol-\(UUID()).inpx")
             FileManager.default.createFile(atPath: file.path, contents: Data())
             defer { try? FileManager.default.removeItem(at: file) }
-            paths.setINPX(file)
-            paths.setArchivesDirectory(dir)
+            await paths.setINPX(file).value
+            await paths.setArchivesDirectory(dir).value
             #expect(paths.inpxURL == file)
             #expect(paths.inpxVolume != nil)
             #expect(paths.archivesVolume != nil)
+        }
+    }
+}
+
+extension UserPathsVolumeTests {
+    @Test("смена пути сбрасывает сведения о прежнем томе")
+    func changingURLClearsVolume() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            paths.inpxVolume = info
+            paths.archivesVolume = info
+            paths.inpxURL = URL(fileURLWithPath: "/x/y.inpx")
+            paths.archivesDirectoryURL = URL(fileURLWithPath: "/x")
+            #expect(paths.inpxVolume == nil)
+            #expect(paths.archivesVolume == nil)
         }
     }
 }

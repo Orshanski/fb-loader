@@ -12,6 +12,8 @@ final class UserPaths {
     static let shared = UserPaths()
 
     @ObservationIgnored private let defaults: UserDefaults
+    /// @Observable гоняет didSet и при начальной загрузке в init: без флага он стёр бы сохранённые сведения о томе.
+    @ObservationIgnored private var isLoaded = false
     private enum Keys: String {
         case inpx = "fbloader.inpx"
         case archives = "fbloader.archives"
@@ -27,6 +29,7 @@ final class UserPaths {
         lastExportDirectoryURL = Self.url(for: .lastExport, in: defaults)
         inpxVolume = Self.volume(for: .inpxVolume, in: defaults)
         archivesVolume = Self.volume(for: .archivesVolume, in: defaults)
+        isLoaded = true
     }
 
     var inpxVolume: VolumeInfo? {
@@ -36,22 +39,37 @@ final class UserPaths {
         didSet { storeVolume(archivesVolume, for: .archivesVolume) }
     }
 
-    /// Выбор пользователем: путь и сведения о его томе записываются вместе.
-    func setINPX(_ url: URL) {
-        inpxURL = url
-        inpxVolume = VolumeInfo.detect(url)
-    }
-    func setArchivesDirectory(_ url: URL) {
-        archivesDirectoryURL = url
-        archivesVolume = VolumeInfo.detect(url)
-    }
-
     var inpxURL: URL? {
-        didSet { store(inpxURL, for: .inpx) }
+        didSet {
+            store(inpxURL, for: .inpx)
+            if isLoaded { inpxVolume = nil }
+        }
     }
     var archivesDirectoryURL: URL? {
-        didSet { store(archivesDirectoryURL, for: .archives) }
+        didSet {
+            store(archivesDirectoryURL, for: .archives)
+            if isLoaded { archivesVolume = nil }
+        }
     }
+
+    /// Выбор пользователем. Сведения о томе определяются в фоне: зависший сетевой том не должен держать main.
+    @discardableResult
+    func setINPX(_ url: URL) -> Task<Void, Never> {
+        inpxURL = url
+        return Task {
+            let v = await VolumeInfo.detectOffMain(url)
+            if inpxURL == url, let v { inpxVolume = v }
+        }
+    }
+    @discardableResult
+    func setArchivesDirectory(_ url: URL) -> Task<Void, Never> {
+        archivesDirectoryURL = url
+        return Task {
+            let v = await VolumeInfo.detectOffMain(url)
+            if archivesDirectoryURL == url, let v { archivesVolume = v }
+        }
+    }
+
     var lastExportDirectoryURL: URL? {
         didSet { store(lastExportDirectoryURL, for: .lastExport) }
     }

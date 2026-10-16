@@ -12,18 +12,30 @@ nonisolated struct VolumeInfo: Codable, Equatable, Sendable {
         let keys: Set<URLResourceKey> = [.volumeNameKey, .volumeIsLocalKey, .volumeURLForRemountingKey]
         guard let v = try? url.resourceValues(forKeys: keys),
               let name = v.volumeName, let isLocal = v.volumeIsLocal else { return nil }
-        return VolumeInfo(name: name, isNetwork: !isLocal, remountURL: v.volumeURLForRemounting)
+        return VolumeInfo(name: name, isNetwork: !isLocal, remountURL: v.volumeURLForRemounting.map(withoutCredentials))
     }
 
-    /// Адрес шары для показа: без логина/пароля и без Bonjour-меток вида `._smb._tcp`.
-    var shareAddress: String? {
-        guard isNetwork, let remountURL,
-              var c = URLComponents(url: remountURL, resolvingAgainstBaseURL: false),
-              let host = c.host else { return nil }
+    /// `nil` и при таймауте: зависший SMB не должен задерживать вызывающего.
+    static func detectOffMain(_ url: URL) async -> VolumeInfo? {
+        await withTimeout(.seconds(5)) { detect(url) } ?? nil
+    }
+
+    /// Пароль и логин из URL перемонтирования не должны оседать в UserDefaults.
+    static func withoutCredentials(_ url: URL) -> URL {
+        guard var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
         c.user = nil
         c.password = nil
-        c.host = host.replacingOccurrences(of: #"\._[A-Za-z0-9-]+\._tcp"#, with: "",
-                                           options: .regularExpression)
-        return c.string
+        return c.url ?? url
+    }
+
+    /// Адрес шары для показа: без логина/пароля, без Bonjour-меток вида `._smb._tcp`, в читаемом виде.
+    var shareAddress: String? {
+        guard isNetwork, let remountURL,
+              let c = URLComponents(url: remountURL, resolvingAgainstBaseURL: false),
+              let scheme = c.scheme, let host = c.host else { return nil }
+        let cleanHost = host.replacingOccurrences(of: #"\._[A-Za-z0-9-]+\._tcp"#, with: "",
+                                                  options: .regularExpression)
+        let port = c.port.map { ":\($0)" } ?? ""
+        return "\(scheme)://\(cleanHost)\(port)\(c.path)"
     }
 }

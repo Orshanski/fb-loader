@@ -18,31 +18,35 @@ struct StartupCheckTests {
 
     private func run(inpx: URL?, archives: URL?,
                      inpxVolume: VolumeInfo? = nil, archivesVolume: VolumeInfo? = nil,
-                     fs: FileSystemProbe, timeout: Duration = .seconds(5)) async -> StartupCheck {
+                     fs: FileSystemProbe, timeout: Duration = .seconds(5),
+                     registry: ProbeRegistry = ProbeRegistry()) async -> StartupCheck {
         await StartupCheck.run(inpx: inpx, archives: archives,
                                inpxVolume: inpxVolume, archivesVolume: archivesVolume,
-                               fs: fs, timeout: timeout)
+                               fs: fs, timeout: timeout, registry: registry)
     }
 
     @Test("классификация одного пути")
     func classify() {
-        let present = fs(existing: [nas.path])
+        let present = fs(existing: [nas.path], mounted: ["/Volumes/flibusta"])
         #expect(PathState.classify(nas, fs: present) == .ok)
         #expect(PathState.classify(nas, fs: fs(mounted: ["/Volumes/flibusta"])) == .notFound)
         #expect(PathState.classify(nas, fs: fs()) == .volumeNotMounted(name: "flibusta"))
         #expect(PathState.classify(local, fs: fs()) == .notFound)
+        #expect(PathState.classify(local, fs: fs(existing: [local.path])) == .ok)
     }
 
-    @Test("пустой каталог точки монтирования не считается подключённым томом")
+    @Test("пустая папка-остаток точки монтирования не считается подключённым томом")
     func staleMountPoint() {
-        let stale = fs(existing: ["/Volumes/flibusta"])
+        let stale = fs(existing: ["/Volumes/flibusta", nas.path])
         #expect(PathState.classify(nas, fs: stale) == .volumeNotMounted(name: "flibusta"))
+        let mountPoint = URL(fileURLWithPath: "/Volumes/flibusta")
+        #expect(PathState.classify(mountPoint, fs: stale) == .volumeNotMounted(name: "flibusta"))
     }
 
     @Test("оба пути на месте")
     func allOK() async {
         let r = await run(inpx: nas, archives: nasArchives,
-                          fs: fs(existing: [nas.path, nasArchives.path]))
+                          fs: fs(existing: [nas.path, nasArchives.path], mounted: ["/Volumes/flibusta"]))
         #expect(r == .ok)
     }
 
@@ -62,12 +66,18 @@ struct StartupCheckTests {
                                              volume: smb, fallback: .both)))
     }
 
-    @Test("разные тома — сообщение про том INPX, повтор покажет следующий")
+    @Test("разные тома — сначала том INPX, после его подключения следующий")
     func differentVolumes() async {
-        let r = await run(inpx: nas, archives: usb, inpxVolume: smb, fs: fs())
-        guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
-        #expect(p.volumeName == "flibusta")
-        #expect(p.fallback == .both)
+        let first = await run(inpx: nas, archives: usb, inpxVolume: smb, fs: fs())
+        guard case .problem(let p1) = first else { Issue.record("ожидалась проблема"); return }
+        #expect(p1.volumeName == "flibusta")
+        #expect(p1.fallback == .both)
+
+        let second = await run(inpx: nas, archives: usb, inpxVolume: smb,
+                               fs: fs(existing: [nas.path], mounted: ["/Volumes/flibusta"]))
+        guard case .problem(let p2) = second else { Issue.record("ожидалась проблема"); return }
+        #expect(p2.volumeName == "USB")
+        #expect(p2.fallback == .archives)
     }
 
     @Test("том не подключён, второй путь на месте — fallback спрашивает только неподключённый")
@@ -104,18 +114,69 @@ struct StartupCheckTests {
         #expect(p.remountURL == nil)
     }
 
+    private func hangingProbe(gate: DispatchSemaphore, hangingPaths: Set<String>,
+                              calls: Counter = Counter()) -> FileSystemProbe {
+        FileSystemProbe(
+            exists: { url in
+                calls.increment()
+                if hangingPaths.contains(url.path) { gate.wait() }
+                return true
+            },
+            isMountedVolume: { $0.path == "/Volumes/flibusta" })
+    }
+
     @Test("зависший вызов даёт «не отвечает» и не блокирует проверку")
     func timeout() async {
         let gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
-        let hanging = FileSystemProbe(exists: { _ in gate.wait(); return true },
-                                      isMountedVolume: { _ in true })
+        defer { gate.signal(); gate.signal() }
+        let hanging = hangingProbe(gate: gate, hangingPaths: [nas.path, nasArchives.path])
         let r = await run(inpx: nas, archives: nasArchives, inpxVolume: smb, fs: hanging,
                           timeout: .milliseconds(50))
         guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
         #expect(p.kind == .unresponsive)
         #expect(p.title == "Сетевой диск «flibusta» не отвечает")
         #expect(p.remountURL == nil)
+    }
+
+    @Test("«не подключён» важнее «не отвечает»")
+    func notMountedBeatsUnresponsive() async {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let hanging = hangingProbe(gate: gate, hangingPaths: [nas.path])
+        let r = await run(inpx: nas, archives: usb, fs: hanging, timeout: .milliseconds(50))
+        guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
+        #expect(p.kind == .notMounted)
+        #expect(p.volumeName == "USB")
+    }
+
+    @Test("при «не отвечает» fallback спрашивает только зависший путь")
+    func unresponsiveFallback() async {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let probe = FileSystemProbe(
+            exists: { url in if url == nas { gate.wait() }; return true },
+            isMountedVolume: { _ in true })
+        let r = await run(inpx: nas, archives: local, fs: probe, timeout: .milliseconds(50))
+        guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
+        #expect(p.kind == .unresponsive)
+        #expect(p.fallback == .inpx)
+    }
+
+    @Test("пока проба пути висит, новая не создаётся — сразу «не отвечает»")
+    func hungProbeIsNotRepeated() async {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let calls = Counter()
+        let registry = ProbeRegistry()
+        let hanging = hangingProbe(gate: gate, hangingPaths: [nas.path], calls: calls)
+        _ = await run(inpx: nas, archives: nil, fs: hanging, timeout: .milliseconds(50), registry: registry)
+        let before = calls.value
+        let started = ContinuousClock.now
+        let r = await run(inpx: nas, archives: nil, fs: hanging, timeout: .seconds(5), registry: registry)
+        guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
+        #expect(p.kind == .unresponsive)
+        #expect(calls.value == before)
+        #expect(ContinuousClock.now - started < .seconds(2))
     }
 
     @Test("withTimeout: быстрый результат возвращается, зависший — nil")
@@ -126,6 +187,13 @@ struct StartupCheckTests {
         let r: Int? = await withTimeout(.milliseconds(50)) { gate.wait(); return 1 }
         #expect(r == nil)
     }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func increment() { lock.lock(); n += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
 }
 
 @Suite("VolumeInfo")
@@ -142,6 +210,19 @@ struct VolumeInfoTests {
             let info = VolumeInfo(name: "x", isNetwork: true, remountURL: URL(string: input))
             #expect(info.shareAddress == expected, "\(input)")
         }
+    }
+
+    @Test("адрес шары декодируется для показа")
+    func shareAddressDecoded() {
+        let info = VolumeInfo(name: "x", isNetwork: true,
+                              remountURL: URL(string: "smb://nas.local/%D0%9A%D0%BD%D0%B8%D0%B3%D0%B8%20%D1%80"))
+        #expect(info.shareAddress == "smb://nas.local/Книги р")
+    }
+
+    @Test("логин и пароль не попадают в сохраняемый URL")
+    func credentialsStripped() {
+        let url = URL(string: "smb://alexey:secret@nas.local/flibusta")!
+        #expect(VolumeInfo.withoutCredentials(url).absoluteString == "smb://nas.local/flibusta")
     }
 
     @Test("у локального тома адреса шары нет")

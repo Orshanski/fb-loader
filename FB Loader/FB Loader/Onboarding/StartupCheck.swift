@@ -22,15 +22,18 @@ nonisolated enum PathState: Equatable, Sendable {
     case unresponsive
 
     static func classify(_ url: URL, fs: FileSystemProbe) -> PathState {
-        if fs.exists(url) { return .ok }
         let c = url.pathComponents
-        guard c.count >= 3, c[0] == "/", c[1] == "Volumes" else { return .notFound }
-        let mountPoint = URL(fileURLWithPath: "/Volumes/\(c[2])")
-        return fs.isMountedVolume(mountPoint) ? .notFound : .volumeNotMounted(name: c[2])
+        guard c.count >= 3, c[0] == "/", c[1] == "Volumes" else {
+            return fs.exists(url) ? .ok : .notFound
+        }
+        // Сначала том: от отмонтированного тома остаётся пустая папка, и exists на ней даёт ложное «на месте».
+        guard fs.isMountedVolume(URL(fileURLWithPath: "/Volumes/\(c[2])")) else {
+            return .volumeNotMounted(name: c[2])
+        }
+        return fs.exists(url) ? .ok : .notFound
     }
 }
 
-/// Проблема с носителем, а не с самим файлом: экран онбординга показывает её отдельно.
 nonisolated struct StorageProblem: Equatable, Sendable {
     enum Kind: Sendable { case notMounted, unresponsive }
     let kind: Kind
@@ -70,9 +73,10 @@ nonisolated enum StartupCheck: Equatable, Sendable {
     static func run(inpx: URL?, archives: URL?,
                     inpxVolume: VolumeInfo?, archivesVolume: VolumeInfo?,
                     fs: FileSystemProbe = .live,
-                    timeout: Duration = .seconds(5)) async -> StartupCheck {
-        async let i = state(inpx, fs: fs, timeout: timeout)
-        async let a = state(archives, fs: fs, timeout: timeout)
+                    timeout: Duration = .seconds(5),
+                    registry: ProbeRegistry = .shared) async -> StartupCheck {
+        async let i = state(inpx, fs: fs, timeout: timeout, registry: registry)
+        async let a = state(archives, fs: fs, timeout: timeout, registry: registry)
         let (inpxState, archivesState) = await (i, a)
 
         let missing = MissingPaths.check(inpx: inpx, archives: archives) { url in
@@ -94,9 +98,14 @@ nonisolated enum StartupCheck: Equatable, Sendable {
         return .missing(missing)
     }
 
-    private static func state(_ url: URL?, fs: FileSystemProbe, timeout: Duration) async -> PathState {
+    private static func state(_ url: URL?, fs: FileSystemProbe, timeout: Duration,
+                              registry: ProbeRegistry) async -> PathState {
         guard let url else { return .notFound }
-        return await withTimeout(timeout) { PathState.classify(url, fs: fs) } ?? .unresponsive
+        guard registry.begin(url.path) else { return .unresponsive }
+        return await withTimeout(timeout) {
+            defer { registry.end(url.path) }
+            return PathState.classify(url, fs: fs)
+        } ?? .unresponsive
     }
 
     private static func volumeName(_ url: URL) -> String? {
@@ -105,7 +114,23 @@ nonisolated enum StartupCheck: Equatable, Sendable {
     }
 }
 
-/// Возобновляет continuation ровно один раз, кто бы ни пришёл первым.
+/// Незавершённые пробы по путям: зависшая проба держит поток, поэтому новую на тот же путь не запускаем.
+nonisolated final class ProbeRegistry: @unchecked Sendable {
+    static let shared = ProbeRegistry()
+    private let lock = NSLock()
+    private var inFlight: Set<String> = []
+
+    func begin(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlight.insert(key).inserted
+    }
+    func end(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        inFlight.remove(key)
+    }
+}
+
+/// Действие выполняется только при первом вызове: ответ работы и таймер гоняются за один continuation.
 nonisolated final class OnceGate: @unchecked Sendable {
     private let lock = NSLock()
     private var fired = false
@@ -119,30 +144,36 @@ nonisolated final class OnceGate: @unchecked Sendable {
     }
 }
 
-/// `nil` — `work` не уложилась в `timeout`. Зависший вызов остаётся на своём потоке, но UI не держит.
+/// `nil` — `work` не уложилась в `timeout`. Работа идёт на своём `Thread`, таймер — на Task.sleep:
+/// исчерпание пула GCD зависшими пробами не должно ломать таймаут.
 nonisolated func withTimeout<T: Sendable>(_ timeout: Duration,
                                           _ work: @escaping @Sendable () -> T) async -> T? {
     await withCheckedContinuation { (cont: CheckedContinuation<T?, Never>) in
         let gate = OnceGate()
-        DispatchQueue.global(qos: .userInitiated).async {
-            let value = work()
-            gate.fire { cont.resume(returning: value) }
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout.timeInterval) {
+        let timer = Task.detached {
+            try? await Task.sleep(for: timeout)
             gate.fire { cont.resume(returning: nil) }
         }
-    }
-}
-
-private extension Duration {
-    nonisolated var timeInterval: TimeInterval {
-        let c = components
-        return TimeInterval(c.seconds) + TimeInterval(c.attoseconds) / 1e18
+        let thread = Thread {
+            let value = work()
+            gate.fire { cont.resume(returning: value) }
+            timer.cancel()
+        }
+        thread.start()
     }
 }
 
 private nonisolated final class ObserverBox: @unchecked Sendable {
-    var token: NSObjectProtocol?
+    private let lock = NSLock()
+    private var token: NSObjectProtocol?
+
+    func set(_ t: NSObjectProtocol) { lock.lock(); token = t; lock.unlock() }
+    func take() -> NSObjectProtocol? {
+        lock.lock(); defer { lock.unlock() }
+        let t = token
+        token = nil
+        return t
+    }
 }
 
 /// Ждёт появления любого тома или таймаута, чтобы после «Подключить» не опрашивать вечно.
@@ -153,12 +184,15 @@ nonisolated func waitForVolumeMount(timeout: Duration) async {
         let center = NSWorkspace.shared.notificationCenter
         let finish: @Sendable () -> Void = {
             gate.fire {
-                if let t = box.token { center.removeObserver(t) }
+                if let t = box.take() { center.removeObserver(t) }
                 cont.resume()
             }
         }
-        box.token = center.addObserver(forName: NSWorkspace.didMountNotification,
-                                       object: nil, queue: nil) { _ in finish() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout.timeInterval) { finish() }
+        box.set(center.addObserver(forName: NSWorkspace.didMountNotification,
+                                   object: nil, queue: nil) { _ in finish() })
+        Task.detached {
+            try? await Task.sleep(for: timeout)
+            finish()
+        }
     }
 }

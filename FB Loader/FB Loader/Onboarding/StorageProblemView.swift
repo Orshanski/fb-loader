@@ -3,6 +3,8 @@ import SwiftUI
 /// Каталог лежит на диске, который сейчас недоступен: файл не потерян, пути менять не нужно.
 struct StorageProblemView: View {
     let problem: StorageProblem
+    /// «Проверка…» / «Подключение…» — кнопки на это время выключены.
+    let busy: String?
     let onRetry: () -> Void
     let onRepick: () -> Void
     let onRemount: (URL) -> Void
@@ -15,6 +17,12 @@ struct StorageProblemView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            if let busy {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(busy).foregroundStyle(.secondary)
+                }
+            }
             HStack {
                 Button("Указать заново…", action: onRepick)
                 if let url = problem.remountURL {
@@ -23,6 +31,7 @@ struct StorageProblemView: View {
                 Button("Повторить", action: onRetry)
                     .keyboardShortcut(.defaultAction)
             }
+            .disabled(busy != nil)
         }
         .padding(30)
         .frame(minWidth: 600, minHeight: 350)

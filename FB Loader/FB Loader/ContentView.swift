@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var settingsRebuildProgress: String?
     @State private var loadGate = LoadSessionGate()
     @State private var loadTask: Task<Void, Never>?
+    @State private var problemTask: Task<Void, Never>?
+    @State private var problemBusy: String?
 
     var body: some View {
         Group {
@@ -20,13 +22,13 @@ struct ContentView: View {
             case .storageProblem(let problem):
                 StorageProblemView(
                     problem: problem,
-                    onRetry: { Task { await checkPaths() } },
+                    busy: problemBusy,
+                    onRetry: { runProblemTask("Проверка…") {} },
                     onRepick: { state.stage = .onboarding(problem.fallback) },
                     onRemount: { url in
-                        Task {
+                        runProblemTask("Подключение…") {
                             NSWorkspace.shared.open(url)
                             await waitForVolumeMount(timeout: .seconds(30))
-                            await checkPaths()
                         }
                     })
             case .loading(let p):
@@ -63,8 +65,6 @@ struct ContentView: View {
                     Button("Указать пути заново") {
                         state.userPaths.inpxURL = nil
                         state.userPaths.archivesDirectoryURL = nil
-                        state.userPaths.inpxVolume = nil
-                        state.userPaths.archivesVolume = nil
                         state.stage = .onboarding(.both)
                     }
                     .keyboardShortcut(.defaultAction)
@@ -74,6 +74,13 @@ struct ContentView: View {
             }
         }
         .task { await checkPaths() }
+        .onChange(of: state.isStorageProblem) { _, isProblem in
+            if !isProblem {
+                problemTask?.cancel()
+                problemTask = nil
+                problemBusy = nil
+            }
+        }
         .focusedSceneValue(\.openSettings, state.isAnySheetPresented ? nil : {
             state.isSettingsPresented = true
         })
@@ -82,7 +89,13 @@ struct ContentView: View {
                 userPaths: state.userPaths,
                 rebuildProgress: settingsRebuildProgress,
                 canRebuild: state.canRebuildCatalog,
-                onClose: { state.isSettingsPresented = false },
+                onClose: {
+                    state.isSettingsPresented = false
+                    switch state.stage {
+                    case .onboarding, .storageProblem: Task { await checkPaths() }
+                    default: break
+                    }
+                },
                 onRebuild: rebuildCatalog,
                 onINPXChange: { url in
                     state.userPaths.setINPX(url)
@@ -92,15 +105,27 @@ struct ContentView: View {
         }
     }
 
+    private func runProblemTask(_ busy: String, before: @escaping () async -> Void) {
+        problemTask?.cancel()
+        problemBusy = busy
+        problemTask = Task {
+            await before()
+            if !Task.isCancelled { await checkPaths() }
+            if !Task.isCancelled { problemBusy = nil }
+        }
+    }
+
     private func checkPaths() async {
         let paths = state.userPaths
         let result = await StartupCheck.run(
             inpx: paths.inpxURL, archives: paths.archivesDirectoryURL,
             inpxVolume: paths.inpxVolume, archivesVolume: paths.archivesVolume)
+        // За время проверки пользователь мог уйти с этой стадии: устаревший результат её не перезаписывает.
+        guard state.isAwaitingPaths, !Task.isCancelled else { return }
         switch result {
         case .ok:
-            await backfillVolumes()
             startLoad()
+            Task { await refreshVolumes() }
         case .missing(let missing):
             state.stage = .onboarding(missing)
         case .problem(let problem):
@@ -108,17 +133,15 @@ struct ContentView: View {
         }
     }
 
-    /// Пути, сохранённые до появления сведений о томе, дописываются при первом успешном старте.
-    private func backfillVolumes() async {
+    /// Не задерживает загрузку; удачное определение перезаписывает прежние сведения (шара могла сменить адрес).
+    private func refreshVolumes() async {
         let paths = state.userPaths
-        let inpx = paths.inpxVolume == nil ? paths.inpxURL : nil
-        let archives = paths.archivesVolume == nil ? paths.archivesDirectoryURL : nil
-        guard inpx != nil || archives != nil else { return }
-        let detected = await Task.detached {
-            (inpx.flatMap(VolumeInfo.detect), archives.flatMap(VolumeInfo.detect))
-        }.value
-        if let v = detected.0 { paths.inpxVolume = v }
-        if let v = detected.1 { paths.archivesVolume = v }
+        guard let inpx = paths.inpxURL, let arch = paths.archivesDirectoryURL else { return }
+        async let i = VolumeInfo.detectOffMain(inpx)
+        async let a = VolumeInfo.detectOffMain(arch)
+        let (iv, av) = await (i, a)
+        if paths.inpxURL == inpx, let iv { paths.inpxVolume = iv }
+        if paths.archivesDirectoryURL == arch, let av { paths.archivesVolume = av }
     }
 
     private func rebuildCatalog() {
