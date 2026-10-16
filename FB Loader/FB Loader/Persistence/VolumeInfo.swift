@@ -33,9 +33,28 @@ nonisolated struct VolumeInfo: Codable, Equatable, Sendable {
         guard isNetwork, let remountURL,
               let c = URLComponents(url: remountURL, resolvingAgainstBaseURL: false),
               let scheme = c.scheme, let host = c.host else { return nil }
-        let cleanHost = host.replacingOccurrences(of: #"\._[A-Za-z0-9-]+\._tcp"#, with: "",
-                                                  options: .regularExpression)
+        let cleanHost = Self.stripServiceLabel(host)
         let port = c.port.map { ":\($0)" } ?? ""
         return "\(scheme)://\(cleanHost)\(port)\(c.path)"
+    }
+
+    /// Одна и та же шара: схема, хост (без регистра, без `._smb._tcp` и `.local`), порт и путь.
+    static func sameShare(_ a: URL, _ b: URL) -> Bool {
+        guard let ka = shareKey(a), let kb = shareKey(b) else { return false }
+        return ka == kb
+    }
+
+    private static func shareKey(_ url: URL) -> String? {
+        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = c.scheme, let host = c.host else { return nil }
+        let bare = stripServiceLabel(host).lowercased()
+        let trimmedHost = bare.hasSuffix(".local") ? String(bare.dropLast(6)) : bare
+        var path = c.path.lowercased()
+        while path.hasSuffix("/") { path.removeLast() }
+        return "\(scheme.lowercased())://\(trimmedHost):\(c.port.map(String.init) ?? "")\(path)"
+    }
+
+    fileprivate static func stripServiceLabel(_ host: String) -> String {
+        host.replacingOccurrences(of: #"\._[A-Za-z0-9-]+\._tcp"#, with: "", options: .regularExpression)
     }
 }

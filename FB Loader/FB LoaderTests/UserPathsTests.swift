@@ -131,3 +131,27 @@ extension UserPathsVolumeTests {
         }
     }
 }
+
+extension UserPathsVolumeTests {
+    @Test("подмена на запуск не меняет сохранённые пути и сбрасывается выбором нового")
+    func sessionOverrides() {
+        withTestDefaults { suite in
+            let paths = UserPaths(defaults: suite)
+            let saved = URL(fileURLWithPath: "/Volumes/flibusta/lib.inpx")
+            let savedArch = URL(fileURLWithPath: "/Volumes/flibusta/archives")
+            paths.inpxURL = saved
+            paths.archivesDirectoryURL = savedArch
+            paths.inpxVolume = info
+            let moved = URL(fileURLWithPath: "/Volumes/flibusta-1/lib.inpx")
+            paths.applySessionOverrides(PathOverrides(inpx: moved, archives: nil))
+            #expect(paths.effectiveINPXURL == moved)
+            #expect(paths.effectiveArchivesURL == savedArch)
+            #expect(paths.inpxURL == saved)
+            #expect(paths.inpxVolume == info)
+            #expect(UserPaths(defaults: suite).inpxURL == saved)
+
+            paths.inpxURL = URL(fileURLWithPath: "/new/lib.inpx")
+            #expect(paths.effectiveINPXURL?.path == "/new/lib.inpx")
+        }
+    }
+}

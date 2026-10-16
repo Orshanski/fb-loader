@@ -49,7 +49,7 @@ final class ExportSession {
     @discardableResult
     func start(_ request: ExportRequest) async -> Task<Void, Never>? {
         guard !isBusy, !request.libids.isEmpty,
-              let archivesRoot = userPaths.archivesDirectoryURL else { return nil }
+              let archivesRoot = userPaths.effectiveArchivesURL else { return nil }
         phase = .choosingFolder
         guard let folder = await chooseFolder(initialFolder()) else {
             phase = .idle

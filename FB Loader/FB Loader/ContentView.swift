@@ -28,6 +28,8 @@ struct ContentView: View {
                     onRemount: { url in
                         runProblemTask("Подключение…") {
                             NSWorkspace.shared.open(url)
+                            // Шара уже могла быть смонтирована под другим именем: тогда уведомления не будет.
+                            if case .ok = await evaluatePaths() { return }
                             await waitForVolumeMount(timeout: .seconds(30))
                         }
                     })
@@ -115,15 +117,20 @@ struct ContentView: View {
         }
     }
 
-    private func checkPaths() async {
+    private func evaluatePaths() async -> StartupCheck {
         let paths = state.userPaths
-        let result = await StartupCheck.run(
+        return await StartupCheck.run(
             inpx: paths.inpxURL, archives: paths.archivesDirectoryURL,
             inpxVolume: paths.inpxVolume, archivesVolume: paths.archivesVolume)
+    }
+
+    private func checkPaths() async {
+        let result = await evaluatePaths()
         // За время проверки пользователь мог уйти с этой стадии: устаревший результат её не перезаписывает.
         guard state.isAwaitingPaths, !Task.isCancelled else { return }
         switch result {
-        case .ok:
+        case .ok(let overrides):
+            state.userPaths.applySessionOverrides(overrides)
             startLoad()
             Task { await refreshVolumes() }
         case .missing(let missing):
@@ -136,7 +143,9 @@ struct ContentView: View {
     /// Не задерживает загрузку; удачное определение перезаписывает прежние сведения (шара могла сменить адрес).
     private func refreshVolumes() async {
         let paths = state.userPaths
-        guard let inpx = paths.inpxURL, let arch = paths.archivesDirectoryURL else { return }
+        // Под подменой сведения остаются прежними: это тот же том, смонтированный иначе.
+        guard let inpx = paths.inpxURL, let arch = paths.archivesDirectoryURL,
+              !paths.hasINPXOverride, !paths.hasArchivesOverride else { return }
         async let i = VolumeInfo.detectOffMain(inpx)
         async let a = VolumeInfo.detectOffMain(arch)
         let (iv, av) = await (i, a)
@@ -156,7 +165,7 @@ struct ContentView: View {
     private func startLoad(forceRebuild: Bool = false,
                            onProgressText: ((String) -> Void)? = nil,
                            onFinish: (() -> Void)? = nil) {
-        guard let inpx = state.userPaths.inpxURL else {
+        guard let inpx = state.userPaths.effectiveINPXURL else {
             onFinish?()
             return
         }

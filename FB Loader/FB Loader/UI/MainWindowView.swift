@@ -31,7 +31,7 @@ struct MainWindowView: View {
                            idealHeight: booksTableIdealHeight)
                 if let libid = state.selectedBookLibid,
                    let book = library.book(libid: libid),
-                   let archives = state.userPaths.archivesDirectoryURL {
+                   let archives = state.userPaths.effectiveArchivesURL {
                     BookDetailView(
                         library: library, archivesRoot: archives, book: book,
                         isCurrentSelection: { state.selectedBookLibid == book.libid },
@@ -71,7 +71,7 @@ struct MainWindowView: View {
         .sheet(isPresented: $state.isSearchPresented) {
             SearchWindowView(
                 library: library,
-                archivesRoot: state.userPaths.archivesDirectoryURL,
+                archivesRoot: state.userPaths.effectiveArchivesURL,
                 exportSession: state.exportSession,
                 initialLanguage: state.languageFilter,
                 preferredSize: searchSheetSize(),

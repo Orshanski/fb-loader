@@ -43,11 +43,55 @@ struct StartupCheckTests {
         #expect(PathState.classify(mountPoint, fs: stale) == .volumeNotMounted(name: "flibusta"))
     }
 
+    private var movedMount: FileSystemProbe {
+        let existing: Set<String> = ["/Volumes/flibusta-1/lib.inpx", "/Volumes/flibusta-1/archives"]
+        return FileSystemProbe(
+            exists: { existing.contains($0.path) },
+            isMountedVolume: { $0.path == "/Volumes/flibusta-1" },
+            mountedVolumes: {
+                [MountedVolume(mountPoint: URL(fileURLWithPath: "/Volumes/flibusta-1"),
+                               remountURL: URL(string: "smb://DXP2800-0C7F.local/flibusta"))]
+            })
+    }
+
+    @Test("шара смонтирована под другим именем — пути на этот запуск берутся с неё")
+    func remappedMount() async {
+        let r = await run(inpx: nas, archives: nasArchives, inpxVolume: smb, archivesVolume: smb, fs: movedMount)
+        #expect(r == .ok(PathOverrides(
+            inpx: URL(fileURLWithPath: "/Volumes/flibusta-1/lib.inpx"),
+            archives: URL(fileURLWithPath: "/Volumes/flibusta-1/archives"))))
+    }
+
+    @Test("без сведений о томе, для локального тома и при другой шаре подмены нет")
+    func noRemap() async {
+        let unknown = await run(inpx: nas, archives: nasArchives, fs: movedMount)
+        guard case .problem = unknown else { Issue.record("без сведений о томе подмены быть не должно"); return }
+
+        let localInfo = VolumeInfo(name: "flibusta", isNetwork: false,
+                                   remountURL: URL(string: "smb://DXP2800-0C7F.local/flibusta"))
+        let local = await run(inpx: nas, archives: nasArchives, inpxVolume: localInfo, fs: movedMount)
+        guard case .problem = local else { Issue.record("локальный том не подменяется"); return }
+
+        let other = VolumeInfo(name: "flibusta", isNetwork: true,
+                               remountURL: URL(string: "smb://other.local/flibusta"))
+        let r = await run(inpx: nas, archives: nasArchives, inpxVolume: other, fs: movedMount)
+        guard case .problem(let p) = r else { Issue.record("другая шара не подменяется"); return }
+        #expect(p.kind == .notMounted)
+    }
+
+    @Test("заголовок берёт имя тома из сведений, иначе компонент пути")
+    func titleUsesVolumeName() async {
+        let named = VolumeInfo(name: "Книги", isNetwork: true, remountURL: nil)
+        let r = await run(inpx: nas, archives: nasArchives, inpxVolume: named, fs: fs())
+        guard case .problem(let p) = r else { Issue.record("ожидалась проблема"); return }
+        #expect(p.title == "Сетевой диск «Книги» не подключён")
+    }
+
     @Test("оба пути на месте")
     func allOK() async {
         let r = await run(inpx: nas, archives: nasArchives,
                           fs: fs(existing: [nas.path, nasArchives.path], mounted: ["/Volumes/flibusta"]))
-        #expect(r == .ok)
+        #expect(r == .ok(PathOverrides()))
     }
 
     @Test("файл не найден при подключённом томе — прежний онбординг")
@@ -210,6 +254,19 @@ struct VolumeInfoTests {
             let info = VolumeInfo(name: "x", isNetwork: true, remountURL: URL(string: input))
             #expect(info.shareAddress == expected, "\(input)")
         }
+    }
+
+    @Test("сопоставление шар: схема, хост без регистра, путь; _smb._tcp.local и .local — один хост")
+    func sameShare() {
+        func same(_ a: String, _ b: String) -> Bool {
+            VolumeInfo.sameShare(URL(string: a)!, URL(string: b)!)
+        }
+        #expect(same("smb://alexey@DXP2800-0C7F._smb._tcp.local/flibusta", "smb://DXP2800-0C7F.local/flibusta"))
+        #expect(same("smb://NAS.local/Share", "smb://nas.LOCAL/share"))
+        #expect(same("smb://u:p@nas.local/share/", "smb://nas.local/share"))
+        #expect(!same("smb://nas.local/flibusta", "smb://other.local/flibusta"))
+        #expect(!same("smb://nas.local/flibusta", "smb://nas.local/books"))
+        #expect(!same("smb://nas.local/flibusta", "afp://nas.local/flibusta"))
     }
 
     @Test("адрес шары декодируется для показа")

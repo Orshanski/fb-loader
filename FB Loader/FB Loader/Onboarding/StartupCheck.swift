@@ -1,9 +1,21 @@
 import AppKit
 
 /// Проверки файловой системы внедряются, чтобы классификация тестировалась без дисков.
+nonisolated struct MountedVolume: Equatable, Sendable {
+    let mountPoint: URL
+    let remountURL: URL?
+}
+
+/// Пути, подставленные на этот запуск вместо сохранённых.
+nonisolated struct PathOverrides: Equatable, Sendable {
+    var inpx: URL?
+    var archives: URL?
+}
+
 nonisolated struct FileSystemProbe: Sendable {
     var exists: @Sendable (URL) -> Bool
     var isMountedVolume: @Sendable (URL) -> Bool
+    var mountedVolumes: @Sendable () -> [MountedVolume] = { [] }
 
     static let live = FileSystemProbe(
         exists: { FileManager.default.fileExists(atPath: $0.path) },
@@ -12,6 +24,14 @@ nonisolated struct FileSystemProbe: Sendable {
             let resolved = mountPoint.resolvingSymlinksInPath().path
             let mounted = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil) ?? []
             return mounted.contains { $0.path == resolved }
+        },
+        mountedVolumes: {
+            let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil) ?? []
+            return urls.map {
+                MountedVolume(mountPoint: $0,
+                              remountURL: (try? $0.resourceValues(forKeys: [.volumeURLForRemountingKey]))?
+                                  .volumeURLForRemounting)
+            }
         })
 }
 
@@ -20,6 +40,29 @@ nonisolated enum PathState: Equatable, Sendable {
     case notFound
     case volumeNotMounted(name: String)
     case unresponsive
+    /// Том смонтирован под другим именем (flibusta-1), и файл найден там.
+    case remapped(URL)
+
+    var isReachable: Bool {
+        switch self {
+        case .ok, .remapped: true
+        default: false
+        }
+    }
+
+    static func classify(_ url: URL, volume: VolumeInfo?, fs: FileSystemProbe) -> PathState {
+        let base = classify(url, fs: fs)
+        guard case .volumeNotMounted(let name) = base,
+              let volume, volume.isNetwork, let remount = volume.remountURL else { return base }
+        let other = fs.mountedVolumes().first { m in
+            let c = m.mountPoint.pathComponents
+            guard c.count == 3, c[1] == "Volumes", c[2] != name, let r = m.remountURL else { return false }
+            return VolumeInfo.sameShare(r, remount)
+        }
+        guard let other else { return base }
+        let moved = url.pathComponents.dropFirst(3).reduce(other.mountPoint) { $0.appendingPathComponent($1) }
+        return classify(moved, fs: fs) == .ok ? .remapped(moved) : .notFound
+    }
 
     static func classify(_ url: URL, fs: FileSystemProbe) -> PathState {
         let c = url.pathComponents
@@ -65,7 +108,7 @@ nonisolated struct StorageProblem: Equatable, Sendable {
 }
 
 nonisolated enum StartupCheck: Equatable, Sendable {
-    case ok
+    case ok(PathOverrides)
     case missing(MissingPaths)
     case problem(StorageProblem)
 
@@ -75,36 +118,42 @@ nonisolated enum StartupCheck: Equatable, Sendable {
                     fs: FileSystemProbe = .live,
                     timeout: Duration = .seconds(5),
                     registry: ProbeRegistry = .shared) async -> StartupCheck {
-        async let i = state(inpx, fs: fs, timeout: timeout, registry: registry)
-        async let a = state(archives, fs: fs, timeout: timeout, registry: registry)
+        async let i = state(inpx, volume: inpxVolume, fs: fs, timeout: timeout, registry: registry)
+        async let a = state(archives, volume: archivesVolume, fs: fs, timeout: timeout, registry: registry)
         let (inpxState, archivesState) = await (i, a)
 
         let missing = MissingPaths.check(inpx: inpx, archives: archives) { url in
-            (url == inpx ? inpxState : archivesState) == .ok
+            (url == inpx ? inpxState : archivesState).isReachable
         }
-        guard let missing else { return .ok }
+        guard let missing else {
+            var overrides = PathOverrides()
+            if case .remapped(let u) = inpxState { overrides.inpx = u }
+            if case .remapped(let u) = archivesState { overrides.archives = u }
+            return .ok(overrides)
+        }
 
         let entries = [(inpxState, inpxVolume, inpx), (archivesState, archivesVolume, archives)]
         for (state, volume, _) in entries {
             if case .volumeNotMounted(let name) = state {
-                return .problem(StorageProblem(kind: .notMounted, volumeName: name,
+                return .problem(StorageProblem(kind: .notMounted, volumeName: volume?.name ?? name,
                                                volume: volume, fallback: missing))
             }
         }
         for (state, volume, url) in entries where state == .unresponsive {
-            return .problem(StorageProblem(kind: .unresponsive, volumeName: url.flatMap(volumeName),
+            return .problem(StorageProblem(kind: .unresponsive,
+                                           volumeName: volume?.name ?? url.flatMap(volumeName),
                                            volume: volume, fallback: missing))
         }
         return .missing(missing)
     }
 
-    private static func state(_ url: URL?, fs: FileSystemProbe, timeout: Duration,
+    private static func state(_ url: URL?, volume: VolumeInfo?, fs: FileSystemProbe, timeout: Duration,
                               registry: ProbeRegistry) async -> PathState {
         guard let url else { return .notFound }
         guard registry.begin(url.path) else { return .unresponsive }
         return await withTimeout(timeout) {
             defer { registry.end(url.path) }
-            return PathState.classify(url, fs: fs)
+            return PathState.classify(url, volume: volume, fs: fs)
         } ?? .unresponsive
     }
 

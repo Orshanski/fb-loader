@@ -39,16 +39,31 @@ final class UserPaths {
         didSet { storeVolume(archivesVolume, for: .archivesVolume) }
     }
 
+    /// Шара смонтирована под другим именем: на этот запуск пути берутся оттуда, сохранённые не трогаются.
+    private var inpxOverride: URL?
+    private var archivesOverride: URL?
+
+    /// Единая точка для чтения каталога, карточки и выгрузки; сохранённые пути — только в Настройках и проверке старта.
+    var effectiveINPXURL: URL? { inpxOverride ?? inpxURL }
+    var effectiveArchivesURL: URL? { archivesOverride ?? archivesDirectoryURL }
+    var hasINPXOverride: Bool { inpxOverride != nil }
+    var hasArchivesOverride: Bool { archivesOverride != nil }
+
+    func applySessionOverrides(_ o: PathOverrides) {
+        inpxOverride = o.inpx
+        archivesOverride = o.archives
+    }
+
     var inpxURL: URL? {
         didSet {
             store(inpxURL, for: .inpx)
-            if isLoaded { inpxVolume = nil }
+            if isLoaded { inpxVolume = nil; inpxOverride = nil }
         }
     }
     var archivesDirectoryURL: URL? {
         didSet {
             store(archivesDirectoryURL, for: .archives)
-            if isLoaded { archivesVolume = nil }
+            if isLoaded { archivesVolume = nil; archivesOverride = nil }
         }
     }
 
