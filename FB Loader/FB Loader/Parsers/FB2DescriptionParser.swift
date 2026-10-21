@@ -59,6 +59,7 @@ nonisolated enum FB2DescriptionParser {
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         parser.shouldProcessNamespaces = true
+        parser.shouldReportNamespacePrefixes = true
         guard parser.parse() else { throw ParseError.malformed }
         return delegate
     }
@@ -218,7 +219,10 @@ nonisolated enum FB2DescriptionParser {
     private static func decodeBase64(_ raw: Data) -> Data? {
         let cleaned = Data(raw.filter { !isXMLSpace($0) })
         guard !cleaned.isEmpty else { return nil }
-        return Data(base64Encoded: cleaned)
+        // Like Python's b64decode in librarium-py: stray characters are dropped, not fatal.
+        guard let decoded = Data(base64Encoded: cleaned, options: .ignoreUnknownCharacters),
+              !decoded.isEmpty else { return nil }
+        return decoded
     }
 
     private static func isNameByte(_ b: UInt8) -> Bool {
@@ -246,6 +250,11 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     var translators: [INPAuthorParser.Triple] = []
     var coverHref: String?
     var binariesByID: [String: String] = [:]
+
+    private static let xlinkURI = "http://www.w3.org/1999/xlink"
+    /// XMLParser keys attributes by the file's own prefix (`l:href`, `xlink:href`, …), so the
+    /// XLink one is resolved through the prefix bindings in scope.
+    private var prefixURIs: [String: [String]] = [:]
 
     private var translatorBuilder: (last: String, first: String, middle: String) = ("", "", "")
     /// Leaf text fields (names, title, date) never nest in valid FB2, so a Bool is enough.
@@ -282,9 +291,7 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
             inAnnotationDepth = 1
         case "coverpage" where section == .titleInfo: section = .coverpage
         case "image" where section == .coverpage:
-            if let href = attributeDict["href"] ?? attributeDict["l:href"] {
-                coverHref = href
-            }
+            if coverHref == nil { coverHref = xlinkHref(attributeDict) }
         case "first-name", "last-name", "middle-name", "book-title", "date":
             currentTextField = ""
             inSmallField = true
@@ -297,6 +304,27 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
         default:
             if section == .annotation { inAnnotationDepth += 1 }
         }
+    }
+
+    func parser(_ _: XMLParser, didStartMappingPrefix prefix: String, toURI namespaceURI: String) {
+        prefixURIs[prefix, default: []].append(namespaceURI)
+    }
+
+    func parser(_ _: XMLParser, didEndMappingPrefix prefix: String) {
+        _ = prefixURIs[prefix]?.popLast()
+    }
+
+    private func xlinkHref(_ attributes: [String: String]) -> String? {
+        // Sorted: two XLink-bound hrefs on one element would otherwise pick by hash order.
+        for key in attributes.keys.sorted() {
+            let parts = key.split(separator: ":", maxSplits: 1)
+            if parts.count == 2, parts[1] == "href",
+               prefixURIs[String(parts[0])]?.last == Self.xlinkURI { return attributes[key] }
+        }
+        // Beyond librarium-py (lxml rejects or ignores these): files that use `l:` without
+        // declaring it, and pre-namespace writers with bare href, showed covers before.
+        if prefixURIs["l"]?.last == nil, let href = attributes["l:href"] { return href }
+        return attributes["href"]
     }
 
     func parser(_ _: XMLParser, foundCharacters string: String) {

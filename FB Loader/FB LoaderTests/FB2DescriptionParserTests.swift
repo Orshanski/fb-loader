@@ -236,4 +236,59 @@ struct FB2DescriptionParserTests {
         let info = try FB2DescriptionParser.parse(data: Data(Self.fb2(binaries: binaries).utf8))
         #expect(info.coverImageData == Self.png)
     }
+
+    // MARK: - Cover href, aligned with librarium-py
+
+    @Test("XLink href is found under any prefix", arguments: ["xlink", "x"])
+    func xlinkPrefix(prefix: String) throws {
+        let xml = Self.fb2(binaries: Self.binary(id: "cover", data: Self.png))
+            .replacingOccurrences(of: "xmlns:l=", with: "xmlns:\(prefix)=")
+            .replacingOccurrences(of: "l:href", with: "\(prefix):href")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("href under a prefix bound to another namespace is not the cover")
+    func foreignPrefix() throws {
+        let xml = Self.fb2(cover: nil, binaries: Self.binary(id: "cover", data: Self.png))
+            .replacingOccurrences(of: "</title-info>",
+                                  with: "<coverpage xmlns:l=\"urn:other\"><image l:href=\"#cover\"/></coverpage></title-info>")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == nil)
+    }
+
+    @Test("undeclared l: prefix still gives the cover")
+    func undeclaredL() throws {
+        let xml = Self.fb2(binaries: Self.binary(id: "cover", data: Self.png))
+            .replacingOccurrences(of: " xmlns:l=\"http://www.w3.org/1999/xlink\"", with: "")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("binary without base64 characters gives nil")
+    func base64OnlyJunk() throws {
+        let binaries = "<binary content-type=\"image/png\" id=\"cover\">!!!!@@@@</binary>"
+        let info = try FB2DescriptionParser.parse(data: Data(Self.fb2(binaries: binaries).utf8))
+        #expect(info.coverImageData == nil)
+    }
+
+    @Test("first image of coverpage is the cover")
+    func firstImage() throws {
+        let other = Data([7, 7, 7, 7])
+        let xml = Self.fb2(cover: nil,
+                           binaries: Self.binary(id: "cover", data: Self.png) + Self.binary(id: "back", data: other))
+            .replacingOccurrences(of: "</title-info>",
+                                  with: "<coverpage><image l:href=\"#cover\"/><image l:href=\"#back\"/></coverpage></title-info>")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("non-base64 characters in binary are skipped")
+    func base64Junk() throws {
+        var b64 = Self.png.base64EncodedString()
+        b64.insert("!", at: b64.index(b64.startIndex, offsetBy: 4))
+        let binaries = "<binary content-type=\"image/png\" id=\"cover\">\(b64)</binary>"
+        let info = try FB2DescriptionParser.parse(data: Data(Self.fb2(binaries: binaries).utf8))
+        #expect(info.coverImageData == Self.png)
+    }
 }
