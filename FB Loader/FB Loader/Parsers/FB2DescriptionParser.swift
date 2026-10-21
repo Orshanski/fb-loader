@@ -220,7 +220,9 @@ nonisolated enum FB2DescriptionParser {
         let cleaned = Data(raw.filter { !isXMLSpace($0) })
         guard !cleaned.isEmpty else { return nil }
         // Like Python's b64decode in librarium-py: stray characters are dropped, not fatal.
-        return Data(base64Encoded: cleaned, options: .ignoreUnknownCharacters)
+        guard let decoded = Data(base64Encoded: cleaned, options: .ignoreUnknownCharacters),
+              !decoded.isEmpty else { return nil }
+        return decoded
     }
 
     private static func isNameByte(_ b: UInt8) -> Bool {
@@ -313,11 +315,15 @@ private nonisolated final class FB2Delegate: NSObject, XMLParserDelegate {
     }
 
     private func xlinkHref(_ attributes: [String: String]) -> String? {
-        for (key, value) in attributes {
+        // Sorted: two XLink-bound hrefs on one element would otherwise pick by hash order.
+        for key in attributes.keys.sorted() {
             let parts = key.split(separator: ":", maxSplits: 1)
             if parts.count == 2, parts[1] == "href",
-               prefixURIs[String(parts[0])]?.last == Self.xlinkURI { return value }
+               prefixURIs[String(parts[0])]?.last == Self.xlinkURI { return attributes[key] }
         }
+        // Beyond librarium-py (lxml rejects or ignores these): files that use `l:` without
+        // declaring it, and pre-namespace writers with bare href, showed covers before.
+        if prefixURIs["l"]?.last == nil, let href = attributes["l:href"] { return href }
         return attributes["href"]
     }
 

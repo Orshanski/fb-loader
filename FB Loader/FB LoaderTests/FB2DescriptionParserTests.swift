@@ -257,6 +257,21 @@ struct FB2DescriptionParserTests {
         #expect(info.coverImageData == nil)
     }
 
+    @Test("undeclared l: prefix still gives the cover")
+    func undeclaredL() throws {
+        let xml = Self.fb2(binaries: Self.binary(id: "cover", data: Self.png))
+            .replacingOccurrences(of: " xmlns:l=\"http://www.w3.org/1999/xlink\"", with: "")
+        let info = try FB2DescriptionParser.parse(data: Data(xml.utf8))
+        #expect(info.coverImageData == Self.png)
+    }
+
+    @Test("binary without base64 characters gives nil")
+    func base64OnlyJunk() throws {
+        let binaries = "<binary content-type=\"image/png\" id=\"cover\">!!!!@@@@</binary>"
+        let info = try FB2DescriptionParser.parse(data: Data(Self.fb2(binaries: binaries).utf8))
+        #expect(info.coverImageData == nil)
+    }
+
     @Test("first image of coverpage is the cover")
     func firstImage() throws {
         let other = Data([7, 7, 7, 7])
